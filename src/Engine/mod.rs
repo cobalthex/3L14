@@ -7,6 +7,8 @@ pub mod middlewares;
 
 pub use core_types::*;
 pub use middleware::*;
-pub use app::*;
 pub use globals::*;
+pub use app::*;
 pub use core_types::Errors as Errors;
+
+// rust's module system sucks

@@ -1,54 +1,61 @@
-#![allow(non_snake_case)]
-
-use winit::{event_loop::EventLoop, dpi::LogicalSize};
-
+use Engine::{*, middlewares::window::WindowMiddleware};
+use wgpu::Surface;
 mod Engine;
-use Engine::{*, middlewares::window_manager};
 
-fn main() {
-    let mut app = App::new();
+fn main()
+{
+    let z = middlewares![Renderer::new(), WindowMiddleware::new()];
 
-    // todo: construct in window system?
-    let event_loop = EventLoop::new();
-    app.context.globals.try_add(event_loop).unwrap();
-
-    Engine::middlewares::use_common_middlewares(&mut app);
-    Engine::middlewares::use_window_middlewares(&mut app);
-
-    app.middlewares.try_add::<Game>(Game::new()).unwrap();
+    let mut app = App::new(z);
 
     app.run();
 }
 
-struct Game
+struct RendererInternal
 {
-
+    backbuffer: Surface,
 }
-impl Game
+
+
+struct Renderer
+{
+    internal: Option<RendererInternal>,
+}
+impl Renderer
 {
     pub fn new() -> Self { Self
     {
-
+        internal: None,
     }}
 }
-impl Middleware for Game
+impl Middleware for Renderer
 {
-    fn name(&self) -> &str { "Game" }
+    fn name(&self) -> &str { "Renderer" }
 
     fn startup(&mut self, app: &mut AppContext) -> CompletionState
     {
-        app.globals.get_mut::<window_manager::Windows>()
-            .unwrap()
-            .create_window("Test", LogicalSize { width: 1280, height: 800 });//.ok();
+        let inst = wgpu::Instance::default();
+        //let wnd = app.globals.get::<winit::window::Window>().unwrap();
+        // let surface = unsafe { inst.create_surface(wnd) };
+
+        // if self.internal.is_some() { panic!("{} is not none", nameof::name_of!(internal in Self)); }
+        // self.internal = Some(RendererInternal
+        // {
+        //     backbuffer: surface.unwrap(), // TODO: don't unwrap
+        // });
 
         CompletionState::Completed
     }
 
-    fn shutdown(&mut self, app: &mut AppContext) -> CompletionState {
+    fn shutdown(&mut self, _app: &mut AppContext) -> CompletionState {
         CompletionState::Completed
     }
 
-    fn run(&mut self, app: &mut AppContext) -> CompletionState {
-        CompletionState::Completed
+    fn run(&mut self, _app: &mut AppContext) -> CompletionState {
+        CompletionState::InProgress
     }
 }
+
+
+
+

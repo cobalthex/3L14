@@ -39,16 +39,17 @@ impl Middleware for Clock
 
     fn startup(&mut self, app: &mut AppContext) -> CompletionState
     {
-        app.globals.try_add(Time::new()).expect("Time is managed by the Clock middleware");
+        // app.globals.try_add(Time::new()).expect("Time is managed by the Clock middleware");
         CompletionState::Completed
     }
-    fn shutdown(&mut self, _app: &mut AppContext) -> CompletionState
+    fn shutdown(&mut self, app: &mut AppContext) -> CompletionState
     {
+        // app.globals.remove::<Time>();
         CompletionState::Completed
     }
     fn run(&mut self, app: &mut AppContext) -> CompletionState
     {
-        app.globals.get_mut::<Time>().unwrap().tick();
+        // app.globals.get_mut::<Time>().unwrap().tick();
         CompletionState::InProgress
     }
 }

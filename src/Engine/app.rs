@@ -1,19 +1,14 @@
 use chrono::{format::{DelayedFormat, StrftimeItems}, Local};
 use super::*;
 
-fn log_time<'a>() -> DelayedFormat<StrftimeItems<'a>> { Local::now().format("[%Y-%m-%d %H:%M:%S.%3f]") }
-
-#[derive(Copy, Clone, PartialEq,Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Default)]
 pub enum AppRunState
 {
+    #[default]
     NotRunning,
     StartingUp,
     ShuttingDown,
     Running,
-}
-impl Default for AppRunState
-{
-    fn default() -> Self { AppRunState::NotRunning }
 }
 
 #[derive(Debug, Default)]
@@ -22,7 +17,7 @@ pub struct AppContext
     state: AppRunState,
     tick_count: TickCount,
 
-    /// data that can be accessed by any middleware, unique per type
+    // data that can be accessed by any middleware, unique per type
     pub globals: Globals,
 }
 #[allow(dead_code)] // todo: remove
@@ -33,17 +28,23 @@ impl AppContext
 }
 
 #[derive(Debug, Default)]
-pub struct App
+pub struct App<TMiddlewares: Middlewares>
 {
     pub context: AppContext,
-    pub middlewares: Middlewares,
+    pub middlewares: TMiddlewares,
 }
 
-impl App
+impl<'a, TMiddlewares> App<TMiddlewares>
+where
+    TMiddlewares: Middlewares
 {
-    pub fn new() -> Self { Self::default() }
+    pub fn new(middlewares: TMiddlewares) -> Self { Self
+    {
+        context: Default::default(),
+        middlewares: middlewares,
+    }}
 
-    fn run_once(&mut self)
+    pub fn run_once(&mut self)
     {
         self.context.tick_count.0 += 1;
 
@@ -53,11 +54,7 @@ impl App
             AppRunState::StartingUp =>
             {
                 // todo: measure startup/shutdown time, abort if too slow?
-                let mut all_ready = true;
-                for (_, middleware) in self.middlewares.iter_mut()
-                {
-                    all_ready &= Into::<bool>::into(middleware.startup(&mut self.context));
-                }
+                let all_ready = self.middlewares.startup(&mut self.context);
                 if all_ready
                 {
                     self.context.state = AppRunState::Running;
@@ -66,11 +63,7 @@ impl App
             }
             AppRunState::ShuttingDown =>
             {
-                let mut all_ready = true;
-                for (_, middleware) in self.middlewares.iter_mut()
-                {
-                    all_ready &= Into::<bool>::into(middleware.shutdown(&mut self.context));
-                }
+                let all_ready = self.middlewares.shutdown(&mut self.context);
                 if all_ready
                 {
                     self.context.state = AppRunState::NotRunning;
@@ -79,16 +72,7 @@ impl App
             }
             AppRunState::Running =>
             {
-                let mut any_finished = false;
-                for (_, middleware) in self.middlewares.iter_mut()
-                {
-                    let did_finish = Into::<bool>::into(middleware.run(&mut self.context));
-                    if did_finish
-                    {
-                        eprintln!("{} Middleware '{}' requested shutdown", log_time(), middleware.name());
-                        any_finished = true;
-                    }
-                }
+                let any_finished = self.middlewares.run(&mut self.context);
                 if any_finished
                 {
                     self.context.state = AppRunState::ShuttingDown;
@@ -105,51 +89,11 @@ impl App
 
         eprintln!("{} App starting up", log_time());
 
+        self.middlewares.each(|m| eprintln!("{} Starting up middleware '{}'", log_time(), m.name()));
+
         while self.context.state != AppRunState::NotRunning
         {
             self.run_once();
         }
-
-        // event_loop.run(move |event, _, control_flow|
-        // {
-        //     control_flow.set_poll(); // set_poll for continuous
-
-        //     match event
-        //     {
-        //         Event::WindowEvent
-        //         {
-        //             event: WindowEvent::CloseRequested,
-        //             window_id,
-        //         } if window_id == window.id() => control_flow.set_exit(),
-
-        //         // // prob want to use device events for this
-        //         // Event::WindowEvent
-        //         // {
-        //         //     window_id,
-        //         //     event: WindowEvent::KeyboardInput { input: KeyboardInput { virtual_keycode: Some(keycode), state, .. }, .. /* synthetic? */ },
-        //         // } if window_id == window.id() =>
-        //         // {
-        //         //     app.input_state.keyboard_state.set_key(keycode, state == ElementState::Pressed)
-        //         // },
-        //         // Event::WindowEvent
-        //         // {
-        //         //     window_id,
-        //         //     event: WindowEvent::ModifiersChanged(mods),
-        //         // } if window_id == window.id() =>
-        //         // {
-        //         //     app.input_state.keyboard_state.modifiers = mods;
-        //         // }
-        //         // TODO: mouse events
-
-        //         Event::NewEvents(_) =>
-        //         {
-        //         }
-        //         Event::MainEventsCleared =>
-        //         {
-        //             app.run_once();
-        //         },
-        //         _ => (),
-        //     }
-        // });
     }
 }

@@ -1,6 +1,8 @@
 use std::any::{TypeId, Any};
 use std::collections::HashMap;
 
+use parking_lot::Mutex;
+
 // unify this with middlewares? (May require different underlying container types in the future)
 
 type GlobalStorage = HashMap<TypeId, Box<dyn Any>>;
@@ -8,44 +10,48 @@ type GlobalStorage = HashMap<TypeId, Box<dyn Any>>;
 #[derive(Debug, Default)]
 pub struct Globals
 {
-    storage: GlobalStorage,
+    storage: Mutex<GlobalStorage>,
 }
 impl<'a> Globals
 {
     pub fn try_init<TGlobal: Default + 'static>(&mut self) -> Result<&mut TGlobal, super::Errors::AlreadyExists>
     {
         let gty = TypeId::of::<TGlobal>();
-        if self.storage.contains_key(&gty)
+        let locked = self.storage.get_mut();
+        if locked.contains_key(&gty)
         {
             return Err(super::Errors::AlreadyExists{});
         }
 
         let boxed: Box<dyn Any> = Box::<TGlobal>::new(Default::default());
-        self.storage.insert(gty, boxed); // todo: try_insert
+        locked.insert(gty, boxed); // todo: try_insert
         Ok(self.get_mut::<TGlobal>().unwrap())
     }
     pub fn try_add<TGlobal: 'static>(&mut self, global: TGlobal) -> Result<(), super::Errors::AlreadyExists>
     {
         let gty: TypeId = TypeId::of::<TGlobal>();
-        if self.storage.contains_key(&gty)
+        let locked = self.storage.get_mut();
+        if locked.contains_key(&gty)
         {
             return Err(super::Errors::AlreadyExists{});
         }
 
-        self.storage.insert(gty, Box::new(global));
+        locked.insert(gty, Box::new(global));
         Ok(())
     }
 
     pub fn remove<TGlobal: 'static>(&mut self) -> Option<Box<TGlobal>>
     {
         let gty: TypeId = TypeId::of::<TGlobal>();
-        self.storage.remove(&gty).map(|g| unsafe { Box::from_raw(Box::into_raw(g) as *mut TGlobal) }) // downcast_unchecked?
+        let locked = self.storage.get_mut();
+        locked.remove(&gty).map(|g| unsafe { Box::from_raw(Box::into_raw(g) as *mut TGlobal) }) // downcast_unchecked?
     }
 
     pub fn get<TGlobal: 'static>(&self) -> Option<&TGlobal>
     {
         let gty = TypeId::of::<TGlobal>();
-        match self.storage.get(&gty)
+        let locked = self.storage.get_mut();
+        match locked.get(&gty)
         {
             Some(global) => Some(global.downcast_ref().unwrap()), // TODO: unchecked
             None => None,
@@ -54,15 +60,16 @@ impl<'a> Globals
     pub fn get_mut<TGlobal: 'static>(&mut self) -> Option<&mut TGlobal>
     {
         let gty = TypeId::of::<TGlobal>();
-        match self.storage.get_mut(&gty)
+        let locked = self.storage.get_mut();
+        match locked.get_mut(&gty)
         {
             Some(global) => Some(global.downcast_mut().unwrap()), // TODO: unchecked
             None => None,
         }
     }
-    pub fn contains_type<TGlobal: 'static>(&self) -> bool { self.storage.contains_key(&TypeId::of::<TGlobal>()) }
+    pub fn contains_type<TGlobal: 'static>(&self) -> bool { self.storage.get_mut().contains_key(&TypeId::of::<TGlobal>()) }
 
-    pub fn len(&self) -> usize { self.storage.len() }
+    pub fn len(&self) -> usize { self.storage.get_mut().len() }
 }
 
 #[cfg(test)]

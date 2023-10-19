@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'MotorbikeGame'",
+            "name": "Debug executable 'Game-3L14'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=MotorbikeGame",
-                    "--package=MotorbikeGame"
+                    "--bin=Game-3L14",
+                    "--package=Game-3L14"
                 ],
                 "filter": {
-                    "name": "MotorbikeGame",
+                    "name": "Game-3L14",
                     "kind": "bin"
                 }
             },
@@ -25,16 +25,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'MotorbikeGame'",
+            "name": "Debug unit tests in executable 'Game-3L14'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=MotorbikeGame",
-                    "--package=MotorbikeGame"
+                    "--bin=Game-3L14",
+                    "--package=Game-3L14"
                 ],
                 "filter": {
-                    "name": "MotorbikeGame",
+                    "name": "Game-3L14",
                     "kind": "bin"
                 }
             },
