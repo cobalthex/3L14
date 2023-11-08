@@ -1,5 +1,5 @@
 use std::time::{Instant, Duration};
-use crate::Engine::{AppContext, CompletionState, Middleware};
+use crate::Engine::{AppContext, Middleware, core_types::CompletionState};
 
 #[derive(Debug)]
 pub struct Time

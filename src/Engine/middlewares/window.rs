@@ -1,15 +1,8 @@
 use std::{thread::{self, JoinHandle}, sync::Arc};
-use parking_lot::Mutex;
-use crate::{core_types::TickCount, Engine::{app::AppContext, core_types::CompletionState, middleware::Middleware}};
+use crate::{core_types::TickCount, Engine::{app::AppContext, middleware::Middleware, core_types::CompletionState}};
+use sdl2::{*, video::*, event::Event, keyboard::Keycode};
 
 use glam::Vec2;
-use winit::{
-    event::*,
-    event_loop::*,
-    window::*,
-    dpi::LogicalSize,
-    error::OsError, platform::windows::EventLoopBuilderExtWindows,
-};
 
 const MAX_KEYCODE_ENTRIES: usize = 256;
 const MAX_MOUSE_BUTTON_ENTRIES: usize = 5; /* TODO: don't hardcode */
@@ -26,102 +19,6 @@ impl Default for WindowMiddlewareInternal
     }}
 }
 
-pub struct WindowMiddleware
-{
-    input_thread: Option<JoinHandle<()>>,
-    internal: Arc<Mutex<WindowMiddlewareInternal>>, // use thread scope instead of Arc?
-}
-impl WindowMiddleware
-{
-    pub fn new() -> Self { Self
-    {
-        input_thread: None,
-        internal: Arc::new(Mutex::new(Default::default())),
-    }}
-}
-impl Middleware for WindowMiddleware
-{
-    fn name(&self) -> &str { "Windows" }
-
-    fn startup(&mut self, app: &mut AppContext) -> CompletionState
-    {
-        let internal_wrapper = self.internal.clone();
-        let input_thread = thread::spawn(||
-        {
-            let event_loop = EventLoopBuilder::new()
-                .with_any_thread(true)
-                .build();
-
-            // todo: don't do this this way?
-            {
-                let mut internal = internal_wrapper.lock();
-                let main_window = WindowBuilder::new()
-                    .with_inner_size(LogicalSize::new(1920, 1080))
-                    .with_title("3L14")
-                    .build(&event_loop).unwrap(); // TODO: don't unwrap
-
-                //app.globals.try_add(main_window);
-            }
-
-            event_loop.run(move |event, _, control_flow|
-            {
-                let mut internal = internal_wrapper.lock();
-                if internal.is_exiting
-                {
-                    *control_flow = ControlFlow::Exit;
-                    return;
-                }
-
-                match event
-                {
-                    winit::event::Event::WindowEvent { event: WindowEvent::CloseRequested, .. } =>
-                    {
-                        internal.is_exiting = true;
-                    },
-                    //winit::event::Event::NewEvents
-                    //winit::event::Event::MainEventsCleared
-                    _ => (),
-                }
-            });
-        });
-        self.input_thread = Some(input_thread);
-
-        CompletionState::Completed
-    }
-
-    fn shutdown(&mut self, _app: &mut AppContext) -> CompletionState
-    {
-        match &self.input_thread
-        {
-            Some(it) if !it.is_finished() =>
-            {
-                // todo: timeout
-                let mut internal = self.internal.lock();
-                internal.is_exiting = true;
-                CompletionState::InProgress
-            },
-            _ => CompletionState::Completed,
-        }
-    }
-
-    fn run(&mut self, _app: &mut AppContext) -> CompletionState
-    {
-        let internal = self.internal.lock();
-        match internal.is_exiting
-        {
-            true => CompletionState::Completed,
-            _ => CompletionState::InProgress,
-        }
-    }
-}
-
-
-pub enum EventHandled
-{
-    Continue,
-    Handled,
-}
-
 pub struct CreateWindow<'a>
 {
     pub width: u32,
@@ -129,65 +26,129 @@ pub struct CreateWindow<'a>
     pub title: &'a str,
 }
 
-// global
-pub struct Windows
+pub struct WindowMiddleware
 {
-    pub main_window: Window,
-    pub input: WindowInputState,
+    sdl_context: Sdl,
+    sdl_video: VideoSubsystem,
+    sdl_timer: TimerSubsystem,
+    sdl_events: EventPump,
 }
-impl Windows
+impl WindowMiddleware
 {
-    pub fn new<'e>(create_main_window: CreateWindow, event_loop: &'e EventLoop<()>) -> Result<Self, OsError>
+    pub fn new() -> Self
     {
-        let main_window = WindowBuilder::new()
-            .with_title(create_main_window.title)
-            .with_inner_size(LogicalSize { width: create_main_window.width, height: create_main_window.height })
-            .build(event_loop)?;
-
-        println!("Created main window with ID {:?}", main_window.id());
-
-        Ok(Self
+        let sdl = sdl2::init().unwrap();
+        let video = sdl.video().unwrap();
+        let timer = sdl.timer().unwrap();
+        let events = sdl.event_pump().unwrap();
+        Self
         {
-            main_window: main_window,
-            input: Default::default(),
-        })
-    }
-
-    pub fn handle_input(&mut self, event: Event<'_, ()>, time: TickCount) -> EventHandled
-    {
-        match event
-        {
-            winit::event::Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } =>
-            {
-                self.input.mouse_state.move_delta.x = delta.0 as f32;
-                self.input.mouse_state.move_delta.y = delta.1 as f32;
-                self.input.mouse_state.position += self.input.mouse_state.move_delta;
-                EventHandled::Handled
-            }
-            winit::event::Event::DeviceEvent { event: DeviceEvent::MouseWheel { delta }, .. } =>
-            {
-                match delta
-                {
-                    MouseScrollDelta::LineDelta(_x, _y) => todo!(),
-                    MouseScrollDelta::PixelDelta(pixels) =>
-                    {
-                        self.input.mouse_state.wheel.x = pixels.x as f32;
-                        self.input.mouse_state.wheel.y = pixels.y as f32;
-                    }
-                }
-                EventHandled::Handled
-            }
-            winit::event::Event::DeviceEvent { event: DeviceEvent::Button { button, state }, .. } =>
-            {
-                let button = &mut self.input.mouse_state.buttons[button as usize];
-                button.state.set(state == ElementState::Pressed);
-                button.last_set_time = time;
-                EventHandled::Handled
-            }
-            _ => EventHandled::Continue,
+            sdl_context: sdl,
+            sdl_video: video,
+            sdl_timer: timer,
+            sdl_events: events,
         }
     }
+
+    pub fn create_window(&self, create_window: CreateWindow) -> Result<Window, ()> // TODO: error type
+    {
+        self.sdl_video.window(create_window.title, create_window.width, create_window.height)
+            .position_centered()
+            .build()
+            .map_err(|e| ()) // TODO
+    }
 }
+impl Middleware for WindowMiddleware
+{
+    fn name(&self) -> &str { "Windows" }
+
+    fn startup(&mut self, app: &mut AppContext) -> CompletionState
+    {
+        CompletionState::Completed
+    }
+
+    fn shutdown(&mut self, _app: &mut AppContext) -> CompletionState
+    {
+        CompletionState::Completed
+    }
+
+    fn run(&mut self, _app: &mut AppContext) -> CompletionState
+    {
+        for event in self.sdl_events.poll_iter()
+        {
+            match event
+            {
+                Event::Quit {..} =>
+                {
+                    return CompletionState::Completed;
+                },
+                Event::KeyDown { timestamp, window_id, keycode, scancode, keymod, repeat } =>
+                {
+
+                }
+                _ => {}
+            }
+        }
+        return CompletionState::InProgress;
+    }
+}
+
+// // global
+// pub struct Windows
+// {
+//     pub main_window: sdl2::video::Window,
+//     pub input: WindowInputState,
+// }
+// impl Windows
+// {
+//     pub fn new<'e>(create_main_window: CreateWindow) -> Result<Self, () /* TODO */>
+//     {
+//         let main_window =
+
+//         println!("Created main window with ID {:?}", main_window.id());
+
+//         Ok(Self
+//         {
+//             main_window: main_window,
+//             input: Default::default(),
+//         })
+//     }
+
+    // pub fn handle_input(&mut self, event: Event<'_, ()>, time: TickCount) -> EventHandled
+    // {
+    //     match event
+    //     {
+    //         winit::event::Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } =>
+    //         {
+    //             self.input.mouse_state.move_delta.x = delta.0 as f32;
+    //             self.input.mouse_state.move_delta.y = delta.1 as f32;
+    //             self.input.mouse_state.position += self.input.mouse_state.move_delta;
+    //             EventHandled::Handled
+    //         }
+    //         winit::event::Event::DeviceEvent { event: DeviceEvent::MouseWheel { delta }, .. } =>
+    //         {
+    //             match delta
+    //             {
+    //                 MouseScrollDelta::LineDelta(_x, _y) => todo!(),
+    //                 MouseScrollDelta::PixelDelta(pixels) =>
+    //                 {
+    //                     self.input.mouse_state.wheel.x = pixels.x as f32;
+    //                     self.input.mouse_state.wheel.y = pixels.y as f32;
+    //                 }
+    //             }
+    //             EventHandled::Handled
+    //         }
+    //         winit::event::Event::DeviceEvent { event: DeviceEvent::Button { button, state }, .. } =>
+    //         {
+    //             let button = &mut self.input.mouse_state.buttons[button as usize];
+    //             button.state.set(state == ElementState::Pressed);
+    //             button.last_set_time = time;
+    //             EventHandled::Handled
+    //         }
+    //         _ => EventHandled::Continue,
+    //     }
+    // }
+//}
 
 #[derive(Default, Copy, Clone, PartialEq)]
 pub enum InputState
@@ -281,58 +242,4 @@ impl MouseState
             _ => false,
         }
     }
-}
-
-pub struct KeyboardState
-{
-    pub keys: [KeyState; MAX_KEYCODE_ENTRIES],
-    pub modifiers: ModifiersState,
-}
-impl KeyboardState
-{
-    pub fn key(&self, key_code: VirtualKeyCode) -> KeyState { self.keys[key_code as usize] }
-    pub fn is_key_down(&self, key_code: VirtualKeyCode) -> bool
-    {
-        match self.keys[key_code as usize].state
-        {
-            InputState::JustOn|InputState::On => true,
-            _ => false,
-        }
-    }
-    pub fn is_key_up(&self, key_code: VirtualKeyCode) -> bool
-    {
-        match self.keys[key_code as usize].state
-        {
-            InputState::JustOff|InputState::Off => true,
-            _ => false,
-        }
-    }
-    pub fn set_key(&mut self, key_code: VirtualKeyCode, is_pressed: bool)
-    {
-        self.keys[key_code as usize].state = match self.keys[key_code as usize].state
-        {
-            InputState::Off if is_pressed => InputState::JustOn,
-            InputState::JustOn if is_pressed => InputState::On,
-            InputState::JustOn if !is_pressed => InputState::JustOff,
-            InputState::JustOff if !is_pressed => InputState::Off,
-            InputState::JustOff if is_pressed => InputState::JustOn,
-            InputState::On if !is_pressed => InputState::JustOff,
-            no_change => no_change,
-        }
-    }
-}
-impl Default for KeyboardState
-{
-    fn default() -> Self { Self
-    {
-        keys: [KeyState::default(); MAX_KEYCODE_ENTRIES],
-        modifiers: ModifiersState::empty(),
-    }}
-}
-
-#[derive(Default)]
-pub struct WindowInputState
-{
-    pub mouse_state: MouseState,
-    pub keyboard_state: KeyboardState,
 }

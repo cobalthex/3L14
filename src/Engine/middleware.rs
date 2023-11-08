@@ -1,10 +1,8 @@
-use std::any::TypeId;
-
 use chrono::Local;
 use chrono::format::{DelayedFormat, StrftimeItems};
 
 use super::app::AppContext;
-use super::CompletionState;
+use super::core_types::CompletionState;
 
 //todo: use a log frmework
 pub fn log_time<'a>() -> DelayedFormat<StrftimeItems<'a>> { Local::now().format("[%Y-%m-%d %H:%M:%S.%3f]") }
@@ -27,38 +25,50 @@ pub trait Middleware
 // heterogeneous list of middlewares
 pub trait Middlewares
 {
-    fn startup(&mut self, context: &mut AppContext) -> bool;
-    fn shutdown(&mut self, context: &mut AppContext) -> bool;
-    fn run(&mut self, context: &mut AppContext) -> bool;
+    fn startup(&mut self, context: &mut AppContext) -> CompletionState;
+    fn shutdown(&mut self, context: &mut AppContext) -> CompletionState;
+    fn run(&mut self, context: &mut AppContext) -> CompletionState;
 
     fn each<F>(&self, func: F) where F: Fn(&dyn Middleware);
 }
 pub struct NoMiddlewares;
 impl Middlewares for NoMiddlewares
 {
-    fn startup(&mut self, _context: &mut AppContext) -> bool { true }
-    fn shutdown(&mut self, _context: &mut AppContext) -> bool { true }
-    fn run(&mut self, _context: &mut AppContext) -> bool { true }
+    fn startup(&mut self, _context: &mut AppContext) -> CompletionState { CompletionState::Completed }
+    fn shutdown(&mut self, _context: &mut AppContext) -> CompletionState { CompletionState::Completed }
+    fn run(&mut self, _context: &mut AppContext) -> CompletionState { CompletionState::InProgress }
 
     fn each<F>(&self, _func: F) where F: Fn(&dyn Middleware) { }
 }
 
 // recursive middlewares container
-impl<H, T> Middlewares for (H, T)
+impl<Head, Tail> Middlewares for (Head, Tail)
 where
-    H: Middleware,
-    T: Middlewares
+    Head: Middleware,
+    Tail: Middlewares
 {
-    fn startup(&mut self, context: &mut AppContext) -> bool { Into::<bool>::into(self.0.startup(context)) & self.1.startup(context) }
-    fn shutdown(&mut self, context: &mut AppContext) -> bool { Into::<bool>::into(self.0.shutdown(context)) & self.1.shutdown(context) }
-    fn run(&mut self, context: &mut AppContext) -> bool
+    fn startup(&mut self, context: &mut AppContext) -> CompletionState
     {
-        if Into::<bool>::into(self.0.run(context))
+        self.0.startup(context) & self.1.startup(context)
+    }
+    fn shutdown(&mut self, context: &mut AppContext) -> CompletionState
+    {
+        self.0.shutdown(context) & self.1.shutdown(context)
+    }
+    fn run(&mut self, context: &mut AppContext) -> CompletionState
+    {
+        match self.0.run(context)
         {
-            eprintln!("{} Middleware '{}' requested shutdown", log_time(), self.0.name());
-            return true;
+            CompletionState::Completed =>
+            {
+                eprintln!("{} Middleware '{}' requested shutdown", log_time(), self.0.name());
+                CompletionState::Completed
+            }
+            CompletionState::InProgress =>
+            {
+                self.1.run(context)
+            }
         }
-        self.1.run(context)
     }
 
     fn each<F>(&self, func: F) where F: Fn(&dyn Middleware) { func(&self.0); self.1.each(&func); }

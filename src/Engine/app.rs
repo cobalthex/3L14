@@ -17,8 +17,7 @@ pub struct AppContext
     state: AppRunState,
     tick_count: TickCount,
 
-    // data that can be accessed by any middleware, unique per type
-    pub globals: Globals,
+    // shared, global data
 }
 #[allow(dead_code)] // todo: remove
 impl AppContext
@@ -54,29 +53,38 @@ where
             AppRunState::StartingUp =>
             {
                 // todo: measure startup/shutdown time, abort if too slow?
-                let all_ready = self.middlewares.startup(&mut self.context);
-                if all_ready
+                match self.middlewares.startup(&mut self.context)
                 {
-                    self.context.state = AppRunState::Running;
-                    eprintln!("{} App looping", log_time());
+                    CompletionState::Completed =>
+                    {
+                        self.context.state = AppRunState::Running;
+                        eprintln!("{} App looping", log_time());
+                    },
+                    CompletionState::InProgress => (),
                 }
             }
             AppRunState::ShuttingDown =>
             {
-                let all_ready = self.middlewares.shutdown(&mut self.context);
-                if all_ready
+                match self.middlewares.shutdown(&mut self.context)
                 {
-                    self.context.state = AppRunState::NotRunning;
-                    eprintln!("{} App shut down", log_time());
+                    CompletionState::Completed =>
+                    {
+                        self.context.state = AppRunState::NotRunning;
+                        eprintln!("{} App shut down", log_time());
+                    },
+                    CompletionState::InProgress => (),
                 }
             }
             AppRunState::Running =>
             {
-                let any_finished = self.middlewares.run(&mut self.context);
-                if any_finished
+                match self.middlewares.run(&mut self.context)
                 {
-                    self.context.state = AppRunState::ShuttingDown;
-                    eprintln!("{} App Shutting down", log_time());
+                    CompletionState::Completed =>
+                    {
+                        self.context.state = AppRunState::ShuttingDown;
+                        eprintln!("{} App shutting down", log_time());
+                    },
+                    CompletionState::InProgress => (),
                 }
             }
         }

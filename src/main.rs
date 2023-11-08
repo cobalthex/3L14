@@ -1,12 +1,80 @@
-use Engine::{*, middlewares::window::WindowMiddleware};
+use Engine::{*, middlewares::window::{WindowMiddleware, CreateWindow}};
 use wgpu::Surface;
 mod Engine;
 
+trait TFoo
+{
+    fn foo(&self);
+}
+struct Z;
+impl TFoo for Z
+{
+    fn foo(&self) {
+        println!("!!!");
+    }
+}
+
+macro_rules! generate_middlewares
+{
+    ($($member:ident : $type:ty),*) =>
+    {
+        struct ZMiddlewares
+        {
+            $(
+                $member: $type,
+            )*
+        }
+
+        impl ZMiddlewares
+        {
+            fn new() -> Self
+            {
+                Self
+                {
+                    $(
+                        $member: <$type>::new(),
+                    )*
+                }
+            }
+
+            fn iterate_over_members(&self)
+            {
+                $(
+                    println!("{}", self.$member.name());
+                )*
+            }
+        }
+    };
+}
+
+generate_middlewares!
+{
+    a: WindowMiddleware,
+    b: Renderer
+}
+struct Zap
+{
+    pub context: AppContext,
+    pub middlewares: ZMiddlewares,
+}
+impl Zap
+{
+    fn new() -> Self
+    {
+        Self { context: AppContext::default(), middlewares: ZMiddlewares::new() }
+    }
+}
+
 fn main()
 {
-    let z = middlewares![Renderer::new(), WindowMiddleware::new()];
+    let z = Zap::new();
+    z.middlewares.iterate_over_members();
 
-    let mut app = App::new(z);
+    let mwares = middlewares![Renderer::new(), WindowMiddleware::new()];
+
+    let wnd = WindowMiddleware::create_window(&mwares.1.0, CreateWindow { width: 1920, height: 1080, title: "3L14" }).unwrap();
+
+    let mut app = App::new(mwares);
 
     app.run();
 }
@@ -55,7 +123,3 @@ impl Middleware for Renderer
         CompletionState::InProgress
     }
 }
-
-
-
-

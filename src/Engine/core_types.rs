@@ -10,22 +10,30 @@ pub enum CompletionState
 {
     InProgress,
     Completed,
-    // Error(ErrorType?) -- will deconstruct
 }
-impl From<CompletionState> for bool
+impl std::ops::BitAnd for CompletionState
 {
-    fn from(value: CompletionState) -> Self
+    type Output = CompletionState;
+
+    fn bitand(self, rhs: Self) -> Self::Output
     {
-        match value
+        match self
         {
-            CompletionState::Completed => true,
-            CompletionState::InProgress => false,
+            Self::Completed => rhs,
+            Self::InProgress => self,
         }
     }
 }
-
-pub mod Errors
+impl std::ops::BitOr for CompletionState
 {
-    #[derive(Debug)]
-    pub struct AlreadyExists;
+    type Output = CompletionState;
+
+    fn bitor(self, rhs: Self) -> Self::Output
+    {
+        match self
+        {
+            Self::Completed => self,
+            Self::InProgress => rhs,
+        }
+    }
 }
