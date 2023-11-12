@@ -1,5 +1,6 @@
 use std::time::{Instant, Duration};
-use crate::Engine::{AppContext, Middleware, core_types::CompletionState};
+use crate::engine::{Middleware, core_types::CompletionState};
+use crate::AppContext;
 
 #[derive(Debug)]
 pub struct Time
@@ -33,21 +34,19 @@ impl Time
 }
 
 pub struct Clock;
-impl Middleware for Clock
+impl Middleware<AppContext> for Clock
 {
-    fn name(&self) -> &'static str { "Clock" }
-
-    fn startup(&mut self, app: &mut AppContext) -> CompletionState
+    fn startup(&mut self) -> CompletionState
     {
         // app.globals.try_add(Time::new()).expect("Time is managed by the Clock middleware");
         CompletionState::Completed
     }
-    fn shutdown(&mut self, app: &mut AppContext) -> CompletionState
+    fn shutdown(&mut self) -> CompletionState
     {
         // app.globals.remove::<Time>();
         CompletionState::Completed
     }
-    fn run(&mut self, app: &mut AppContext) -> CompletionState
+    fn run(&mut self) -> CompletionState
     {
         // app.globals.get_mut::<Time>().unwrap().tick();
         CompletionState::InProgress

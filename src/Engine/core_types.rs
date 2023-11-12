@@ -6,6 +6,7 @@ impl Default for TickCount
     fn default() -> Self { Self(0) }
 }
 
+#[derive(PartialEq)]
 pub enum CompletionState
 {
     InProgress,

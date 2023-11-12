@@ -1,7 +1,6 @@
 use chrono::Local;
 use chrono::format::{DelayedFormat, StrftimeItems};
 
-use super::app::AppContext;
 use super::core_types::CompletionState;
 
 //todo: use a log frmework
@@ -13,77 +12,81 @@ pub fn log_time<'a>() -> DelayedFormat<StrftimeItems<'a>> { Local::now().format(
 /// Middlewares are stored/evaluated in order of insertion
 pub trait Middleware
 {
-    fn name(&self) -> &str; // a canonical name for this middleware
-
     // async startup/shutdown?
-
-    fn startup(&mut self, _app: &mut AppContext) -> CompletionState { CompletionState::Completed } // Initialize this middleware, this is called every tick and should return Completed once ready
-    fn shutdown(&mut self, _app: &mut AppContext) -> CompletionState { CompletionState::Completed } // Uninitialize this middleware, this is called every tick and should return Completed once torn down
-    fn run(&mut self, _app: &mut AppContext) -> CompletionState { CompletionState::InProgress } // Run this middleware, this is called every tick and should return Completed when the app should shutdown (any middleware completing will cause the app to shut down)
+    fn startup(&mut self) -> CompletionState { CompletionState::Completed } // Initialize this middleware, this is called every tick and should return Completed once ready
+    fn shutdown(&mut self) -> CompletionState { CompletionState::Completed } // Uninitialize this middleware, this is called every tick and should return Completed once torn down
+    fn run(&mut self) -> CompletionState { CompletionState::InProgress } // Run this middleware, this is called every tick and should return Completed when the app should shutdown (any middleware completing will cause the app to shut down)
 }
 
-// heterogeneous list of middlewares
+pub trait Singleton
+{
+    fn init<'s>() -> &'s mut Self;
+    fn uninit();
+    fn get<'s>() -> Option<&'s mut Self>;
+}
+
 pub trait Middlewares
 {
-    fn startup(&mut self, context: &mut AppContext) -> CompletionState;
-    fn shutdown(&mut self, context: &mut AppContext) -> CompletionState;
-    fn run(&mut self, context: &mut AppContext) -> CompletionState;
+    fn startup(&mut self) -> CompletionState;
+    fn shutdown(&mut self) -> CompletionState;
+    fn run(&mut self) -> CompletionState;
 
     fn each<F>(&self, func: F) where F: Fn(&dyn Middleware);
 }
-pub struct NoMiddlewares;
-impl Middlewares for NoMiddlewares
-{
-    fn startup(&mut self, _context: &mut AppContext) -> CompletionState { CompletionState::Completed }
-    fn shutdown(&mut self, _context: &mut AppContext) -> CompletionState { CompletionState::Completed }
-    fn run(&mut self, _context: &mut AppContext) -> CompletionState { CompletionState::InProgress }
 
-    fn each<F>(&self, _func: F) where F: Fn(&dyn Middleware) { }
-}
-
-// recursive middlewares container
-impl<Head, Tail> Middlewares for (Head, Tail)
-where
-    Head: Middleware,
-    Tail: Middlewares
+// Generate middlewares for the app
+// example usage: generate_middlewares!{a: FooMiddleware, b: BarMiddleware}
+// creates a struct named MiddlewaresImpl that implements Middlewares
+#[macro_export]
+macro_rules! generate_middlewares
 {
-    fn startup(&mut self, context: &mut AppContext) -> CompletionState
+    ($($member:ident : $type:ty),* $(,)?) =>
     {
-        self.0.startup(context) & self.1.startup(context)
-    }
-    fn shutdown(&mut self, context: &mut AppContext) -> CompletionState
-    {
-        self.0.shutdown(context) & self.1.shutdown(context)
-    }
-    fn run(&mut self, context: &mut AppContext) -> CompletionState
-    {
-        match self.0.run(context)
+        struct MiddlewaresImpl
         {
-            CompletionState::Completed =>
+            $( $member: $type, )*
+        }
+
+        impl MiddlewaresImpl
+        {
+            pub fn new() -> Self
             {
-                eprintln!("{} Middleware '{}' requested shutdown", log_time(), self.0.name());
-                CompletionState::Completed
-            }
-            CompletionState::InProgress =>
-            {
-                self.1.run(context)
+                Self
+                {
+                    $( $member: <$type>::new(), )*
+                }
             }
         }
-    }
 
-    fn each<F>(&self, func: F) where F: Fn(&dyn Middleware) { func(&self.0); self.1.each(&func); }
-}
+        impl Middlewares for MiddlewaresImpl
+        {
+            fn startup(&mut self) -> CompletionState
+            {
+                return CompletionState::Completed
+                    $( & self.$member.startup(context) )*;
+            }
+            fn shutdown(&mut self, context: &mut AppContext) -> CompletionState
+            {
+                return CompletionState::Completed
+                    $( & self.$member.shutdown(context) )*;
+            }
+            fn run(&mut self, context: &mut AppContext) -> CompletionState
+            {
+                // this may create a lot of code duplication
+                $(
+                    if self.$member.run(context) == CompletionState::Completed
+                    {
+                        eprintln!("{} Middleware {}:{} requested shutdown", log_time(), stringify!($member), stringify!($type));
+                        return CompletionState::Completed;
+                    }
+                )*
+                CompletionState::InProgress
+            }
 
-// stolen from frunk
-#[macro_export]
-macro_rules! middlewares {
-    () => { $crate::middleware::NoMiddlewares };
-    (...$tail:expr) => { $tail };
-    ($h:expr) => { $crate::middlewares![$h,] };
-    ($h:expr, $($tok:tt)*) => {
-        (
-            $h,
-            $crate::middlewares![$($tok)*],
-        )
+            fn each<F>(&self, func: F) where F: Fn(&dyn Middleware<AppContext>)
+            {
+                $( func(&self.$member); )*
+            }
+        }
     };
 }
