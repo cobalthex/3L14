@@ -6,7 +6,7 @@ use wgpu::Surface;
 struct TestMiddleware;
 impl TestMiddleware
 {
-    const fn new() -> Self { Self }
+    fn new() -> Self { Self }
 }
 impl Middleware for TestMiddleware
 {

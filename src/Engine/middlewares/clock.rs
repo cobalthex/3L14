@@ -16,7 +16,7 @@ pub struct Clock(RwLock<Option<ClockInternal>>);
 
 impl Clock
 {
-    const fn new() -> Self
+    fn new() -> Self
     {
         Self(RwLock::new(None))
     }

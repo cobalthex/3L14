@@ -7,6 +7,8 @@ pub fn log_time<'a>() -> DelayedFormat<StrftimeItems<'a>> { Local::now().format(
 // Singletons should implement interior mutability
 pub trait GlobalSingleton
 {
+    fn global_init();
+    // fn global_uninit();
     fn get<'s>() -> &'s Self;
 }
 
@@ -44,6 +46,7 @@ macro_rules! generate_middlewares
         {
             fn new() -> Self
             {
+                $( <$middleware>::global_init(); )*
                 Self
             }
         }

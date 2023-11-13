@@ -18,10 +18,14 @@ pub fn global_singleton_derive_impl(input: proc_macro::TokenStream) -> proc_macr
     quote!
     {
         #[warn(non_upper_case_globals)]
-        static #global: #for_ty = #for_ty::new();
+        static #global: once_cell::sync::OnceCell<#for_ty> = once_cell::sync::OnceCell::new();
         impl GlobalSingleton for #for_ty
         {
-            fn get<'s>() -> &'s Self { &#global }
+            fn global_init()
+            {
+                #global.set(#for_ty::new()).expect("GlobalSingleton already set!"); // todo: use name
+            }
+            fn get<'s>() -> &'s Self { #global.get().expect("GlobalSingleton not initialized!") }
         }
     }.into()
 }
