@@ -1,0 +1,9 @@
+indent_style = "Block"
+reorder_imports = true
+binop_separator = "Front"
+brace_style = "AlwaysNextLine"
+control_brace_style = "AlwaysNextLine"
+empty_item_single_line = true
+fn_single_line = true
+color = "Always"
+wrap_comments = false

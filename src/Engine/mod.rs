@@ -1,4 +1,5 @@
 pub mod core_types;
+#[macro_use]
 pub mod middleware;
 pub mod app;
 

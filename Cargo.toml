@@ -1,11 +1,20 @@
 [package]
-name = "Game-3L14"
+name = "game_3l14"
 version = "0.1.0"
 edition = "2021"
+autobins = false
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "3L14"
+path = "src/game/main.rs"
+
+[[bench]]
+name = "hlists"
+harness = false
 
 [dependencies]
+proc_macros_3l14 = { path = "macros" }
+
 chashmap = "2.2.2"
 chrono = "0.4.26"
 flagset = "0.4.3"
@@ -15,4 +24,8 @@ nameof = "1.2.2"
 parking_lot = "0.12.1"
 raw-window-handle = "0.6.0"
 sdl2 = "0.35.2"
-wgpu = "0.17.1"
+wgpu = "0.18.0"
+nanorand = "0.7.0"
+
+[dev-dependencies]
+criterion = { version = "0.5.1" }

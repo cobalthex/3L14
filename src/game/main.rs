@@ -1,37 +1,38 @@
-// use engine::{*, middlewares::window::{WindowMiddleware, CreateWindow}};
-use engine::{middlewares::*, middlewares::{window::*, clock::*}, app::*, core_types::*};
+use game_3l14::{engine::{*, middlewares::clock::Clock}, generate_middlewares};
+use proc_macros_3l14::GlobalSingleton;
 use wgpu::Surface;
-mod engine;
 
-generate_middlewares!
+#[derive(GlobalSingleton, Debug)]
+struct TestMiddleware;
+impl TestMiddleware
 {
-    // clock: Clock,
-    windows: WindowMiddleware,
+    const fn new() -> Self { Self }
+}
+impl Middleware for TestMiddleware
+{
+    fn startup(&self) -> CompletionState { CompletionState::Completed }
+
+    fn shutdown(&self) -> CompletionState { CompletionState::Completed }
+
+    fn run(&self) -> CompletionState
+    {
+        let now = Clock::get().now();
+        println!("The current time is {:?}", now);
+
+        CompletionState::InProgress
+    }
+}
+
+generate_middlewares![Clock, TestMiddleware];
+    // windows: WindowMiddleware,
     // renderer: Renderer,
-}
 
-#[derive(Debug, Default)]
-pub struct AppContext
-{
-    state: AppRunState, // todo: not pub
-    tick_count: TickCount, // todo: not pub
-
-    // shared, global data
-}
-#[allow(dead_code)] // todo: remove
-impl AppContext
-{
-    pub fn new() -> Self { Default::default() }
-
-    pub fn state(&self) -> AppRunState { self.state }
-    pub fn tick_count(&self) -> TickCount { self.tick_count }
-}
 
 fn main()
 {
-    let mut app = App::new(MiddlewaresImpl::new(), AppContext::new());
+    let mut app = App::new(MiddlewaresImpl::new());
 
-    // let wnd = app.middlewares.windows.create_window(CreateWindow { width: 1920, height: 1080, title: "3L14" }).unwrap();
+    // // let wnd = app.middlewares.windows.create_window(CreateWindow { width: 1920, height: 1080, title: "3L14" }).unwrap();
     app.run();
 }
 

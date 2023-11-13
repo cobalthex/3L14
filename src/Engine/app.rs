@@ -1,4 +1,3 @@
-use chrono::{format::{DelayedFormat, StrftimeItems}, Local};
 use super::*;
 
 #[derive(Copy, Clone, PartialEq, Debug, Default)]
@@ -15,6 +14,7 @@ pub enum AppRunState
 pub struct App<TMiddlewares>
 {
     state: AppRunState,
+    tick_count: TickCount,
     pub middlewares: TMiddlewares,
 }
 
@@ -24,24 +24,26 @@ where
 {
     pub fn new(middlewares: TMiddlewares) -> Self { Self
     {
+        state: AppRunState::NotRunning,
+        tick_count: TickCount(0),
         middlewares: middlewares,
     }}
 
     pub fn run_once(&mut self)
     {
-        self.context.tick_count.0 += 1;
+        self.tick_count.0 += 1;
 
-        match self.context.state
+        match self.state
         {
             AppRunState::NotRunning => return,
             AppRunState::StartingUp =>
             {
                 // todo: measure startup/shutdown time, abort if too slow?
-                match self.middlewares.startup(&mut self.middlewares)
+                match self.middlewares.startup()
                 {
                     CompletionState::Completed =>
                     {
-                        self.context.state = AppRunState::Running;
+                        self.state = AppRunState::Running;
                         eprintln!("{} App looping", log_time());
                     },
                     CompletionState::InProgress => (),
@@ -49,11 +51,11 @@ where
             }
             AppRunState::ShuttingDown =>
             {
-                match self.middlewares.shutdown(&mut self.middlewares)
+                match self.middlewares.shutdown()
                 {
                     CompletionState::Completed =>
                     {
-                        self.context.state = AppRunState::NotRunning;
+                        self.state = AppRunState::NotRunning;
                         eprintln!("{} App shut down", log_time());
                     },
                     CompletionState::InProgress => (),
@@ -61,11 +63,11 @@ where
             }
             AppRunState::Running =>
             {
-                match self.middlewares.run(&mut self.middlewares)
+                match self.middlewares.run()
                 {
                     CompletionState::Completed =>
                     {
-                        self.context.state = AppRunState::ShuttingDown;
+                        self.state = AppRunState::ShuttingDown;
                         eprintln!("{} App shutting down", log_time());
                     },
                     CompletionState::InProgress => (),
@@ -76,8 +78,8 @@ where
 
     pub fn run(&mut self)
     {
-        assert_eq!(AppRunState::NotRunning, self.context.state);
-        self.context.state = AppRunState::StartingUp;
+        assert_eq!(AppRunState::NotRunning, self.state);
+        self.state = AppRunState::StartingUp;
 
         eprint!("{} App starting up with args", log_time());
         for arg in std::env::args()
@@ -86,7 +88,7 @@ where
         }
         eprintln!();
 
-        while self.context.state != AppRunState::NotRunning
+        while self.state != AppRunState::NotRunning
         {
             self.run_once();
         }

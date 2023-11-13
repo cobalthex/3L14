@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'Game-3L14'",
+            "name": "Debug executable '3L14'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=Game-3L14",
-                    "--package=Game-3L14"
+                    "--bin=3L14",
+                    "--package=game_3l14"
                 ],
                 "filter": {
-                    "name": "Game-3L14",
+                    "name": "3L14",
                     "kind": "bin"
                 }
             },
@@ -25,16 +25,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'Game-3L14'",
+            "name": "Debug unit tests in executable '3L14'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=Game-3L14",
-                    "--package=Game-3L14"
+                    "--bin=3L14",
+                    "--package=game_3l14"
                 ],
                 "filter": {
-                    "name": "Game-3L14",
+                    "name": "3L14",
                     "kind": "bin"
                 }
             },

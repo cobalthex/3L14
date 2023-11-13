@@ -1,54 +1,63 @@
 use std::time::{Instant, Duration};
-use crate::engine::{Middleware, core_types::CompletionState};
-use crate::AppContext;
+use crate::engine::{middleware::*, core_types::CompletionState};
+use proc_macros_3l14::GlobalSingleton;
+use parking_lot::RwLock;
 
 #[derive(Debug)]
-pub struct Time
+struct ClockInternal
 {
     current_time: Instant,
     last_time: Instant,
     delta_time: Duration,
-
-    // real world time?
 }
 
-impl Time
+#[derive(GlobalSingleton, Debug)]
+pub struct Clock(RwLock<Option<ClockInternal>>);
+
+impl Clock
 {
-    pub fn new() -> Self
+    const fn new() -> Self
+    {
+        Self(RwLock::new(None))
+    }
+
+    fn tick(&self)
+    {
+        let mut lock = self.0.write();
+        let internal = lock.as_mut().unwrap();
+        internal.last_time = internal.current_time;
+        internal.current_time = Instant::now();
+        internal.delta_time = internal.current_time - internal.last_time;
+    }
+
+    pub fn now(&self) -> Instant { self.0.read().as_ref().unwrap().current_time }
+    pub fn delta(&self) -> Duration { self.0.read().as_ref().unwrap().delta_time }
+}
+
+impl Middleware for Clock
+{
+    fn startup(&self) -> CompletionState
     {
         let now = Instant::now();
         let delta = Duration::new(0, 1); // smallest time unit so that it's non-zero
-        Self {
+        let internal = ClockInternal
+        {
             current_time: now,
             last_time: now - delta,
             delta_time: delta,
-        }
-    }
+        };
+        *self.0.write() = Some(internal);
 
-    fn tick(&mut self)
-    {
-        self.last_time = self.current_time;
-        self.current_time = Instant::now();
-        self.delta_time = self.current_time - self.last_time;
-    }
-}
 
-pub struct Clock;
-impl Middleware<AppContext> for Clock
-{
-    fn startup(&mut self) -> CompletionState
-    {
-        // app.globals.try_add(Time::new()).expect("Time is managed by the Clock middleware");
         CompletionState::Completed
     }
-    fn shutdown(&mut self) -> CompletionState
+    fn shutdown(&self) -> CompletionState
     {
-        // app.globals.remove::<Time>();
         CompletionState::Completed
     }
-    fn run(&mut self) -> CompletionState
+    fn run(&self) -> CompletionState
     {
-        // app.globals.get_mut::<Time>().unwrap().tick();
+        self.tick();
         CompletionState::InProgress
     }
 }
