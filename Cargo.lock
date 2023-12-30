@@ -516,6 +516,7 @@ dependencies = [
  "nanorand",
  "once_cell",
  "parking_lot 0.12.1",
+ "paste",
  "proc_macros_3l14",
  "raw-window-handle 0.6.0",
  "sdl2",

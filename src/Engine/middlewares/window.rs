@@ -1,78 +1,57 @@
-// use std::{thread::{self, JoinHandle}, sync::Arc};
-// use crate::engine::{middleware::*, core_types::CompletionState};
-// use sdl2::{*, video::*, event::Event, keyboard::Keycode};
+use crate::engine::{middleware::*, core_types::CompletionState};
+use sdl2::{*, video::*, event::Event, keyboard::Keycode};
+use proc_macros_3l14::GlobalSingleton;
 
-// use glam::Vec2;
+use glam::Vec2;
 
-// const MAX_KEYCODE_ENTRIES: usize = 256;
-// const MAX_MOUSE_BUTTON_ENTRIES: usize = 5; /* TODO: don't hardcode */
+const MAX_KEYCODE_ENTRIES: usize = 256;
+const MAX_MOUSE_BUTTON_ENTRIES: usize = 5; /* TODO: don't hardcode */
 
-// struct WindowMiddlewareInternal
-// {
-//     is_exiting: bool,
-// }
-// impl Default for WindowMiddlewareInternal
-// {
-//     fn default() -> Self { Self
-//     {
-//         is_exiting: false,
-//     }}
-// }
+struct WindowMiddlewareInternal
+{
+    sdl_context: Sdl,
+    sdl_video: VideoSubsystem,
+    sdl_timer: TimerSubsystem,
+    sdl_events: EventPump,
+}
+impl WindowMiddlewareInternal
+{
+    fn new() -> Self
+    {
+        let sdl = sdl2::init().unwrap();
+        let video = sdl.video().unwrap();
+        let timer = sdl.timer().unwrap();
+        let events = sdl.event_pump().unwrap();
+        Self
+        {
+            sdl_context: sdl,
+            sdl_video: video,
+            sdl_timer: timer,
+            sdl_events: events,
+        }
+    }
+}
 
-// pub struct CreateWindow<'a>
-// {
-//     pub width: u32,
-//     pub height: u32,
-//     pub title: &'a str,
-// }
+pub struct CreateWindow<'a>
+{
+    pub width: u32,
+    pub height: u32,
+    pub title: &'a str,
+}
 
+// TODO: perhaps no members of struct and all static data?
+
+// #[derive(GlobalSingleton, Debug)]
 // pub struct WindowMiddleware
 // {
-//     sdl_context: Sdl,
-//     sdl_video: VideoSubsystem,
-//     sdl_timer: TimerSubsystem,
+//     //internal: std::cell::RefCell<Option<WindowMiddlewareInternal>>,
 // }
 
-// pub struct WindowMiddlewareGlobals
-// {
-//     sdl_events: EventPump,
-// }
-
-// static wm_globals: Option<WindowMiddlewareGlobals> = None;
-// impl Globals<WindowMiddlewareGlobals> for WindowMiddleware
-// {
-//     fn init<'a>() -> &'a mut Self
-//     {
-//         if wm_globals.is_some()
-//         {
-//             panic!("Cannot initialize twice");
-//         }
-//         wm_globals = Some(Self::new());
-//         wm_globals
-//     }
-//     fn uninit()
-//     {
-//         wm_globals = None;
-//     }
-//     fn get<'a>() -> Option<&'a mut Self> { wm_globals }
-// }
+// todo: thread local storage for SDL stuff?
 
 // impl WindowMiddleware
 // {
-//     fn new() -> Self
-//     {
-//         let sdl = sdl2::init().unwrap();
-//         let video = sdl.video().unwrap();
-//         let timer = sdl.timer().unwrap();
-//         let events = sdl.event_pump().unwrap();
-//         Self
-//         {
-//             sdl_context: sdl,
-//             sdl_video: video,
-//             sdl_timer: timer,
-//             sdl_events: events,
-//         }
-//     }
+//     fn new() -> Self { Self{  } }
 
 //     pub fn create_window(&self, create_window: CreateWindow) -> Result<Window, ()> // TODO: error type
 //     {
@@ -84,17 +63,17 @@
 // }
 // impl Middleware for WindowMiddleware
 // {
-//     fn startup(&mut self) -> CompletionState
+//     fn startup(&self) -> CompletionState
 //     {
 //         CompletionState::Completed
 //     }
 
-//     fn shutdown(&mut self) -> CompletionState
+//     fn shutdown(&self) -> CompletionState
 //     {
 //         CompletionState::Completed
 //     }
 
-//     fn run(&mut self) -> CompletionState
+//     fn run(&self) -> CompletionState
 //     {
 //         for event in self.sdl_events.poll_iter()
 //         {

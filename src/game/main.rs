@@ -2,38 +2,43 @@ use game_3l14::{engine::{*, middlewares::clock::Clock}, generate_middlewares};
 use proc_macros_3l14::GlobalSingleton;
 use wgpu::Surface;
 
-#[derive(GlobalSingleton, Debug)]
-struct TestMiddleware;
-impl TestMiddleware
-{
-    fn new() -> Self { Self }
-}
-impl Middleware for TestMiddleware
-{
-    fn startup(&self) -> CompletionState { CompletionState::Completed }
+use game_3l14::engine::state_logic;
 
-    fn shutdown(&self) -> CompletionState { CompletionState::Completed }
-
-    fn run(&self) -> CompletionState
-    {
-        let now = Clock::get().now();
-        println!("The current time is {:?}", now);
-
-        CompletionState::InProgress
-    }
-}
-
-generate_middlewares![Clock, TestMiddleware];
+generate_middlewares![Clock];
     // windows: WindowMiddleware,
     // renderer: Renderer,
 
+trait Job
+{
+    fn execute();
+}
+
+struct Scheduler
+{
+
+}
+
+impl Scheduler
+{
+    fn new() -> Self { Self
+    {
+
+    }}
+
+    fn run()
+    {
+
+    }
+}
 
 fn main()
 {
-    let mut app = App::new(MiddlewaresImpl::new());
 
-    // // let wnd = app.middlewares.windows.create_window(CreateWindow { width: 1920, height: 1080, title: "3L14" }).unwrap();
-    app.run();
+
+    // let mut app = App::new(MiddlewaresImpl::new());
+
+    // // // let wnd = app.middlewares.windows.create_window(CreateWindow { width: 1920, height: 1080, title: "3L14" }).unwrap();
+    // app.run();
 }
 
 struct RendererInternal

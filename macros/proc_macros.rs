@@ -17,7 +17,7 @@ pub fn global_singleton_derive_impl(input: proc_macro::TokenStream) -> proc_macr
 
     quote!
     {
-        #[warn(non_upper_case_globals)]
+        // #[warn(non_upper_case_globals)]
         static #global: once_cell::sync::OnceCell<#for_ty> = once_cell::sync::OnceCell::new();
         impl GlobalSingleton for #for_ty
         {

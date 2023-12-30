@@ -27,6 +27,7 @@ sdl2 = "0.35.2"
 wgpu = "0.18.0"
 nanorand = "0.7.0"
 once_cell = { version = "1.18.0", features = ["parking_lot"] }
+paste = "1.0.14"
 
 [dev-dependencies]
 criterion = { version = "0.5.1" }

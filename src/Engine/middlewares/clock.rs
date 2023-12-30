@@ -1,10 +1,11 @@
 use std::time::{Instant, Duration};
+use std::mem::MaybeUninit;
 use crate::engine::{middleware::*, core_types::CompletionState};
 use proc_macros_3l14::GlobalSingleton;
 use parking_lot::RwLock;
 
-#[derive(Debug)]
-struct ClockInternal
+#[derive(Debug, Clone, Copy)]
+pub struct Time
 {
     current_time: Instant,
     last_time: Instant,
@@ -12,26 +13,26 @@ struct ClockInternal
 }
 
 #[derive(GlobalSingleton, Debug)]
-pub struct Clock(RwLock<Option<ClockInternal>>);
+pub struct Clock(RwLock<MaybeUninit<Time>>);
 
 impl Clock
 {
     fn new() -> Self
     {
-        Self(RwLock::new(None))
+        Self(RwLock::new(MaybeUninit::zeroed()))
     }
 
     fn tick(&self)
     {
-        let mut lock = self.0.write();
-        let internal = lock.as_mut().unwrap();
+        let mut locked = self.0.write();
+        let mut internal = unsafe { locked.assume_init() };
         internal.last_time = internal.current_time;
         internal.current_time = Instant::now();
         internal.delta_time = internal.current_time - internal.last_time;
+        locked.write(internal);
     }
 
-    pub fn now(&self) -> Instant { self.0.read().as_ref().unwrap().current_time }
-    pub fn delta(&self) -> Duration { self.0.read().as_ref().unwrap().delta_time }
+    pub fn time(&self) -> Time { unsafe { self.0.read().assume_init() } }
 }
 
 impl Middleware for Clock
@@ -40,19 +41,19 @@ impl Middleware for Clock
     {
         let now = Instant::now();
         let delta = Duration::new(0, 1); // smallest time unit so that it's non-zero
-        let internal = ClockInternal
+        let internal = Time
         {
             current_time: now,
             last_time: now - delta,
             delta_time: delta,
         };
-        *self.0.write() = Some(internal);
-
+        self.0.write().write(internal);
 
         CompletionState::Completed
     }
     fn shutdown(&self) -> CompletionState
     {
+        unsafe { self.0.write().assume_init_drop(); }
         CompletionState::Completed
     }
     fn run(&self) -> CompletionState
