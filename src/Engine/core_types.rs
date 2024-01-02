@@ -68,7 +68,7 @@ impl TimeLimit
 }
 
 #[macro_export]
-macro_rules! runtime_id_u32
+macro_rules! define_runtime_id_u32
 {
     ($type_name:ident) =>
     {
@@ -80,7 +80,7 @@ macro_rules! runtime_id_u32
         }
         paste::paste!
         {
-            static [<PRIVATE_ $type_name:snake:upper _COUNTER>]:
+            static [<AUTOGEN_PRIV__ $type_name:snake:upper _COUNTER>]:
                 std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
         }
         impl $type_name
@@ -93,7 +93,7 @@ macro_rules! runtime_id_u32
                 #[doc="Generate a new unique ID. Note: there are no ordering guarantees around ID generation"]
                 pub fn new() -> Self { Self
                 {
-                    id: [<PRIVATE_ $type_name:snake:upper _COUNTER>]
+                    id: [<AUTOGEN_PRIV__ $type_name:snake:upper _COUNTER>]
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                 }}
             }

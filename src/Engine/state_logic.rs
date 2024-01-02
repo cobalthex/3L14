@@ -1,6 +1,6 @@
-use crate::runtime_id_u32;
+use crate::define_runtime_id_u32;
 
-runtime_id_u32!(NodeId);
+define_runtime_id_u32!(NodeId);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlugId(&'static str); // todo: not a string
