@@ -105,12 +105,15 @@ impl Input
             }
             Event::MouseButtonDown { mouse_btn, .. } => // double click?
             {
-                self.mouse.curr_buttons.0 |= MouseButtons::from(mouse_btn).0;
-                self.mouse.button_set_times[mouse_btn as usize - 1] = MaybeUninit::new(time);
+                let button = &mut self.mouse.buttons[(mouse_btn as usize) - 1];
+                button.state = ButtonState::JustOn;
+                button.set_time = Some(time);
             }
             Event::MouseButtonUp { mouse_btn, .. } =>
             {
-                self.mouse.curr_buttons.0 &= !MouseButtons::from(mouse_btn).0;
+                let button = &mut self.mouse.buttons[(mouse_btn as usize) - 1];
+                button.state = ButtonState::JustOff;
+                button.set_time = None;
             }
             Event::MouseWheel { x, y, .. } =>
             {
@@ -317,146 +320,49 @@ impl Default for KeyboardState
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct MouseButtonState
 {
     pub state: ButtonState,
-    pub set_time: Instant,
+    pub set_time: Option<Instant>,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-struct MouseButtons(u8);
-impl MouseButtons
-{
-    pub const NONE:   MouseButtons = MouseButtons(0b00000);
-    pub const LEFT:   MouseButtons = MouseButtons(0b00001);
-    pub const MIDDLE: MouseButtons = MouseButtons(0b00010);
-    pub const RIGHT:  MouseButtons = MouseButtons(0b00100);
-    pub const X1:     MouseButtons = MouseButtons(0b01000);
-    pub const X2:     MouseButtons = MouseButtons(0b10000);
-
-    // todo: make/use a proper flags macro?
-
-    // todo: custom debug
-}
-impl Default for MouseButtons
-{
-    fn default() -> Self { Self::NONE }
-}
-impl From<MouseButton> for MouseButtons
-{
-    fn from(button: MouseButton) -> Self
-    {
-        match button
-        {
-            MouseButton::Left => Self::LEFT,
-            MouseButton::Middle => Self::MIDDLE,
-            MouseButton::Right => Self::RIGHT,
-            MouseButton::X1 => Self::X1,
-            MouseButton::X2 => Self::X2,
-
-            _ => Self::NONE,
-        }
-    }
-}
-impl Debug for MouseButtons
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
-    {
-        let mut any = false;
-        if (self.0 & Self::LEFT.0) != 0
-        {
-            let _ = f.write_str("LEFT");
-            any = true;
-        }
-        if (self.0 & Self::MIDDLE.0) != 0
-        {
-            if any { f.write_char('|'); }
-            let _ = f.write_str("MIDDLE");
-            any = true;
-        }
-        if (self.0 & Self::RIGHT.0) != 0
-        {
-            if any { f.write_char('|'); }
-            let _ = f.write_str("RIGHT");
-            any = true;
-        }
-        if (self.0 & Self::X1.0) != 0
-        {
-            if any { f.write_char('|'); }
-            let _ = f.write_str("X1");
-            any = true;
-        }
-        if (self.0 & Self::X2.0) != 0
-        {
-            if any { f.write_char('|'); }
-            let _ = f.write_str("X2");
-            any = true;
-        }
-        if !any
-        {
-            f.write_str("NONE");
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct MouseState
 {
     pub position: IVec2,
     pub delta: IVec2,
     pub wheel: IVec2,
 
-    prev_buttons: MouseButtons,
-    curr_buttons: MouseButtons,
-    button_set_times: [MaybeUninit<Instant>; 5], // can probably use maybe unused
+    buttons: [MouseButtonState; 5], // L, M, R, X1, X2
 }
 impl MouseState
 {
     fn pre_update(&mut self)
     {
         self.delta = IVec2::ZERO;
-        self.prev_buttons = self.curr_buttons;
+
+        for button in self.buttons.iter_mut()
+        {
+            match button.state
+            {
+                ButtonState::JustOn =>
+                {
+                    button.state = ButtonState::On;
+                }
+                ButtonState::JustOff =>
+                {
+                    button.state = ButtonState::Off;
+                }
+
+                _ => {}
+            }
+        }
     }
 
     // is this faster than updating this in pre-update?
     pub fn get_button_down(&self, button: MouseButton) -> Option<MouseButtonState>
     {
-        let mapped: MouseButtons = button.into();
-        let was_pressed = (self.prev_buttons.0 & mapped.0) != 0;
-        let is_pressed = (self.curr_buttons.0 & mapped.0) != 0;
-
-        if !was_pressed && !is_pressed
-        {
-            return None;
-        }
-
-        let state: ButtonState;
-        if was_pressed && is_pressed { state = ButtonState::On }
-        else if !was_pressed { state = ButtonState::JustOn }
-        else if !is_pressed { state = ButtonState::JustOff }
-        else { todo!() }
-
-        Some(MouseButtonState
-        {
-            state,
-            set_time: unsafe { self.button_set_times[(button as usize) - 1].assume_init() },
-        })
-    }
-}
-impl Default for MouseState
-{
-    fn default() -> Self
-    {
-        Self
-        {
-            position: Default::default(),
-            delta: Default::default(),
-            wheel: Default::default(),
-            prev_buttons: Default::default(),
-            curr_buttons: Default::default(),
-            button_set_times: [MaybeUninit::zeroed(); 5],
-        }
+        todo!()
     }
 }
