@@ -23,13 +23,14 @@ glam = "0.24.2"
 nameof = "1.2.2"
 parking_lot = "0.12.1"
 raw-window-handle = "0.6.0"
-sdl2 = "0.35.2"
+sdl2 = { version = "0.35.2", features = ["ttf"] }
 wgpu = "0.18.0"
 nanorand = "0.7.0"
 once_cell = { version = "1.18.0", features = ["parking_lot"] }
 paste = "1.0.14"
 serde = { version = "1.0.193", features = ["derive"] }
 jobsys = "0.2.0"
+typed-arena = "2.0.2"
 
 [dev-dependencies]
 criterion = { version = "0.5.1" }

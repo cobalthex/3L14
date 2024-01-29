@@ -1,2 +1,6 @@
+.idea/
+
 /target
+
 SDL2.dll
+SDL2_ttf.dll

@@ -19,7 +19,28 @@ impl std::ops::Sub for TickCount
     fn sub(self, other: Self) -> Self { Self(self.0 - other.0) }
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FrameNumber(pub u64);
+impl FrameNumber
+{
+    pub fn increment(&mut self) -> Self { self.0 += 1; *self }
+}
+impl Default for FrameNumber
+{
+    fn default() -> Self { Self(0) }
+}
+impl std::ops::Add for FrameNumber
+{
+    type Output = Self;
+    fn add(self, other: Self) -> Self { Self(self.0 + other.0) }
+}
+impl std::ops::Sub for FrameNumber
+{
+    type Output = Self;
+    fn sub(self, other: Self) -> Self { Self(self.0 - other.0) }
+}
+
+#[derive(PartialEq, Clone, Copy)]
 pub enum CompletionState
 {
     InProgress,
@@ -34,8 +55,15 @@ impl std::ops::BitAnd for CompletionState
         match self
         {
             Self::Completed => rhs,
-            Self::InProgress => self,
+            Self::InProgress => Self::InProgress,
         }
+    }
+}
+impl std::ops::BitAndAssign for CompletionState
+{
+    fn bitand_assign(&mut self, rhs: Self)
+    {
+        *self = *self & rhs;
     }
 }
 impl std::ops::BitOr for CompletionState
@@ -46,25 +74,17 @@ impl std::ops::BitOr for CompletionState
     {
         match self
         {
-            Self::Completed => self,
+            Self::Completed => Self::Completed,
             Self::InProgress => rhs,
         }
     }
 }
-
-struct TimeLimit
+impl std::ops::BitOrAssign for CompletionState
 {
-    limit: TickCount,
-    deadline: TickCount,
-}
-impl TimeLimit
-{
-    pub fn new(limit: TickCount) -> Self { Self{ limit: limit, deadline: TickCount(0) }}
-    pub fn get_limit(&self) -> TickCount { self.limit }
-    pub fn is_expired(&self) -> bool { Self::now() < self.deadline }
-    pub fn start(&mut self) { self.deadline = Self::now() + self.limit }
-
-    fn now() -> TickCount { TickCount(0) } /* TODO */
+    fn bitor_assign(&mut self, rhs: Self)
+    {
+        *self = *self | rhs;
+    }
 }
 
 #[macro_export]
