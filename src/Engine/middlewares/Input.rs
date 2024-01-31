@@ -113,7 +113,6 @@ impl Input
             {
                 let button = &mut self.mouse.buttons[(mouse_btn as usize) - 1];
                 button.state = ButtonState::JustOff;
-                button.set_time = None;
             }
             Event::MouseWheel { x, y, .. } =>
             {
@@ -353,6 +352,7 @@ impl MouseState
                 ButtonState::JustOff =>
                 {
                     button.state = ButtonState::Off;
+                    button.set_time = None;
                 }
 
                 _ => {}
@@ -361,8 +361,8 @@ impl MouseState
     }
 
     // is this faster than updating this in pre-update?
-    pub fn get_button_down(&self, button: MouseButton) -> Option<MouseButtonState>
+    pub fn get_button(&self, button: MouseButton) -> MouseButtonState
     {
-        todo!()
+        self.buttons[(button as usize) - 1]
     }
 }

@@ -25,7 +25,7 @@ fn main()
 
     let debug_render_config = DebugRenderConfig
     {
-        font: ttf_context.load_font(r#"C:\Windows\Fonts\Consola.ttf"#, 14).unwrap(),
+        font: ttf_context.load_font(r"C:\Windows\Fonts\Consola.ttf", 14).unwrap(),
     };
 
     let min_frame_time = std::time::Duration::from_secs_f32(1.0 / 150.0);
