@@ -1,14 +1,12 @@
 use std::fmt::{Debug, Formatter, Write};
 use std::intrinsics::transmute;
-use std::mem::MaybeUninit;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Sub, SubAssign};
 use std::slice::Iter;
 use std::time::Instant;
-use chrono::format::Colons::Maybe;
-use glam::{BVec2, IVec2, Vec2};
-use sdl2::{Sdl, event::Event};
+use egui::{Pos2, RawInput};
+use glam::IVec2;
+use sdl2::event::Event;
 use sdl2::keyboard::Mod;
-use sdl2::mouse::MouseUtil;
 
 pub type KeyCode = sdl2::keyboard::Keycode;
 pub type ScanCode = sdl2::keyboard::Scancode;
@@ -147,31 +145,60 @@ impl Input
         }
     }
 }
-
-#[derive(Debug, Default, Copy, Clone, PartialEq)]
-pub enum ButtonState
+impl From<&Input> for RawInput
 {
-    #[default]
-    Off,
-    JustOn, // off->on this frame
-    JustOff, // on->off this frame
-    On,
-    // repeat?
-}
-impl ButtonState
-{
-    pub fn set(&mut self, is_on: bool)
+    fn from(input: &Input) -> Self
     {
-        *self = match *self
+        let mut ri = Self::default();
+        ri.modifiers.ctrl = input.keyboard.has_keymod(KeyMods::CTRL);
+        ri.modifiers.shift = input.keyboard.has_keymod(KeyMods::SHIFT);
+        ri.modifiers.alt = input.keyboard.has_keymod(KeyMods::ALT);
+        // todo: iterate keys
+
+        let mouse_pos = Pos2
         {
-            ButtonState::Off if is_on => ButtonState::JustOn,
-            ButtonState::JustOn if is_on => ButtonState::On,
-            ButtonState::JustOn if !is_on => ButtonState::JustOff,
-            ButtonState::JustOff if !is_on => ButtonState::Off,
-            ButtonState::JustOff if is_on => ButtonState::JustOn,
-            ButtonState::On if !is_on => ButtonState::JustOff,
-            _ => panic!("Unsupported state transition from {:?} towards {:?}", *self, if is_on { ButtonState::On } else { ButtonState::Off }),
+            x: input.mouse.position.x as f32,
+            y: input.mouse.position.y as f32,
+        };
+
+        ri.events.push(egui::Event::PointerMoved(mouse_pos));
+
+        ri.events.push(egui::Event::Scroll(egui::Vec2
+        {
+            x: input.mouse.wheel.x as f32,
+            y: input.mouse.wheel.y as f32
+        }));
+
+        for i in 0..input.mouse.buttons.len()
+        {
+            let pressed = match input.mouse.buttons[i].state
+            {
+                ButtonState::JustOn|ButtonState::On => true,
+                ButtonState::JustOff => false,
+                ButtonState::Off => continue,
+            };
+
+            ri.events.push(egui::Event::PointerButton
+            {
+                pos: mouse_pos,
+                button: match i
+                {
+                    0 => egui::PointerButton::Primary,
+                    1 => egui::PointerButton::Middle,
+                    2 => egui::PointerButton::Secondary,
+                    3 => egui::PointerButton::Extra1,
+                    4 => egui::PointerButton::Extra2,
+                    _ => panic!("Unknown pointer button")
+                },
+                pressed,
+                modifiers: ri.modifiers,
+            })
         }
+
+        // todo: keyboard events
+        // todo: other events
+
+        ri
     }
 }
 
@@ -229,9 +256,9 @@ impl SubAssign for KeyMods
 {
     fn sub_assign(&mut self, rhs: Self) { *self = *self - rhs; }
 }
-impl Into<bool> for KeyMods
+impl From<KeyMods> for bool
 {
-    fn into(self) -> bool { self.0 != 0 }
+    fn from(km: KeyMods) -> Self { km.0 != 0 }
 }
 impl Debug for KeyMods
 {
@@ -240,24 +267,24 @@ impl Debug for KeyMods
         let mut any = false;
         if (*self & Self::CTRL).into()
         {
-            let _ = f.write_str("CTRL");
+            f.write_str("CTRL")?;
             any = true;
         }
         if (*self & Self::SHIFT).into()
         {
-            if any { f.write_char('|'); }
-            let _ = f.write_str("SHIFT");
+            if any { f.write_char('|')?; }
+            f.write_str("SHIFT")?;
             any = true;
         }
         if (*self & Self::ALT).into()
         {
-            if any { f.write_char('|'); }
-            let _ = f.write_str("ALT");
+            if any { f.write_char('|')?; }
+            f.write_str("ALT")?;
             any = true;
         }
         if !any
         {
-            f.write_str("NONE");
+            f.write_str("NONE")?;
         }
         Ok(())
     }
@@ -319,12 +346,41 @@ impl Default for KeyboardState
     }
 }
 
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub enum ButtonState
+{
+    #[default]
+    Off,
+    JustOn, // off->on this frame
+    JustOff, // on->off this frame
+    On,
+    // repeat?
+}
+impl ButtonState
+{
+    pub fn set(&mut self, is_on: bool)
+    {
+        *self = match *self
+        {
+            ButtonState::Off if is_on => ButtonState::JustOn,
+            ButtonState::JustOn if is_on => ButtonState::On,
+            ButtonState::JustOn if !is_on => ButtonState::JustOff,
+            ButtonState::JustOff if !is_on => ButtonState::Off,
+            ButtonState::JustOff if is_on => ButtonState::JustOn,
+            ButtonState::On if !is_on => ButtonState::JustOff,
+            _ => panic!("Unsupported state transition from {:?} towards {:?}", *self, if is_on { ButtonState::On } else { ButtonState::Off }),
+        }
+    }
+}
+
 #[derive(Debug, Default, Copy, Clone)]
 pub struct MouseButtonState
 {
     pub state: ButtonState,
     pub set_time: Option<Instant>,
 }
+
+const MAX_MOUSE_BUTTON_STATES: usize = 5;
 
 #[derive(Debug, Default)]
 pub struct MouseState
@@ -333,7 +389,7 @@ pub struct MouseState
     pub delta: IVec2,
     pub wheel: IVec2,
 
-    buttons: [MouseButtonState; 5], // L, M, R, X1, X2
+    buttons: [MouseButtonState; MAX_MOUSE_BUTTON_STATES], // L, M, R, X1, X2
 }
 impl MouseState
 {

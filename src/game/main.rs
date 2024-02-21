@@ -1,42 +1,130 @@
-use std::hash::Hash;
+use std::env;
+use std::io::Read;
 use std::thread::sleep;
-use glam::Vec2;
-use game_3l14::{engine::{*, middlewares::{clock::*, window::*, input::*}}};
-use sdl2::pixels::Color;
-use sdl2::rect::Rect;
-use sdl2::render::{Canvas, WindowCanvas};
-use sdl2::ttf::{Font, Sdl2TtfContext};
+use egui::pos2;
+use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
+use game_3l14::engine::{*, middlewares::{clock::*, input::*, windows::*}};
+use clap::Parser;
+use glam::{Mat4, Vec3};
+use wgpu::{BindGroupLayoutDescriptor, BufferUsages};
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use game_3l14::engine::middlewares::graphics::*;
 
-use game_3l14::engine::state_logic;
+#[derive(Debug, Parser)]
+struct CliArgs
+{
+    #[cfg(debug_assertions)]
+    #[arg(long, default_value_t = false)]
+    keep_alive_on_panic: bool,
+}
+
+fn shitty_join<I>(separator: &str, iter: I) -> String
+     where I: Iterator,
+           I::Item: std::fmt::Display
+{
+    let mut mutiter = iter;
+    let mut out = String::new();
+    let mut first = true;
+    while let Some(i) = mutiter.next()
+    {
+        match first
+        {
+            true => { first = false; }
+            false => { out.push_str(separator); }
+        };
+        out.push_str(i.to_string().as_str());
+    }
+    out
+}
 
 fn main()
 {
-    println!("Starting 3L14");
+    println!("Started 3L14 at {} with args {}", chrono::Local::now(), shitty_join(" ", env::args()));
+
+    let cli_args = CliArgs::parse();
+
+    #[cfg(debug_assertions)]
+    if cli_args.keep_alive_on_panic
+    {
+        use std::io::{stdin};
+        let default_panic_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |panic|
+        {
+            default_panic_hook(panic);
+            println!("!!! Press enter to exit !!!");
+            let _ = stdin().read(&mut [0u8]); // wait to exit
+        }));
+    }
 
     let mut clock = Clock::new();
     let sdl = sdl2::init().unwrap();
     let mut sdl_events = sdl.event_pump().unwrap();
-    let mut sdl_video = sdl.video().unwrap();
-    let ttf_context = sdl2::ttf::init().unwrap();
+    let sdl_video = sdl.video().unwrap();
 
     // middlewares
-    let mut windows = Windows::new(&sdl_video);
+    let windows = Windows::new(&sdl_video);
     let mut input = Input::default();
 
-    let debug_render_config = DebugRenderConfig
-    {
-        font: ttf_context.load_font(r"C:\Windows\Fonts\Consola.ttf", 14).unwrap(),
-    };
+    let mut display_app_stats = true;
+
+    // let mut tp_builder = futures::executor::ThreadPoolBuilder::new();
+    // let thread_pool = tp_builder.create().unwrap();
+
+    let mut renderer = futures::executor::block_on(Renderer::new(windows.main_window())); // don't block?
 
     let min_frame_time = std::time::Duration::from_secs_f32(1.0 / 150.0);
 
-    // const MAX_APP_THREADS: usize = 4;
-    // const MAX_APP_JOB_QUEUE_DEPTH: usize = 256; // must be power of 2
-    // let job_system = JobSystem::new(MAX_APP_THREADS, MAX_APP_JOB_QUEUE_DEPTH)
-    //     .expect("Failed to create app job system"); // todo: pass in config
+    let test_scene = Scene::try_from_file("assets/pawn.glb", renderer.device_mut()).expect("Couldn't import scene");
+
+    let view = Mat4::look_to_lh(Vec3::new(0.0, 2.0, -10.0), camera::WORLD_FORWARD, camera::WORLD_UP);
+    let proj = Mat4::perspective_lh(
+        std::f32::consts::FRAC_PI_4,
+        renderer.display_aspect_ratio(),
+        0.1,
+        1000.0);
+
+    let cam_uform = CameraUniform { proj_view: proj * view };
+    let cam_uform_buf = renderer.device_mut().create_buffer_init(&BufferInitDescriptor
+    {
+        label: Some("Camera uniform buffer"),
+        contents: unsafe { [cam_uform].as_u8_slice() },
+        usage: BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    });
+
+    let cam_bind_group_layout = renderer.device_mut().create_bind_group_layout(&BindGroupLayoutDescriptor
+    {
+        entries: &[
+            wgpu::BindGroupLayoutEntry
+            {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer
+                {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }
+        ],
+        label: Some("Camera bind group layout"),
+    });
+    let cam_bind_group = renderer.device_mut().create_bind_group(&wgpu::BindGroupDescriptor
+    {
+        layout: &cam_bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry
+            {
+                binding: 0,
+                resource: cam_uform_buf.as_entire_binding(),
+            }
+        ],
+        label: Some("Camera bind group"),
+    });
+
+    let test_pipeline = test_render_pipeline::new(renderer.device_mut(), &cam_bind_group_layout);
 
     let mut frame_number = FrameNumber(0);
-    let mut render_frame = RenderSdl2DFrame::new(frame_number, &debug_render_config);
     'main: loop
     {
         let mut completion = CompletionState::InProgress;
@@ -50,18 +138,30 @@ fn main()
         {
             match event
             {
-                sdl2::event::Event::Quit {..} =>
-                    {
-                        completion |= CompletionState::Completed;
-                    },
+                SdlEvent::Quit {..} =>
+                {
+                    completion |= CompletionState::Completed;
+                },
+                // SizeChanged?
+                SdlEvent::Window { win_event: SdlWindowEvent::Resized(w, h), .. } =>
+                {
+                    renderer.resize(w as u32, h as u32);
+                },
+
                 _ => input.handle_event(event, frame_start_time.current_time),
             }
         }
 
+        #[cfg(debug_assertions)]
         if input.keyboard().get_key_down(KeyCode::Q).is_some() &&
            input.keyboard().has_keymod(KeyMods::CTRL)
         {
             completion = CompletionState::Completed;
+        }
+
+        if let Some(KeyState { state: ButtonState::JustOn, .. }) = input.keyboard().get_key_down(KeyCode::F1)
+        {
+            display_app_stats = !display_app_stats
         }
 
         if let Some(delta) = min_frame_time.checked_sub(frame_start_time.delta_time)
@@ -69,20 +169,50 @@ fn main()
             sleep(delta)
         }
 
-        render_frame.reset(frame_number);
-        render_frame.debug_text(format!("{:3.1}", 1.0 / frame_start_time.delta_time.as_secs_f32()), Vec2::new(10.0, 10.0));
+        let mut render_frame = renderer.frame(frame_number, &input);
+        {
+            {
+                let mut test_pass = render_passes::test(&mut render_frame, Some(colors::CORNFLOWER_BLUE));
 
-        render_frame.debug_text(format!("{:#?}", input), Vec2::new(30.0 ,30.0));
+                test_pass.set_pipeline(&test_pipeline);
+                test_pass.set_bind_group(0, &cam_bind_group, &[]);
 
-        // for (i, key) in input.keyboard_state.pressed_keys.iter().enumerate()
-        // {
-        //     render_frame.debug_text(format!("{:?}", key), Vec2::new(20.0, 40.0 + (i as f32) * 16.0));
-        // }
+                let mesh = &test_scene.models[0].object.meshes()[0];
+                // let mesh = &test_mesh;
+                test_pass.set_vertex_buffer(0, mesh.vertices());
+                test_pass.set_index_buffer(mesh.indices(), mesh.index_format());
+                test_pass.draw_indexed(mesh.index_range(),0,0..1);
+            }
 
-        let main_wnd = windows.main_window_mut();
-        main_wnd.clear();
-        render_frame.render(main_wnd);
-        main_wnd.present();
+            egui::Window::new("App Stats")
+                .open(&mut display_app_stats)
+                .movable(true)
+                .resizable(false)
+                .title_bar(false)
+                .default_pos(pos2(40.0, 80.0))
+                .show(&render_frame.debug_gui, |ui|
+                    {
+                        // todo: figure out how to make whole window draggable
+                        // if ui.interact(ui.max_rect(), egui::Id::new("window-drag"), egui::Sense::drag()).dragged()
+                        // {
+                        // }
+
+                        let fps = 1.0 / frame_start_time.delta_time.as_secs_f32();
+                        ui.label(format!("FPS: {fps:.1}"));
+                        #[cfg(debug_assertions)]
+                        {
+                            ui.label(format!("Frame: {frame_number}"));
+                            ui.label(format!("App time: {:.1}s", clock.total_runtime().as_secs_f32()));
+
+                            let main_window_size = windows.main_window().size();
+                            ui.label(format!("Window: {} x {}", main_window_size.0, main_window_size.1));
+
+                            let viewport_size = renderer.display_size();
+                            ui.label(format!("Viewport: {} x {}", viewport_size.x, viewport_size.y));
+                        }
+                    });
+        }
+        render_frame.present(&mut renderer);
 
         if completion == CompletionState::Completed
         {
@@ -90,65 +220,5 @@ fn main()
         }
     }
 
-    println!("Exiting 3L14");
-}
-
-struct DebugRenderConfig<'ttf>
-{
-    pub font: Font<'ttf, 'static>,
-}
-
-struct RenderText
-{
-    pub text: String,
-    pub position: Vec2,
-}
-
-struct RenderSdl2DFrame<'f>
-{
-    frame_number: FrameNumber,
-    debug_config: &'f DebugRenderConfig<'f>,
-
-    texts: Vec<RenderText>,
-}
-
-impl<'f> RenderSdl2DFrame<'f>
-{
-    pub fn new(frame_number: FrameNumber, debug_config: &'f DebugRenderConfig) -> Self
-    {
-        Self
-        {
-            frame_number,
-            debug_config,
-
-            texts: Vec::new(),
-        }
-    }
-    pub fn reset(&mut self, frame_number: FrameNumber)
-    {
-        self.frame_number = frame_number;
-        self.texts.clear();
-    }
-
-    pub fn debug_text(&mut self, text: String, position: Vec2)
-    {
-        self.texts.push(RenderText { text, position });
-    }
-
-    pub fn render(&mut self, canvas: &mut WindowCanvas)
-    {
-        let texture_creator = canvas.texture_creator();
-        self.texts.iter().for_each(|text|
-        {
-            let pr = self.debug_config.font.render(text.text.as_str());
-            let surf = pr.blended_wrapped(Color::RGB(255, 255, 255), 512).unwrap();
-            let surf_rect = surf.rect();
-            let texture = texture_creator.create_texture_from_surface(surf).unwrap();
-
-            canvas.copy(&texture,
-                        surf_rect,
-                        Rect::new(text.position.x as i32, text.position.y as i32, surf_rect.width(), surf_rect.height()))
-                .unwrap();
-        })
-    }
+    println!("Exited 3L14 at {}", chrono::Local::now());
 }

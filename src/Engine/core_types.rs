@@ -1,3 +1,7 @@
+use std::fmt;
+use std::fmt::Formatter;
+use serde::Serializer;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TickCount(pub u64);
 impl TickCount
@@ -19,15 +23,18 @@ impl std::ops::Sub for TickCount
     fn sub(self, other: Self) -> Self { Self(self.0 - other.0) }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FrameNumber(pub u64);
 impl FrameNumber
 {
     pub fn increment(&mut self) -> Self { self.0 += 1; *self }
 }
-impl Default for FrameNumber
+impl std::fmt::Display for FrameNumber
 {
-    fn default() -> Self { Self(0) }
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result
+    {
+        f.serialize_u64(self.0)
+    }
 }
 impl std::ops::Add for FrameNumber
 {

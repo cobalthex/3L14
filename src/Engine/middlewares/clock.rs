@@ -11,18 +11,20 @@ pub struct Time
 
 pub struct Clock
 {
+    start_time: Instant,
     time: RwLock<Time>,
 }
 
 impl Clock
 {
-    const MIN_DURATION: Duration = Duration::new(0, 1); // zero delta may cause issues for some use cases
+    pub const MIN_DURATION: Duration = Duration::new(0, 1); // zero delta may cause issues for some use cases
 
     pub fn new() -> Self
     {
         let now = Instant::now();
         Self
         {
+            start_time: now,
             time: RwLock::new(Time
             {
                 current_time: now,
@@ -41,9 +43,14 @@ impl Clock
         *locked
     }
 
+    pub fn total_runtime(&self) -> Duration { self.time().current_time - self.start_time }
     pub fn time(&self) -> Time { *self.time.read() }
 
         // debug set time?
+}
+impl Default for Clock
+{
+    fn default() -> Self { Self::new() }
 }
 
 // todo

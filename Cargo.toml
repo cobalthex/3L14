@@ -15,22 +15,29 @@ harness = false
 [dependencies]
 proc_macros_3l14 = { path = "macros" }
 
-chashmap = "2.2.2"
-chrono = "0.4.26"
+chrono = "0.4.34"
 flagset = "0.4.3"
-frunk = "0.4.2"
-glam = "0.24.2"
+#frunk = "0.4.2"
+glam = "0.25.0"
 nameof = "1.2.2"
 parking_lot = "0.12.1"
-raw-window-handle = "0.6.0"
-sdl2 = { version = "0.35.2", features = ["ttf"] }
-wgpu = "0.18.0"
-nanorand = "0.7.0"
-once_cell = { version = "1.18.0", features = ["parking_lot"] }
+#sdl2 = { version = "0.36.0", features = ["ttf", "raw-window-handle"] }
+sdl2 = { path = "../oss/rust-sdl2", features = ["raw-window-handle"] }
+wgpu = "0.19.1"
 paste = "1.0.14"
 serde = { version = "1.0.193", features = ["derive"] }
 jobsys = "0.2.0"
-typed-arena = "2.0.2"
+futures = { version = "0.3.30", features = ["thread-pool"] }
+egui-wgpu = "0.26.2"
+egui = "0.26.2"
+egui_extras = "0.26.2"
+gltf = "1.4.0"
+presser = "0.3.1"
+clap = { version = "4.4.8", features = ["derive"] }
 
 [dev-dependencies]
 criterion = { version = "0.5.1" }
+
+[build-dependencies]
+symlink = "0.1.0"
+winres = "0.1.12"
