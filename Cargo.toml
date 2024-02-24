@@ -34,6 +34,7 @@ egui_extras = "0.26.2"
 gltf = "1.4.0"
 presser = "0.3.1"
 clap = { version = "4.4.8", features = ["derive"] }
+approx = "0.5.1"
 
 [dev-dependencies]
 criterion = { version = "0.5.1" }

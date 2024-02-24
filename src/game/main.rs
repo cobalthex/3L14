@@ -3,12 +3,11 @@ use std::io::Read;
 use std::thread::sleep;
 use egui::pos2;
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
-use game_3l14::engine::{*, middlewares::{clock::*, input::*, windows::*}};
+use game_3l14::engine::{*, timing::*, input::*, windows::*, graphics::*};
 use clap::Parser;
-use glam::{Mat4, Vec3};
-use wgpu::{BindGroupLayoutDescriptor, BufferUsages};
+use glam::{Mat4, Quat, Vec3};
+use wgpu::{BindGroupLayoutDescriptor, BufferAddress, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, MapMode};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use game_3l14::engine::middlewares::graphics::*;
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -61,7 +60,7 @@ fn main()
     let mut sdl_events = sdl.event_pump().unwrap();
     let sdl_video = sdl.video().unwrap();
 
-    // middlewares
+    // windows
     let windows = Windows::new(&sdl_video);
     let mut input = Input::default();
 
@@ -76,19 +75,15 @@ fn main()
 
     let test_scene = Scene::try_from_file("assets/pawn.glb", renderer.device_mut()).expect("Couldn't import scene");
 
-    let view = Mat4::look_to_lh(Vec3::new(0.0, 2.0, -10.0), camera::WORLD_FORWARD, camera::WORLD_UP);
-    let proj = Mat4::perspective_lh(
-        std::f32::consts::FRAC_PI_4,
-        renderer.display_aspect_ratio(),
-        0.1,
-        1000.0);
-
-    let cam_uform = CameraUniform { proj_view: proj * view };
-    let cam_uform_buf = renderer.device_mut().create_buffer_init(&BufferInitDescriptor
+    let mut camera = Camera::new(renderer.display_aspect_ratio());
+    camera.transform.position = Vec3::new(0.0, 1.0, -3.0);
+    camera.update_view();
+    let cam_uform_buf = renderer.device_mut().create_buffer(&BufferDescriptor
     {
         label: Some("Camera uniform buffer"),
-        contents: unsafe { [cam_uform].as_u8_slice() },
+        size: std::mem::size_of::<CameraUniform>() as BufferAddress,
         usage: BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
     });
 
     let cam_bind_group_layout = renderer.device_mut().create_bind_group_layout(&BindGroupLayoutDescriptor
@@ -153,36 +148,80 @@ fn main()
         }
 
         #[cfg(debug_assertions)]
-        if input.keyboard().get_key_down(KeyCode::Q).is_some() &&
+        if input.keyboard().is_key_down(KeyCode::Q) &&
            input.keyboard().has_keymod(KeyMods::CTRL)
         {
             completion = CompletionState::Completed;
         }
 
-        if let Some(KeyState { state: ButtonState::JustOn, .. }) = input.keyboard().get_key_down(KeyCode::F1)
+        let speed = if input.keyboard().has_keymod(KeyMods::SHIFT) { 8.0 } else { 2.0 } * frame_start_time.delta_time.as_secs_f32();
+        if input.keyboard().is_key_down(KeyCode::W)
+        {
+            camera.transform.position += camera.transform.forward() * speed;
+        }
+        if input.keyboard().is_key_down(KeyCode::A)
+        {
+            camera.transform.position += camera.transform.left() * speed;
+        }
+        if input.keyboard().is_key_down(KeyCode::S)
+        {
+            camera.transform.position += camera.transform.backward() * speed;
+        }
+        if input.keyboard().is_key_down(KeyCode::D)
+        {
+            camera.transform.position += camera.transform.right() * speed;
+        }
+        if input.keyboard().is_key_down(KeyCode::E)
+        {
+            camera.transform.position += camera.transform.up() * speed;
+        }
+        if input.keyboard().is_key_down(KeyCode::Q)
+        {
+            camera.transform.position += camera.transform.down() * speed;
+        }
+        {
+            let mut fwd = camera.transform.forward();
+            fwd.x += input.mouse().delta.x as f32 / 200.0;
+            fwd.y -= input.mouse().delta.y as f32 / 200.0;
+            // camera.
+        }
+        camera.update_view();
+
+        if input.keyboard().is_key_press(KeyCode::F1)
         {
             display_app_stats = !display_app_stats
         }
 
-        if let Some(delta) = min_frame_time.checked_sub(frame_start_time.delta_time)
-        {
-            sleep(delta)
-        }
+        // if let Some(delta) = min_frame_time.checked_sub(frame_start_time.delta_time)
+        // {
+        //     sleep(delta)
+        // }
+
+        let cam_uform = CameraUniform::from(&camera);
+        // map+write would be preferable
+        renderer.queue().write_buffer(&cam_uform_buf, 0, unsafe { [cam_uform].as_u8_slice() });
 
         let mut render_frame = renderer.frame(frame_number, &input);
         {
+            render_frame.encoder.push_debug_group("ZZZZZ");
             {
                 let mut test_pass = render_passes::test(&mut render_frame, Some(colors::CORNFLOWER_BLUE));
 
                 test_pass.set_pipeline(&test_pipeline);
                 test_pass.set_bind_group(0, &cam_bind_group, &[]);
 
-                let mesh = &test_scene.models[0].object.meshes()[0];
-                // let mesh = &test_mesh;
-                test_pass.set_vertex_buffer(0, mesh.vertices());
-                test_pass.set_index_buffer(mesh.indices(), mesh.index_format());
-                test_pass.draw_indexed(mesh.index_range(),0,0..1);
+                for model in test_scene.models.iter()
+                {
+                    for mesh in model.object.meshes()
+                    {
+                        // todo: model transforms, instancing
+                        test_pass.set_vertex_buffer(0, mesh.vertices());
+                        test_pass.set_index_buffer(mesh.indices(), mesh.index_format());
+                        test_pass.draw_indexed(mesh.index_range(),0,0..1);
+                    }
+                }
             }
+            render_frame.encoder.pop_debug_group();
 
             egui::Window::new("App Stats")
                 .open(&mut display_app_stats)
