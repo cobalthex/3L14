@@ -21,6 +21,18 @@ impl Transform
     pub fn down(&self) -> Vec3 { self.rotation * -super::WORLD_UP }
     pub fn right(&self) -> Vec3 { self.rotation * super::WORLD_RIGHT }
     pub fn left(&self) -> Vec3 { self.rotation * -super::WORLD_RIGHT }
+
+    pub fn to_view(&self) -> Mat4
+    {
+        let rotation = Mat4::from_quat(self.rotation);
+        let translation = Mat4::from_translation(self.position);
+        rotation * translation
+    }
+
+    pub fn to_world(&self) -> Mat4
+    {
+        Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position)
+    }
 }
 
 impl From<(Vec3, Quat, Vec3)> for Transform
@@ -32,10 +44,7 @@ impl From<(Vec3, Quat, Vec3)> for Transform
 }
 impl From<Transform> for Mat4
 {
-    fn from(t: Transform) -> Self
-    {
-        Mat4::from_scale_rotation_translation(t.scale, t.rotation, t.position)
-    }
+    fn from(t: Transform) -> Self { t.to_world() }
 }
 impl From<Mat4> for Transform
 {
@@ -43,5 +52,22 @@ impl From<Mat4> for Transform
     {
         let (scale, rotation, position) = m.to_scale_rotation_translation();
         Transform { position, rotation, scale }
+    }
+}
+
+#[derive(Default)]
+#[repr(C, align(256))]
+pub struct TransformUniform
+{
+    pub world: Mat4,
+}
+impl From<Transform> for TransformUniform
+{
+    fn from(transform: Transform) -> Self
+    {
+        Self
+        {
+            world: transform.into()
+        }
     }
 }

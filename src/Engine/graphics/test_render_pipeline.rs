@@ -1,18 +1,24 @@
 use wgpu::*;
-use super::model::{VertexPosNormTexCol, WgpuVertex};
+use crate::engine::graphics::Renderer;
+use crate::engine::world::TransformUniform;
+use super::model::{VertexPosNormTexCol, WgpuVertexDecl};
 
-pub fn new(device: &mut Device, camera_bind_group: &BindGroupLayout) -> RenderPipeline
+pub fn new(
+    renderer: &Renderer,
+    camera_bind_group: &BindGroupLayout,
+    transform_bind_group: &BindGroupLayout)
+    -> RenderPipeline
 {
-    let test_shader = device.create_shader_module(
+    let test_shader = renderer.device().create_shader_module(
         include_wgsl!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/shaders/test.wgsl")));
 
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor
+    renderer.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor
     {
         label: Some("Test render pipeline"),
-        layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
+        layout: Some(&renderer.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
             label: Some("Test render pipeline layout"),
-            bind_group_layouts: &[camera_bind_group],
+            bind_group_layouts: &[camera_bind_group, transform_bind_group],
             push_constant_ranges: &[],
         })),
         vertex: VertexState
@@ -32,9 +38,9 @@ pub fn new(device: &mut Device, camera_bind_group: &BindGroupLayout) -> RenderPi
             conservative: false,
         },
         depth_stencil: None,
-        multisample: MultisampleState
+        multisample: MultisampleState // todo: MSAA support in back buffer
         {
-            count: 1,
+            count: renderer.current_sample_count(),
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
@@ -44,7 +50,7 @@ pub fn new(device: &mut Device, camera_bind_group: &BindGroupLayout) -> RenderPi
             entry_point: "fs_main",
             targets: &[Some(ColorTargetState
             {
-                format: TextureFormat::Bgra8UnormSrgb, // todo
+                format: renderer.surface_config().format,
                 blend: Some(BlendState::REPLACE),
                 write_mask: ColorWrites::ALL,
             })],

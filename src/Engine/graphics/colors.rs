@@ -30,7 +30,6 @@ impl Color
         Color { r: f(self.r), g: f(self.g), b: f(self.b), a: self.a }
     }
 }
-
 impl From<u32> for Color
 {
     fn from(rgba: u32) -> Self
@@ -54,7 +53,26 @@ impl From<Color> for u32
         (color.a as u32)
     }
 }
-
+impl From<[u8;4]> for Color
+{
+    fn from(rgba: [u8;4]) -> Self
+    {
+        Color
+        {
+            r: rgba[0],
+            g: rgba[1],
+            b: rgba[2],
+            a: rgba[3],
+        }
+    }
+}
+impl From<Color> for [u8;4]
+{
+    fn from(color: Color) -> Self
+    {
+        [ color.r, color.g, color.b, color.a ]
+    }
+}
 impl From<[f32;4]> for Color
 {
     fn from(rgba: [f32;4]) -> Self
@@ -111,5 +129,6 @@ impl From<Color> for wgpu::Color
 pub const TRANSPARENT_BLACK: Color = Color { r: 0, g: 0, b: 0, a: 0 };
 pub const BLACK: Color = Color { r: 0, g: 0, b: 0, a: 255 };
 pub const WHITE: Color = Color { r: 255, g: 255, b: 255, a: 255 };
+pub const GRAY: Color = Color { r: 144, g: 144, b: 144, a: 255 };
 pub const CORNFLOWER_BLUE: Color = Color { r: 100, g: 149, b: 237, a: 255 };
 pub const GOOD_PURPLE: Color = Color { r: 64, g: 72, b: 255, a: 255 };

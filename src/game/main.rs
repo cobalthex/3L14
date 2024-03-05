@@ -1,13 +1,13 @@
 use std::env;
 use std::io::Read;
-use std::thread::sleep;
-use egui::pos2;
+use egui::{pos2};
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
-use game_3l14::engine::{*, timing::*, input::*, windows::*, graphics::*};
+use game_3l14::engine::{*, timing::*, input::*, windows::*, graphics::*, world::*, assets::*};
 use clap::Parser;
-use glam::{Mat4, Quat, Vec3};
-use wgpu::{BindGroupLayoutDescriptor, BufferAddress, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, MapMode};
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use futures::executor;
+use glam::{Quat, Vec3};
+use wgpu::*;
+use game_3l14::engine::async_completion::AsyncCompletion;
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -21,10 +21,9 @@ fn shitty_join<I>(separator: &str, iter: I) -> String
      where I: Iterator,
            I::Item: std::fmt::Display
 {
-    let mut mutiter = iter;
     let mut out = String::new();
     let mut first = true;
-    while let Some(i) = mutiter.next()
+    for i in iter
     {
         match first
         {
@@ -56,13 +55,16 @@ fn main()
     }
 
     let mut clock = Clock::new();
+
+    let assets = AssetCache::default();
+
     let sdl = sdl2::init().unwrap();
     let mut sdl_events = sdl.event_pump().unwrap();
     let sdl_video = sdl.video().unwrap();
 
     // windows
     let windows = Windows::new(&sdl_video);
-    let mut input = Input::default();
+    let mut input = Input::new(&sdl);
 
     let mut display_app_stats = true;
 
@@ -73,22 +75,70 @@ fn main()
 
     let min_frame_time = std::time::Duration::from_secs_f32(1.0 / 150.0);
 
-    let test_scene = Scene::try_from_file("assets/pawn.glb", renderer.device_mut()).expect("Couldn't import scene");
+    let test_scene = Scene::try_from_file("assets/pawn.glb", renderer.device()).expect("Couldn't import scene");
 
     let mut camera = Camera::new(renderer.display_aspect_ratio());
-    camera.transform.position = Vec3::new(0.0, 1.0, -3.0);
+    camera.transform.position = Vec3::new(0.0, 2.0, -10.0);
     camera.update_view();
-    let cam_uform_buf = renderer.device_mut().create_buffer(&BufferDescriptor
+
+    const MAX_ENTRIES_IN_WORLD_BUF: usize = 64;
+    let foo = std::mem::size_of::<TransformUniform>();
+    let world_uform_buf = renderer.device().create_buffer(&BufferDescriptor
+    {
+        label: Some("World uniform buffer"),
+        size: (std::mem::size_of::<TransformUniform>() * MAX_ENTRIES_IN_WORLD_BUF) as BufferAddress,
+        usage: BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let world_bind_group_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
+    {
+        entries:
+        &[
+            wgpu::BindGroupLayoutEntry
+            {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer
+                {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: true,
+                    min_binding_size: None,
+                },
+                count: None,
+            }
+        ],
+        label: Some("World bind group layout"),
+    });
+    let world_bind_group = renderer.device().create_bind_group(&wgpu::BindGroupDescriptor
+    {
+        layout: &world_bind_group_layout,
+        entries:
+        &[
+            wgpu::BindGroupEntry
+            {
+                binding: 0,
+                resource: BindingResource::Buffer(BufferBinding
+                {
+                    buffer: &world_uform_buf,
+                    offset: 0,
+                    size: Some(unsafe { BufferSize::new_unchecked(std::mem::size_of::<TransformUniform>() as u64) }),
+                })
+            }
+        ],
+        label: Some("World bind group"),
+    });
+
+    let cam_uform_buf = renderer.device().create_buffer(&BufferDescriptor
     {
         label: Some("Camera uniform buffer"),
         size: std::mem::size_of::<CameraUniform>() as BufferAddress,
         usage: BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-
-    let cam_bind_group_layout = renderer.device_mut().create_bind_group_layout(&BindGroupLayoutDescriptor
+    let cam_bind_group_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
     {
-        entries: &[
+        entries:
+        &[
             wgpu::BindGroupLayoutEntry
             {
                 binding: 0,
@@ -104,10 +154,11 @@ fn main()
         ],
         label: Some("Camera bind group layout"),
     });
-    let cam_bind_group = renderer.device_mut().create_bind_group(&wgpu::BindGroupDescriptor
+    let cam_bind_group = renderer.device().create_bind_group(&wgpu::BindGroupDescriptor
     {
         layout: &cam_bind_group_layout,
-        entries: &[
+        entries:
+        &[
             wgpu::BindGroupEntry
             {
                 binding: 0,
@@ -117,7 +168,9 @@ fn main()
         label: Some("Camera bind group"),
     });
 
-    let test_pipeline = test_render_pipeline::new(renderer.device_mut(), &cam_bind_group_layout);
+    let test_pipeline = test_render_pipeline::new(&renderer, &cam_bind_group_layout, &world_bind_group_layout);
+
+    let mut worlds_buf: [TransformUniform; MAX_ENTRIES_IN_WORLD_BUF] = array_init::array_init(|_| TransformUniform::default());
 
     let mut frame_number = FrameNumber(0);
     'main: loop
@@ -140,7 +193,8 @@ fn main()
                 // SizeChanged?
                 SdlEvent::Window { win_event: SdlWindowEvent::Resized(w, h), .. } =>
                 {
-                    renderer.resize(w as u32, h as u32);
+                    // todo
+                    // renderer.resize(w as u32, h as u32);
                 },
 
                 _ => input.handle_event(event, frame_start_time.current_time),
@@ -152,6 +206,11 @@ fn main()
            input.keyboard().has_keymod(KeyMods::CTRL)
         {
             completion = CompletionState::Completed;
+        }
+
+        if (input.keyboard().is_key_press(KeyCode::Backquote))
+        {
+            input.mouse().set_capture(ToggleState::Toggle);
         }
 
         let speed = if input.keyboard().has_keymod(KeyMods::SHIFT) { 8.0 } else { 2.0 } * frame_start_time.delta_time.as_secs_f32();
@@ -179,11 +238,16 @@ fn main()
         {
             camera.transform.position += camera.transform.down() * speed;
         }
+        if input.mouse().is_captured()
         {
-            let mut fwd = camera.transform.forward();
-            fwd.x += input.mouse().delta.x as f32 / 200.0;
-            fwd.y -= input.mouse().delta.y as f32 / 200.0;
-            // camera.
+            const MOUSE_SCALE: f32 = 0.01;
+            let yaw = -input.mouse().delta.x as f32 * MOUSE_SCALE; // left to right
+            let pitch = -input.mouse().delta.y as f32 * MOUSE_SCALE; // down to up
+
+            camera.transform.rotation = Quat::normalize(
+                Quat::from_axis_angle(WORLD_RIGHT, pitch) *
+                camera.transform.rotation *
+                Quat::from_axis_angle(WORLD_UP, yaw));
         }
         camera.update_view();
 
@@ -198,30 +262,50 @@ fn main()
         // }
 
         let cam_uform = CameraUniform::from(&camera);
-        // map+write would be preferable
         renderer.queue().write_buffer(&cam_uform_buf, 0, unsafe { [cam_uform].as_u8_slice() });
 
         let mut render_frame = renderer.frame(frame_number, &input);
         {
-            render_frame.encoder.push_debug_group("ZZZZZ");
+            let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
             {
-                let mut test_pass = render_passes::test(&mut render_frame, Some(colors::CORNFLOWER_BLUE));
+                let mut test_pass = render_passes::test(
+                    &renderer,
+                    &render_frame.back_buffer_view,
+                    &mut encoder,
+                    Some(colors::CORNFLOWER_BLUE));
 
                 test_pass.set_pipeline(&test_pipeline);
                 test_pass.set_bind_group(0, &cam_bind_group, &[]);
 
+                let mut world_index = 0;
                 for model in test_scene.models.iter()
                 {
+                    // todo: use DrawIndirect?
+                    let world_transform = model.transform.to_world();
+                    worlds_buf[world_index].world = world_transform;
+                    let offset = (world_index * std::mem::size_of::<TransformUniform>()) as u32;
+                    test_pass.set_bind_group(1, &world_bind_group, &[offset]);
+                    world_index += 1;
+
                     for mesh in model.object.meshes()
                     {
-                        // todo: model transforms, instancing
                         test_pass.set_vertex_buffer(0, mesh.vertices());
                         test_pass.set_index_buffer(mesh.indices(), mesh.index_format());
+
                         test_pass.draw_indexed(mesh.index_range(),0,0..1);
+                    }
+
+                    if world_index >= MAX_ENTRIES_IN_WORLD_BUF
+                    {
+                        world_uform_buf.unmap();
+                        world_index = 0;
+                        break; // testing
                     }
                 }
             }
-            render_frame.encoder.pop_debug_group();
+            // todo: only update what was written to
+            renderer.queue().write_buffer(&world_uform_buf, 0, unsafe { worlds_buf.as_u8_slice() });
+            renderer.queue().submit([encoder.finish()]);
 
             egui::Window::new("App Stats")
                 .open(&mut display_app_stats)
@@ -231,9 +315,11 @@ fn main()
                 .default_pos(pos2(40.0, 80.0))
                 .show(&render_frame.debug_gui, |ui|
                     {
-                        // todo: figure out how to make whole window draggable
-                        // if ui.interact(ui.max_rect(), egui::Id::new("window-drag"), egui::Sense::drag()).dragged()
+                        // // todo: figure out how to make whole window draggable
+                        // let interact = ui.interact(ui.max_rect(), egui::Id::new("App Stats"), egui::Sense::click_and_drag());
+                        // if input.mouse().get_button(MouseButton::Left).state == ButtonState::JustOn // interact 'should' have a value to use here
                         // {
+                        //     ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag)
                         // }
 
                         let fps = 1.0 / frame_start_time.delta_time.as_secs_f32();
@@ -251,13 +337,15 @@ fn main()
                         }
                     });
         }
-        render_frame.present(&mut renderer);
+        renderer.present(render_frame);
 
         if completion == CompletionState::Completed
         {
             break 'main
         }
     }
+
+    renderer.device().destroy();
 
     println!("Exited 3L14 at {}", chrono::Local::now());
 }

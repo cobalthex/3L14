@@ -23,7 +23,7 @@ impl Camera
         let far_clip = 1000.0;
 
         let transform = Transform::default();
-        let view = Mat4::look_to_lh(transform.position, transform.forward(), transform.up());
+        let view = transform.to_view();
         Self
         {
             transform,
@@ -41,7 +41,7 @@ impl Camera
 
     pub fn update_view(&mut self) -> Mat4
     {
-        self.view = Mat4::look_to_lh(self.transform.position, self.transform.forward(), self.transform.up());
+        self.view = self.transform.to_view();
         self.view
     }
     pub fn update_projection(&mut self) -> Mat4
@@ -51,7 +51,7 @@ impl Camera
     }
 }
 
-#[repr(packed)]
+#[repr(packed(16))]
 pub struct CameraUniform
 {
     pub proj_view: Mat4,

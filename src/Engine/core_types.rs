@@ -1,5 +1,9 @@
 use std::fmt;
 use std::fmt::Formatter;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
+use std::task::{Context, Poll, Waker};
 use serde::Serializer;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -132,4 +136,12 @@ macro_rules! define_runtime_id_u32
             fn default() -> Self { Self::new() }
         }
     }
+}
+
+#[derive(Debug)]
+pub enum ToggleState
+{
+    Off,
+    On,
+    Toggle,
 }

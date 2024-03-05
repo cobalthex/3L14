@@ -1,3 +1,5 @@
+pub mod async_completion;
+
 pub trait AsU8Slice<'a>
 {
     unsafe fn as_u8_slice(&'a self) -> &'a [u8];

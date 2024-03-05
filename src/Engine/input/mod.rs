@@ -7,6 +7,7 @@ use egui::{Pos2, RawInput};
 use glam::IVec2;
 use sdl2::event::Event;
 use sdl2::keyboard::Mod;
+use crate::engine::ToggleState;
 
 pub type KeyCode = sdl2::keyboard::Keycode;
 pub type ScanCode = sdl2::keyboard::Scancode;
@@ -14,7 +15,7 @@ pub type MouseButton = sdl2::mouse::MouseButton;
 
 // todo: access control
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Input
 {
     mouse: MouseState,
@@ -23,6 +24,15 @@ pub struct Input
 
 impl Input
 {
+    pub fn new(sdl: &sdl2::Sdl) -> Self
+    {
+        Self
+        {
+            mouse: MouseState::new(sdl.mouse()),
+            keyboard: KeyboardState::default(),
+        }
+    }
+
     pub fn mouse(&self) -> &MouseState { &self.mouse }
     pub fn keyboard(&self) -> &KeyboardState { &self.keyboard }
 
@@ -405,17 +415,36 @@ pub struct MouseButtonState
 
 const MAX_MOUSE_BUTTON_STATES: usize = 5;
 
-#[derive(Debug, Default)]
+struct SdlMouseUtil(sdl2::mouse::MouseUtil);
+impl Debug for SdlMouseUtil
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { Ok(()) }
+}
+
+#[derive(Debug)]
 pub struct MouseState
 {
     pub position: IVec2,
     pub delta: IVec2,
     pub wheel: IVec2,
 
+    sdl_mouse: SdlMouseUtil,
     buttons: [MouseButtonState; MAX_MOUSE_BUTTON_STATES], // L, M, R, X1, X2
 }
 impl MouseState
 {
+    fn new(sdl_mouse_util: sdl2::mouse::MouseUtil) -> Self
+    {
+        Self
+        {
+            position: IVec2::default(),
+            delta: IVec2::default(),
+            wheel: IVec2::default(),
+            sdl_mouse: SdlMouseUtil(sdl_mouse_util),
+            buttons: [MouseButtonState::default(); MAX_MOUSE_BUTTON_STATES],
+        }
+    }
+
     fn pre_update(&mut self)
     {
         self.delta = IVec2::ZERO;
@@ -443,5 +472,23 @@ impl MouseState
     pub fn get_button(&self, button: MouseButton) -> MouseButtonState
     {
         self.buttons[(button as usize) - 1]
+    }
+
+    pub fn set_capture(&self, state: ToggleState)
+    {
+        // todo: capture stack?
+        
+        let new_state = match state
+        {
+            ToggleState::Off => false,
+            ToggleState::On => true,
+            ToggleState::Toggle => !self.is_captured()
+        };
+        self.sdl_mouse.0.show_cursor(!new_state);
+        self.sdl_mouse.0.set_relative_mouse_mode(new_state);
+    }
+    pub fn is_captured(&self) -> bool
+    {
+        self.sdl_mouse.0.relative_mouse_mode()
     }
 }

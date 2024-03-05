@@ -1,14 +1,18 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::ops::Range;
+use egui::epaint::Vertex;
 use glam::{Mat4, Quat, Vec2, Vec3};
 use gltf::mesh::util::ReadIndices;
-use wgpu::{BufferSlice, BufferUsages, Device, IndexFormat, Label, VertexBufferLayout};
+use wgpu::{BufferSlice, BufferUsages, Device, IndexFormat, Label, vertex_attr_array, VertexBufferLayout};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use crate::engine::{AABB, AsU8Slice};
+use crate::engine::assets::Asset;
+use crate::engine::graphics::colors;
+use crate::engine::world::Transform;
 use super::colors::Color;
 
-pub trait WgpuVertex
+pub trait WgpuVertexDecl
 {
     fn layout() -> VertexBufferLayout<'static>;
 }
@@ -24,42 +28,24 @@ pub struct VertexPosNormTexCol
     pub tex_coord: Vec2,
     pub color: Color,
 }
-impl WgpuVertex for VertexPosNormTexCol
+impl VertexPosNormTexCol
 {
-    fn layout() -> VertexBufferLayout<'static>
+    const LAYOUT: VertexBufferLayout<'static> = VertexBufferLayout
     {
-        VertexBufferLayout
-        {
-            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute
-                {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute
-                {
-                    offset: std::mem::size_of::<Vec3>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute
-                {
-                    offset: (std::mem::size_of::<Vec3>() + std::mem::size_of::<Vec3>()) as wgpu::BufferAddress,
-                    shader_location: 2,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute
-                {
-                    offset: (std::mem::size_of::<Vec3>() + std::mem::size_of::<Vec3>() + std::mem::size_of::<Vec2>()) as wgpu::BufferAddress,
-                    shader_location: 3,
-                    format: wgpu::VertexFormat::Uint32,
-                },
-            ],
-        }
-    }
+        array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &vertex_attr_array!
+        [
+            0 => Float32x3,
+            1 => Float32x3,
+            2 => Float32x2,
+            3 => Uint32,
+        ],
+    };
+}
+impl WgpuVertexDecl for VertexPosNormTexCol
+{
+    fn layout() -> VertexBufferLayout<'static> { Self::LAYOUT }
 }
 
 #[derive(Debug)]
@@ -147,21 +133,7 @@ impl Model
         self.meshes.as_ref()
     }
 }
-
-#[derive(Default, Debug, Clone)]
-pub struct Transform
-{
-    pub position: Vec3,
-    pub rotation: Quat,
-    pub scale: Vec3,
-}
-impl Transform
-{
-    pub fn as_matrix(&self) -> Mat4
-    {
-        Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position)
-    }
-}
+impl Asset for Model{}
 
 pub struct SceneNode<T>
 {
@@ -173,11 +145,12 @@ pub struct Scene
 {
     pub models: Vec<SceneNode<Model>>,
 }
+impl Asset for Scene{}
 
 impl Scene
 {
     // todo: make async
-    pub fn try_from_file(file: &str, device: &mut Device) -> Result<Self, SceneImportError>
+    pub fn try_from_file(file: &str, device: &Device) -> Result<Self, SceneImportError>
     {
         // todo: vertex buffer/index buffer allocator
 
@@ -202,14 +175,17 @@ impl Scene
                 let positions = prim_reader.read_positions().ok_or(SceneImportError::MissingVertexAttributes)?;
                 let mut normals = prim_reader.read_normals().ok_or(SceneImportError::MissingVertexAttributes)?;
                 let mut tex_coords = prim_reader.read_tex_coords(0).ok_or(SceneImportError::MissingVertexAttributes)?.into_f32();
-                // let mut colors = reader.read_colors(0).ok_or(SceneImportError::MissingVertexAttributes)?.into_rgba_u8();
+                let mut colors = prim_reader.read_colors(0).map(|c| c.into_rgba_u8());
 
-                for (i, p) in positions.enumerate()
+                for p in positions.into_iter()
                 {
                     let n = normals.next().ok_or(SceneImportError::MismatchedVertexAttributeLengths)?;
                     let tc = tex_coords.next().ok_or(SceneImportError::MismatchedVertexAttributeLengths)?;
-                    // let c = colors.next().unwrap_or_default();
-                    let c = Color::from((i * 100) as u32); // random
+                    let c = match &mut colors
+                    {
+                        Some(c) => c.next().ok_or(SceneImportError::MismatchedVertexAttributeLengths)?.into(),
+                        None => Color::from(in_prim.index() as u32 * 10000),
+                    };
 
                     vertices.push(VertexPosNormTexCol
                     {
@@ -291,8 +267,6 @@ impl Scene
                 meshes: meshes.into_boxed_slice(),
             })
         };
-
-
 
         let mut models: Vec<SceneNode<Model>> = Vec::new();
         for node in document.nodes()
