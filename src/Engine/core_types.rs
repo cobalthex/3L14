@@ -4,6 +4,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
 use std::task::{Context, Poll, Waker};
+use std::time::Duration;
 use serde::Serializer;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]

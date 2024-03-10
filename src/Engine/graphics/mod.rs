@@ -8,3 +8,6 @@ pub mod colors;
 pub mod renderer;
 
 pub use renderer::*;
+
+pub mod debug_gui;
+pub use debug_gui::*;

@@ -14,6 +14,9 @@ impl Radians
         self.0 %= std::f32::consts::PI;
         self
     }
+
+    pub fn degrees_f32(self) -> f32 { self.0 * std::f32::consts::PI / 180.0 }
+    pub fn degrees(self) -> Degrees { Degrees(self.degrees_f32()) }
 }
 impl Display for Radians
 {
@@ -25,7 +28,7 @@ impl Display for Radians
 }
 impl From<Degrees> for Radians
 {
-    fn from(degrees: Degrees) -> Self { Self(degrees.0 * std::f32::consts::PI / 180.0) }
+    fn from(degrees: Degrees) -> Self { degrees.radians() }
 }
 impl Neg for Radians
 {
@@ -75,11 +78,14 @@ impl Degrees
         self.0 %= 180.0;
         self
     }
+
+    pub fn radians_f32(self) -> f32 { self.0 * std::f32::consts::PI / 180.0 }
+    pub fn radians(self) -> Radians { Radians(self.radians_f32()) }
 }
 impl From<Radians> for Degrees
 {
     // const version?
-    fn from(radians: Radians) -> Self { Self(radians.0 * 180.0 / std::f32::consts::PI) }
+    fn from(radians: Radians) -> Self { radians.degrees() }
 }
 // todo: math ops
 impl Display for Degrees

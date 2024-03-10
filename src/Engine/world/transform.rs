@@ -1,19 +1,23 @@
 use glam::{Mat4, Quat, Vec3};
 
-#[derive(Debug, Default, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Transform
 {
     pub position: Vec3,
     pub rotation: Quat,
     pub scale: Vec3,
 }
+impl Default for Transform
+{
+    fn default() -> Self { Self
+    {
+        position: Vec3::ZERO,
+        rotation: Quat::IDENTITY,
+        scale: Vec3::ONE,
+    }}
+}
 impl Transform
 {
-    pub fn look_to(&mut self, direction: Vec3)
-    {
-        
-    }
-    
     // TODO: test
     pub fn forward(&self) -> Vec3 { self.rotation * super::WORLD_FORWARD }
     pub fn backward(&self) -> Vec3 { self.rotation * -super::WORLD_FORWARD }
@@ -24,8 +28,10 @@ impl Transform
 
     pub fn to_view(&self) -> Mat4
     {
+        //let silly = Quat::from_xyzw(self.rotation.x, self.rotation.y, -self.rotation.z, -self.rotation.w);
+        //let rotation = Mat4::from_quat(silly);
         let rotation = Mat4::from_quat(self.rotation);
-        let translation = Mat4::from_translation(self.position);
+        let translation = Mat4::from_translation(-self.position);
         rotation * translation
     }
 

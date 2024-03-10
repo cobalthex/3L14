@@ -14,8 +14,9 @@ pub fn test<'f>(
         color_attachments: &[Some(
             RenderPassColorAttachment
             {
-                view: renderer.msaa_buffer(),
-                resolve_target: Some(target),
+                // todo: optimize
+                view: renderer.msaa_buffer().unwrap_or(target),
+                resolve_target: renderer.msaa_buffer().map(|_| target),
                 ops: Operations
                 {
                     load: clear_color.map_or(LoadOp::Load, |c| LoadOp::Clear(c.to_srgb().into())),

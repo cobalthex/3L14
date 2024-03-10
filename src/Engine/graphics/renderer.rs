@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use egui::epaint::Shadow;
 use egui::{Rounding, Stroke, Visuals};
 use egui_wgpu::ScreenDescriptor;
@@ -6,11 +7,6 @@ use sdl2::video::Window;
 use wgpu::rwh::{HasRawDisplayHandle, HasRawWindowHandle};
 use wgpu::*;
 use crate::engine::FrameNumber;
-
-pub struct RenderPipelines
-{
-
-}
 
 pub struct Renderer<'r>
 {
@@ -22,7 +18,7 @@ pub struct Renderer<'r>
 
     max_sample_count: u32,
     current_sample_count: u32, // pipelines and ms-framebuffer will need to be recreated if this is changed
-    msaa_buffer: TextureView,
+    msaa_buffer: Option<TextureView>,
 
     debug_gui: egui::Context,
     debug_gui_renderer: egui_wgpu::Renderer,
@@ -31,12 +27,18 @@ impl<'r> Renderer<'r>
 {
     pub async fn new(window: &Window) -> Renderer
     {
+        let allow_msaa = true; // testing
+
         let instance = Instance::new(InstanceDescriptor
         {
             backends: Backends::PRIMARY,
-            flags: InstanceFlags::DEBUG,
-            dx12_shader_compiler: Default::default(), // todo
-            gles_minor_version: Default::default(),
+            flags: InstanceFlags::from_build_config(),
+            dx12_shader_compiler: Dx12Compiler::Dxc
+            {
+                dxc_path: Some(PathBuf::from(r"3rdparty/dxc/dxc.exe")),
+                dxil_path: Some(PathBuf::from(r"3rdparty/dxc/dxil.dll")),
+            },
+            gles_minor_version: Gles3MinorVersion::default(),
         });
 
         #[allow(deprecated)]
@@ -97,15 +99,27 @@ impl<'r> Renderer<'r>
             else { 1 }
         };
 
-        let current_sample_count = max_sample_count;
-        // don't create if only one sample?
-        let msaa_buffer = Self::create_msaa_buffer(current_sample_count, &device, &surface_config);
+        let current_sample_count;
+        let msaa_buffer;
+        if allow_msaa &&
+           max_sample_count > 1
+        {
+            current_sample_count = max_sample_count;
+            // don't create if only one sample?
+            msaa_buffer = Some(Self::create_msaa_buffer(current_sample_count, &device, &surface_config));
+        }
+        else
+        {
+            current_sample_count = 1;
+            msaa_buffer = None;
+        }
 
         let debug_gui = egui::Context::default();
         debug_gui.set_visuals(Visuals
         {
             window_shadow: Shadow::NONE,
             window_stroke: Stroke::new(1.0, egui::Color32::BLACK),
+            window_fill: egui::Color32::from_rgba_unmultiplied(24, 24, 24, 240),
             window_rounding: Rounding::same(4.0),
             .. Visuals::dark()
         });
@@ -132,11 +146,15 @@ impl<'r> Renderer<'r>
             panic!("Render width/height cannot be zero");
         }
 
+        println!("Resizing renderer from {}x{} to {}x{}",
+            self.surface_config.width, self.surface_config.height,
+            new_width, new_height);
+
         self.surface_config.width = new_width;
         self.surface_config.height = new_height;
         self.surface.configure(&self.device, &self.surface_config);
-        // max_sample_count may need to becreated
-        self.msaa_buffer = Self::create_msaa_buffer(self.current_sample_count, &self.device, &self.surface_config);
+        // max_sample_count may need to be recreated
+        self.msaa_buffer = self.msaa_buffer.as_ref().map(|_| Self::create_msaa_buffer(self.current_sample_count, &self.device, &self.surface_config));
     }
 
     pub fn device(&self) -> &Device { &self.device }
@@ -148,11 +166,20 @@ impl<'r> Renderer<'r>
 
     pub fn max_sample_count(&self) -> u32 { self.max_sample_count }
     pub fn current_sample_count(&self) -> u32 { self.current_sample_count }
-    pub fn msaa_buffer(&self) -> &TextureView { &self.msaa_buffer }
+    pub fn msaa_buffer(&self) -> Option<&TextureView> { self.msaa_buffer.as_ref() }
 
     pub fn frame(&'r self, frame_number: FrameNumber, input: &crate::engine::input::Input) -> RenderFrame
     {
-        let back_buffer = self.surface.get_current_texture().expect("Failed to get swap chain target");
+        let back_buffer = match self.surface.get_current_texture()
+        {
+            Ok(texture) => texture,
+            Err(SurfaceError::Timeout) => self.surface.get_current_texture().expect("Get swap chain target timed out"),
+            Err(SurfaceError::Outdated | SurfaceError::Lost | SurfaceError::OutOfMemory) =>
+            {
+                self.surface.configure(&self.device, &self.surface_config);
+                self.surface.get_current_texture().expect("Failed to get swap chain target")
+            }
+        };
         let back_buffer_view = back_buffer.texture.create_view(&TextureViewDescriptor::default());
 
         let debug_gui = self.debug_gui.clone();
@@ -169,7 +196,7 @@ impl<'r> Renderer<'r>
         }
     }
 
-    fn present_debug_gui(&mut self, clip_size: [u32; 2], target: &wgpu::TextureView) -> CommandBuffer
+    fn present_debug_gui(&mut self, clip_size: [u32; 2], target: &TextureView) -> CommandBuffer
     {
         let output = self.debug_gui.end_frame();
         output.textures_delta.set.iter().for_each(|td|

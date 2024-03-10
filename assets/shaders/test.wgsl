@@ -13,6 +13,16 @@ var<uniform> camera: CameraUniform;
 @group(1) @binding(0)
 var<uniform> world: WorldUniform;
 
+struct Light
+{
+    position: vec3<f32>,
+    direction: vec3<f32>,
+};
+const light: Light = Light(
+    vec3(0, 5, -5),
+    vec3(0, -0.707, 0.707),
+);
+
 struct VertexOutput
 {
     @builtin(position) clip_position: vec4<f32>,
@@ -36,11 +46,15 @@ fn vs_main(
     var a: f32 = f32(in_color & 0xFFu) / 255.0;
     out_vertex.color = vec4(r, g, b, a);
 
+    let norm = (world.transform) * vec4(in_normal, 1.0);
+    let light = max(dot(norm.xyz, light.direction), 0.0);
+    out_vertex.color *= light;
+
     return out_vertex;
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>
+fn fs_main(in_vertex: VertexOutput) -> @location(0) vec4<f32>
 {
-    return in.color;
+    return in_vertex.color;
 }

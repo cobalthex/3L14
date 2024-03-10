@@ -1,6 +1,5 @@
 use wgpu::*;
 use crate::engine::graphics::Renderer;
-use crate::engine::world::TransformUniform;
 use super::model::{VertexPosNormTexCol, WgpuVertexDecl};
 
 pub fn new(
@@ -9,6 +8,7 @@ pub fn new(
     transform_bind_group: &BindGroupLayout)
     -> RenderPipeline
 {
+
     let test_shader = renderer.device().create_shader_module(
         include_wgsl!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/shaders/test.wgsl")));
 

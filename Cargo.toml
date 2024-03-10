@@ -15,17 +15,17 @@ harness = false
 [dependencies]
 proc_macros_3l14 = { path = "macros" }
 
-chrono = "0.4.34"
-flagset = "0.4.3"
+chrono = "0.4.35"
+flagset = "0.4.5"
 #frunk = "0.4.2"
 glam = "0.25.0"
 nameof = "1.2.2"
 parking_lot = "0.12.1"
 #sdl2 = { version = "0.36.0", features = ["ttf", "raw-window-handle"] }
 sdl2 = { path = "../oss/rust-sdl2", features = ["raw-window-handle"] }
-wgpu = "0.19.1"
+wgpu = { version = "0.19.3", features = ["naga", "naga-ir"] }
 paste = "1.0.14"
-serde = { version = "1.0.193", features = ["derive"] }
+serde = { version = "1.0.197", features = ["derive"] }
 jobsys = "0.2.0"
 futures = { version = "0.3.30", features = ["thread-pool"] }
 egui-wgpu = "0.26.2"
@@ -33,7 +33,7 @@ egui = "0.26.2"
 egui_extras = "0.26.2"
 gltf = "1.4.0"
 presser = "0.3.1"
-clap = { version = "4.4.8", features = ["derive"] }
+clap = { version = "4.5.2", features = ["derive"] }
 approx = "0.5.1"
 unicase = "2.7.0"
 crossbeam = "0.8.4"

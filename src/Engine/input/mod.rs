@@ -3,7 +3,7 @@ use std::intrinsics::transmute;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Sub, SubAssign};
 use std::slice::Iter;
 use std::time::Instant;
-use egui::{Pos2, RawInput};
+use egui::{Context, Pos2, RawInput};
 use glam::IVec2;
 use sdl2::event::Event;
 use sdl2::keyboard::Mod;
@@ -109,7 +109,7 @@ impl Input
             Event::MouseMotion { x, y, xrel, yrel, .. } =>
             {
                 self.mouse.position = IVec2::new(x, y);
-                self.mouse.delta = IVec2::new(xrel, yrel);
+                self.mouse.position_delta = IVec2::new(xrel, yrel);
             }
             Event::MouseButtonDown { mouse_btn, .. } => // double click?
             {
@@ -124,7 +124,9 @@ impl Input
             }
             Event::MouseWheel { x, y, .. } =>
             {
+                // precise x/y?
                 self.mouse.wheel += IVec2::new(x, y);
+                self.mouse.wheel_delta = IVec2::new(x, y);
             }
 
             // Event::JoyAxisMotion { .. } => {}
@@ -209,6 +211,48 @@ impl From<&Input> for RawInput
         // todo: other events
 
         ri
+    }
+}
+
+impl super::graphics::DebugGui for Input
+{
+    fn debug_gui(&self, context: &Context)
+    {
+        egui::Window::new("Input state")
+            .resizable(true)
+            .show(context, |ui|
+            {
+                ui.horizontal_top(|hui|
+                {
+                    hui.collapsing("Keyboard", |kbui|
+                    {
+                        kbui.set_min_width(120.0);
+                        kbui.label(format!("Mods: {:?}", self.keyboard.mods));
+                        let mut any = false;
+                        for state in self.keyboard.pressed_keys.iter()
+                        {
+                            any = true;
+                            kbui.label(format!("{:?}: {:?}", state.key_code, state.state));
+                        }
+                        if !any
+                        {
+                            kbui.label("(No keys pressed)");
+                        }
+                    });
+
+                    hui.collapsing("Mouse", |mui|
+                    {
+                        mui.set_min_width(200.0);
+                        mui.label(format!("Pos: {:?} - Delta: {:?}", self.mouse.position.to_array(), self.mouse.position_delta.to_array()));
+                        mui.label(format!("Wheel: {:?} - Delta: {:?}", self.mouse.wheel.to_array(), self.mouse.wheel_delta.to_array()));
+                        mui.label(format!("LB: {:?}", self.mouse.get_button(MouseButton::Left).state));
+                        mui.label(format!("MB: {:?}", self.mouse.get_button(MouseButton::Middle).state));
+                        mui.label(format!("RB: {:?}", self.mouse.get_button(MouseButton::Right).state));
+                        mui.label(format!("X1: {:?}", self.mouse.get_button(MouseButton::X1).state));
+                        mui.label(format!("X2: {:?}", self.mouse.get_button(MouseButton::X2).state));
+                    });
+                });
+            });
     }
 }
 
@@ -425,8 +469,9 @@ impl Debug for SdlMouseUtil
 pub struct MouseState
 {
     pub position: IVec2,
-    pub delta: IVec2,
+    pub position_delta: IVec2,
     pub wheel: IVec2,
+    pub wheel_delta: IVec2,
 
     sdl_mouse: SdlMouseUtil,
     buttons: [MouseButtonState; MAX_MOUSE_BUTTON_STATES], // L, M, R, X1, X2
@@ -438,8 +483,9 @@ impl MouseState
         Self
         {
             position: IVec2::default(),
-            delta: IVec2::default(),
+            position_delta: IVec2::default(),
             wheel: IVec2::default(),
+            wheel_delta: IVec2::default(),
             sdl_mouse: SdlMouseUtil(sdl_mouse_util),
             buttons: [MouseButtonState::default(); MAX_MOUSE_BUTTON_STATES],
         }
@@ -447,7 +493,8 @@ impl MouseState
 
     fn pre_update(&mut self)
     {
-        self.delta = IVec2::ZERO;
+        self.position_delta = IVec2::ZERO;
+        self.wheel_delta = IVec2::ZERO;
 
         for button in self.buttons.iter_mut()
         {

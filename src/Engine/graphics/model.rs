@@ -59,7 +59,7 @@ pub enum SceneImportError
 
 pub struct Mesh
 {
-    bounds: AABB,
+    bounds: AABB, // note; these are untransformed
     vertices: wgpu::Buffer,
     vertex_count: u32,
 
@@ -92,7 +92,7 @@ impl Mesh
     {
         let vbuffer = device.create_buffer_init(&BufferInitDescriptor
         {
-            label: None, // todo
+            label: Some(format!("vertices").as_str()), // todo
             contents: unsafe { vertices.as_u8_slice() },
             usage: BufferUsages::VERTEX,
         });
@@ -123,7 +123,7 @@ impl Mesh
 pub struct Model
 {
     name: Option<String>, //debug only?
-    bounds: AABB,
+    bounds: AABB, // note; these are untransformed
     meshes: Box<[Mesh]>,
 }
 impl Model
@@ -184,7 +184,7 @@ impl Scene
                     let c = match &mut colors
                     {
                         Some(c) => c.next().ok_or(SceneImportError::MismatchedVertexAttributeLengths)?.into(),
-                        None => Color::from(in_prim.index() as u32 * 10000),
+                        None => Color::from(in_prim.index() as u32 * 10000 + 20000),
                     };
 
                     vertices.push(VertexPosNormTexCol

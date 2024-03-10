@@ -1,13 +1,21 @@
 use std::env;
 use std::io::Read;
+use std::process::{ExitCode, Termination};
 use egui::{pos2};
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use game_3l14::engine::{*, timing::*, input::*, windows::*, graphics::*, world::*, assets::*};
 use clap::Parser;
-use futures::executor;
 use glam::{Quat, Vec3};
 use wgpu::*;
-use game_3l14::engine::async_completion::AsyncCompletion;
+
+#[derive(Debug)]
+#[repr(i32)]
+pub enum ExitReason
+{
+    Unset = !1, // this should never be set
+    UserExit = 0,
+    Panic = -99999999,
+}
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -38,19 +46,28 @@ fn shitty_join<I>(separator: &str, iter: I) -> String
 fn main()
 {
     println!("Started 3L14 at {} with args {}", chrono::Local::now(), shitty_join(" ", env::args()));
+    let mut exit_reason = ExitReason::Unset;
 
     let cli_args = CliArgs::parse();
 
-    #[cfg(debug_assertions)]
-    if cli_args.keep_alive_on_panic
+
+    if cfg!(debug_assertions) &&
+       cli_args.keep_alive_on_panic
     {
-        use std::io::{stdin};
         let default_panic_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |panic|
         {
             default_panic_hook(panic);
-            println!("!!! Press enter to exit !!!");
-            let _ = stdin().read(&mut [0u8]); // wait to exit
+            println!("Ended 3L14 at {} with reason {:?}", chrono::Local::now(), ExitReason::Panic);
+            println!("<<< Press enter to exit >>>");
+            let _ = std::io::stdin().read(&mut [0u8]); // wait to exit
+        }));
+    }
+    else
+    {
+        std::panic::set_hook(Box::new(move |panic|
+        {
+            println!("Ended 3L14 at {} with reason {:?}", chrono::Local::now(), ExitReason::Panic);
         }));
     }
 
@@ -75,7 +92,7 @@ fn main()
 
     let min_frame_time = std::time::Duration::from_secs_f32(1.0 / 150.0);
 
-    let test_scene = Scene::try_from_file("assets/pawn.glb", renderer.device()).expect("Couldn't import scene");
+    let mut test_scene = Scene::try_from_file("assets/pawn.glb", renderer.device()).expect("Couldn't import scene");
 
     let mut camera = Camera::new(renderer.display_aspect_ratio());
     camera.transform.position = Vec3::new(0.0, 2.0, -10.0);
@@ -173,12 +190,12 @@ fn main()
     let mut worlds_buf: [TransformUniform; MAX_ENTRIES_IN_WORLD_BUF] = array_init::array_init(|_| TransformUniform::default());
 
     let mut frame_number = FrameNumber(0);
-    'main: loop
+    'main_loop: loop
     {
         let mut completion = CompletionState::InProgress;
 
         frame_number.increment();
-        let frame_start_time = clock.tick(); // todo: cap fps
+        let frame_time = clock.tick();
 
         input.pre_update();
 
@@ -188,16 +205,16 @@ fn main()
             {
                 SdlEvent::Quit {..} =>
                 {
+                    exit_reason = ExitReason::UserExit;
                     completion |= CompletionState::Completed;
                 },
                 // SizeChanged?
                 SdlEvent::Window { win_event: SdlWindowEvent::Resized(w, h), .. } =>
                 {
-                    // todo
-                    // renderer.resize(w as u32, h as u32);
+                    renderer.resize(w as u32, h as u32);
                 },
 
-                _ => input.handle_event(event, frame_start_time.current_time),
+                _ => input.handle_event(event, frame_time.current_time),
             }
         }
 
@@ -205,6 +222,7 @@ fn main()
         if input.keyboard().is_key_down(KeyCode::Q) &&
            input.keyboard().has_keymod(KeyMods::CTRL)
         {
+            exit_reason = ExitReason::UserExit;
             completion = CompletionState::Completed;
         }
 
@@ -213,41 +231,54 @@ fn main()
             input.mouse().set_capture(ToggleState::Toggle);
         }
 
-        let speed = if input.keyboard().has_keymod(KeyMods::SHIFT) { 8.0 } else { 2.0 } * frame_start_time.delta_time.as_secs_f32();
-        if input.keyboard().is_key_down(KeyCode::W)
-        {
-            camera.transform.position += camera.transform.forward() * speed;
-        }
-        if input.keyboard().is_key_down(KeyCode::A)
-        {
-            camera.transform.position += camera.transform.left() * speed;
-        }
-        if input.keyboard().is_key_down(KeyCode::S)
-        {
-            camera.transform.position += camera.transform.backward() * speed;
-        }
-        if input.keyboard().is_key_down(KeyCode::D)
-        {
-            camera.transform.position += camera.transform.right() * speed;
-        }
-        if input.keyboard().is_key_down(KeyCode::E)
-        {
-            camera.transform.position += camera.transform.up() * speed;
-        }
-        if input.keyboard().is_key_down(KeyCode::Q)
-        {
-            camera.transform.position += camera.transform.down() * speed;
-        }
         if input.mouse().is_captured()
         {
             const MOUSE_SCALE: f32 = 0.01;
-            let yaw = -input.mouse().delta.x as f32 * MOUSE_SCALE; // left to right
-            let pitch = -input.mouse().delta.y as f32 * MOUSE_SCALE; // down to up
+            let yaw = -input.mouse().position_delta.x as f32 * MOUSE_SCALE; // left to right
+            let pitch = -input.mouse().position_delta.y as f32 * MOUSE_SCALE; // down to up
 
             camera.transform.rotation = Quat::normalize(
                 Quat::from_axis_angle(WORLD_RIGHT, pitch) *
-                camera.transform.rotation *
-                Quat::from_axis_angle(WORLD_UP, yaw));
+                    camera.transform.rotation *
+                    Quat::from_axis_angle(WORLD_UP, yaw));
+        }
+
+        let speed = if input.keyboard().has_keymod(KeyMods::SHIFT) { 8.0 } else { 2.0 } * frame_time.delta_time.as_secs_f32();
+        let kbd = input.keyboard();
+        if kbd.is_key_down(KeyCode::W)
+        {
+            camera.transform.position += camera.transform.forward() * speed;
+        }
+        if kbd.is_key_down(KeyCode::A)
+        {
+            camera.transform.position += camera.transform.left() * speed;
+        }
+        if kbd.is_key_down(KeyCode::S)
+        {
+            camera.transform.position += camera.transform.backward() * speed;
+        }
+        if kbd.is_key_down(KeyCode::D)
+        {
+            camera.transform.position += camera.transform.right() * speed;
+        }
+        if kbd.is_key_down(KeyCode::E)
+        {
+            camera.transform.position += camera.transform.up() * speed;
+        }
+        if kbd.is_key_down(KeyCode::Q)
+        {
+            camera.transform.position += camera.transform.down() * speed;
+        }
+        if kbd.is_key_press(KeyCode::Z)
+        {
+            let rounding = std::f32::consts::FRAC_PI_4;
+            let (axis, mut angle) = camera.transform.rotation.to_axis_angle();
+            angle = f32::round(angle / rounding) * rounding;
+            camera.transform.rotation = Quat::from_axis_angle(axis, angle);
+        }
+        if kbd.is_key_press(KeyCode::X)
+        {
+            camera.transform.rotation = Quat::IDENTITY;
         }
         camera.update_view();
 
@@ -261,11 +292,28 @@ fn main()
         //     sleep(delta)
         // }
 
+        if input.keyboard().is_key_down(KeyCode::R)
+        {
+            let rotation_speed = Degrees(45.0 * frame_time.delta_time.as_secs_f32());
+            let rotation = -Quat::from_rotation_y(rotation_speed.radians_f32());
+            test_scene.models[0].transform.rotation *= rotation;
+        }
+
         let cam_uform = CameraUniform::from(&camera);
         renderer.queue().write_buffer(&cam_uform_buf, 0, unsafe { [cam_uform].as_u8_slice() });
 
-        let mut render_frame = renderer.frame(frame_number, &input);
+        let render_frame = renderer.frame(frame_number, &input);
         {
+            egui::Window::new("Camera")
+                .resizable(false)
+                .default_pos(pos2(300.0, 50.0))
+                .show(&render_frame.debug_gui, |ui|
+                {
+                    ui.label(format!("Position: {:.2?}", camera.transform.position));
+                    ui.label(format!("Forward: {:.2?}", camera.transform.forward()));
+                    ui.label(format!("Right: {:.2?}", camera.transform.right()));
+                });
+
             let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
             {
                 let mut test_pass = render_passes::test(
@@ -306,6 +354,8 @@ fn main()
             // todo: only update what was written to
             renderer.queue().write_buffer(&world_uform_buf, 0, unsafe { worlds_buf.as_u8_slice() });
             renderer.queue().submit([encoder.finish()]);
+            
+            input.debug_gui(&render_frame.debug_gui);
 
             egui::Window::new("App Stats")
                 .open(&mut display_app_stats)
@@ -322,7 +372,7 @@ fn main()
                         //     ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag)
                         // }
 
-                        let fps = 1.0 / frame_start_time.delta_time.as_secs_f32();
+                        let fps = 1.0 / frame_time.delta_time.as_secs_f32();
                         ui.label(format!("FPS: {fps:.1}"));
                         #[cfg(debug_assertions)]
                         {
@@ -341,11 +391,11 @@ fn main()
 
         if completion == CompletionState::Completed
         {
-            break 'main
+            break 'main_loop
         }
     }
 
-    renderer.device().destroy();
+    std::mem::drop(renderer);
 
-    println!("Exited 3L14 at {}", chrono::Local::now());
+    println!("Ended 3L14 at {} with reason {:?}", chrono::Local::now(), exit_reason);
 }
