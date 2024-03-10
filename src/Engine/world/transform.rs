@@ -1,4 +1,5 @@
 use glam::{Mat4, Quat, Vec3};
+use crate::engine::world::{WORLD_FORWARD, WORLD_RIGHT, WORLD_UP};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Transform
@@ -18,19 +19,26 @@ impl Default for Transform
 }
 impl Transform
 {
-    // TODO: test
     pub fn forward(&self) -> Vec3 { self.rotation * super::WORLD_FORWARD }
     pub fn backward(&self) -> Vec3 { self.rotation * -super::WORLD_FORWARD }
-    pub fn up(&self) -> Vec3 { self.rotation * super::WORLD_UP }
-    pub fn down(&self) -> Vec3 { self.rotation * -super::WORLD_UP }
     pub fn right(&self) -> Vec3 { self.rotation * super::WORLD_RIGHT }
     pub fn left(&self) -> Vec3 { self.rotation * -super::WORLD_RIGHT }
+    pub fn up(&self) -> Vec3 { self.rotation * super::WORLD_UP }
+    pub fn down(&self) -> Vec3 { self.rotation * -super::WORLD_UP }
+
+    // Apply an in-place rotation to this transform
+    pub fn turn(&mut self, yaw: f32, pitch: f32, roll: f32)
+    {
+        let yaw_quat = Quat::from_axis_angle(WORLD_UP, yaw);
+        let pitch_quat = Quat::from_axis_angle(WORLD_RIGHT, pitch);
+        let roll_quat = Quat::from_axis_angle(WORLD_FORWARD, roll);
+        // LH ordering
+        self.rotation = Quat::normalize(yaw_quat * self.rotation * pitch_quat * roll_quat);
+    }
 
     pub fn to_view(&self) -> Mat4
     {
-        //let silly = Quat::from_xyzw(self.rotation.x, self.rotation.y, -self.rotation.z, -self.rotation.w);
-        //let rotation = Mat4::from_quat(silly);
-        let rotation = Mat4::from_quat(self.rotation);
+        let rotation = Mat4::from_quat(self.rotation.inverse());
         let translation = Mat4::from_translation(-self.position);
         rotation * translation
     }

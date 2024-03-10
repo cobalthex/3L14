@@ -90,16 +90,15 @@ fn main()
 
     let mut renderer = futures::executor::block_on(Renderer::new(windows.main_window())); // don't block?
 
-    let min_frame_time = std::time::Duration::from_secs_f32(1.0 / 150.0);
+    let min_frame_time = std::time::Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
     let mut test_scene = Scene::try_from_file("assets/pawn.glb", renderer.device()).expect("Couldn't import scene");
 
-    let mut camera = Camera::new(renderer.display_aspect_ratio());
+    let mut camera = Camera::new(Some("fp_cam"), renderer.display_aspect_ratio());
     camera.transform.position = Vec3::new(0.0, 2.0, -10.0);
     camera.update_view();
 
     const MAX_ENTRIES_IN_WORLD_BUF: usize = 64;
-    let foo = std::mem::size_of::<TransformUniform>();
     let world_uform_buf = renderer.device().create_buffer(&BufferDescriptor
     {
         label: Some("World uniform buffer"),
@@ -234,13 +233,10 @@ fn main()
         if input.mouse().is_captured()
         {
             const MOUSE_SCALE: f32 = 0.01;
-            let yaw = -input.mouse().position_delta.x as f32 * MOUSE_SCALE; // left to right
-            let pitch = -input.mouse().position_delta.y as f32 * MOUSE_SCALE; // down to up
-
-            camera.transform.rotation = Quat::normalize(
-                Quat::from_axis_angle(WORLD_RIGHT, pitch) *
-                    camera.transform.rotation *
-                    Quat::from_axis_angle(WORLD_UP, yaw));
+            let yaw = input.mouse().position_delta.x as f32 * MOUSE_SCALE; // left to right
+            let pitch = input.mouse().position_delta.y as f32 * MOUSE_SCALE; // down to up
+            let roll = 0.0;
+            camera.transform.turn(yaw, pitch, roll);
         }
 
         let speed = if input.keyboard().has_keymod(KeyMods::SHIFT) { 8.0 } else { 2.0 } * frame_time.delta_time.as_secs_f32();
@@ -304,16 +300,6 @@ fn main()
 
         let render_frame = renderer.frame(frame_number, &input);
         {
-            egui::Window::new("Camera")
-                .resizable(false)
-                .default_pos(pos2(300.0, 50.0))
-                .show(&render_frame.debug_gui, |ui|
-                {
-                    ui.label(format!("Position: {:.2?}", camera.transform.position));
-                    ui.label(format!("Forward: {:.2?}", camera.transform.forward()));
-                    ui.label(format!("Right: {:.2?}", camera.transform.right()));
-                });
-
             let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
             {
                 let mut test_pass = render_passes::test(
@@ -354,8 +340,9 @@ fn main()
             // todo: only update what was written to
             renderer.queue().write_buffer(&world_uform_buf, 0, unsafe { worlds_buf.as_u8_slice() });
             renderer.queue().submit([encoder.finish()]);
-            
+
             input.debug_gui(&render_frame.debug_gui);
+            camera.debug_gui(&render_frame.debug_gui);
 
             egui::Window::new("App Stats")
                 .open(&mut display_app_stats)

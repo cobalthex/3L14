@@ -1,9 +1,13 @@
-use glam::{Mat4, Vec3};
+use egui::Context;
+use glam::Mat4;
 use crate::engine::{Radians, Degrees};
+use crate::engine::graphics::DebugGui;
 use super::Transform;
 
 pub struct Camera
 {
+    pub name: Option<String>,
+
     pub transform: Transform,
 
     pub fov: Radians,
@@ -16,7 +20,7 @@ pub struct Camera
 }
 impl Camera
 {
-    pub fn new(aspect_ratio: f32) -> Self
+    pub fn new<S: AsRef<str>>(name: Option<S>, aspect_ratio: f32) -> Self
     {
         let fov: Radians = Degrees(59.0).into(); // 90 deg horizontal FOV
         let near_clip =  0.1;
@@ -26,6 +30,7 @@ impl Camera
         let view = transform.to_view();
         Self
         {
+            name: name.map(|n| n.as_ref().to_string()),
             transform,
             fov,
             aspect_ratio,
@@ -48,6 +53,22 @@ impl Camera
     {
         self.projection = Mat4::perspective_lh(self.fov.0, self.aspect_ratio, self.near_clip, self.far_clip);
         self.projection
+    }
+}
+impl DebugGui for Camera
+{
+    fn debug_gui(&self, context: &Context)
+    {
+        egui::Window::new(format!("Camera '{}'", self.name.as_ref().map_or("", |n| n.as_str())))
+            .resizable(false)
+            .show(context, |ui|
+            {
+                ui.label(format!("Position: {:.2?}", self.transform.position));
+                ui.label(format!("Forward: {:.2?}", self.transform.forward()));
+                // ui.label(format!("Right: {:.2?}", self.transform.right()));
+                // ui.label(format!("Up: {:.2?}", self.transform.up()));
+                ui.label(format!("FOV: {}", self.fov));
+            });
     }
 }
 
