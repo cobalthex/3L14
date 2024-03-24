@@ -1,12 +1,21 @@
 use std::path::PathBuf;
+use std::thread::current;
 use egui::epaint::Shadow;
-use egui::{Rounding, Stroke, Visuals};
+use egui::{Pos2, Rect, Rounding, Stroke, Visuals};
 use egui_wgpu::ScreenDescriptor;
 use sdl2::video::Window;
 #[allow(deprecated)]
 use wgpu::rwh::{HasRawDisplayHandle, HasRawWindowHandle};
 use wgpu::*;
 use crate::engine::FrameNumber;
+
+pub const MAX_CONSEC_FRAMES: usize = 3;
+
+struct RenderFrameData
+{
+    last_submission: Option<SubmissionIndex>,
+    depth_buffer: Texture,
+}
 
 pub struct Renderer<'r>
 {
@@ -22,12 +31,17 @@ pub struct Renderer<'r>
 
     debug_gui: egui::Context,
     debug_gui_renderer: egui_wgpu::Renderer,
+
+    // todo: this needs to know when a new frame is available before picking one
+    render_frames: [RenderFrameData; MAX_CONSEC_FRAMES],
 }
 impl<'r> Renderer<'r>
 {
     pub async fn new(window: &Window) -> Renderer
     {
-        let allow_msaa = true; // testing
+        puffin::profile_function!();
+
+        let allow_msaa = true; // should be in some settings somewhere
 
         let instance = Instance::new(InstanceDescriptor
         {
@@ -44,10 +58,10 @@ impl<'r> Renderer<'r>
         #[allow(deprecated)]
         let handle = SurfaceTargetUnsafe::RawHandle
         {
-            raw_display_handle: window.raw_display_handle().unwrap(),
-            raw_window_handle: window.raw_window_handle().unwrap(),
+            raw_display_handle: window.raw_display_handle().expect("Failed to get display handle"),
+            raw_window_handle: window.raw_window_handle().expect("Failed to get window handle"),
         };
-        let surface = unsafe { instance.create_surface_unsafe(handle).unwrap() };
+        let surface = unsafe { instance.create_surface_unsafe(handle).expect("Failed to create swap-chain") };
 
         // enumerate adapters?
         let adapter = instance
@@ -62,7 +76,7 @@ impl<'r> Renderer<'r>
             .expect("Failed to find an appropriate adapter");
 
         let adapter_info = adapter.get_info();
-        println!("Selected adapter: {:?}", adapter_info);
+        println!("Creating render device with {:?}", adapter_info);
 
         // Create the logical device and command queue
         let (device, queue) = adapter
@@ -73,17 +87,20 @@ impl<'r> Renderer<'r>
                         Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES |
                         Features::PUSH_CONSTANTS,
                     // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
-                    required_limits: Limits::downlevel_webgl2_defaults()
-                        .using_resolution(adapter.limits()),
+                    required_limits: Limits
+                    {
+                        max_push_constant_size: 256, // doesn't support WebGPU
+                        .. Default::default()
+                    }.using_resolution(adapter.limits()),
                 },
                 None,
             )
             .await
             .expect("Failed to create device");
 
-        let wnd_size = window.size();
+        let window_size = window.size();
         let surface_config = surface
-            .get_default_config(&adapter, wnd_size.0, wnd_size.1)
+            .get_default_config(&adapter, window_size.0, window_size.1)
             .unwrap();
         surface.configure(&device, &surface_config);
 
@@ -99,20 +116,17 @@ impl<'r> Renderer<'r>
             else { 1 }
         };
 
-        let current_sample_count;
-        let msaa_buffer;
-        if allow_msaa &&
-           max_sample_count > 1
+        let current_sample_count = max_sample_count;
+        let msaa_buffer = if
+            allow_msaa &&
+            current_sample_count > 1
         {
-            current_sample_count = max_sample_count;
-            // don't create if only one sample?
-            msaa_buffer = Some(Self::create_msaa_buffer(current_sample_count, &device, &surface_config));
+            Some(Self::create_msaa_buffer(current_sample_count, &device, &surface_config))
         }
         else
         {
-            current_sample_count = 1;
-            msaa_buffer = None;
-        }
+            None
+        };
 
         let debug_gui = egui::Context::default();
         debug_gui.set_visuals(Visuals
@@ -125,6 +139,32 @@ impl<'r> Renderer<'r>
         });
         let debug_gui_renderer = egui_wgpu::Renderer::new(&device, surface_config.format, None, 1);
 
+        // todo: recreate on resize
+        let depth_buffer_desc = TextureDescriptor
+        {
+            label: Some("Depth buffer"),
+            size: Extent3d
+            {
+                width: surface_config.width,
+                height: surface_config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: current_sample_count,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Depth32Float,
+            usage: TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        };
+        let render_frames = std::array::from_fn::<_, MAX_CONSEC_FRAMES, _>(|_|
+        {
+            RenderFrameData
+            {
+                last_submission: None,
+                depth_buffer: device.create_texture(&depth_buffer_desc),
+            }
+        });
+
         Renderer
         {
             device,
@@ -136,11 +176,20 @@ impl<'r> Renderer<'r>
             msaa_buffer,
             debug_gui,
             debug_gui_renderer,
+            render_frames,
         }
+    }
+
+    pub fn reconfigure(&self)
+    {
+        self.surface.configure(&self.device, &self.surface_config);
+        println!("Refreshed swap chain");
     }
 
     pub fn resize(&mut self, new_width: u32, new_height: u32)
     {
+        puffin::profile_function!();
+
         if new_width == 0 || new_height == 0
         {
             panic!("Render width/height cannot be zero");
@@ -155,6 +204,28 @@ impl<'r> Renderer<'r>
         self.surface.configure(&self.device, &self.surface_config);
         // max_sample_count may need to be recreated
         self.msaa_buffer = self.msaa_buffer.as_ref().map(|_| Self::create_msaa_buffer(self.current_sample_count, &self.device, &self.surface_config));
+
+        let depth_buffer_desc = TextureDescriptor
+        {
+            label: Some("Depth buffer"),
+            size: Extent3d
+            {
+                width: self.surface_config.width,
+                height: self.surface_config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: self.current_sample_count,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Depth32Float,
+            usage: TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        };
+        for f in &mut self.render_frames
+        {
+            f.depth_buffer = self.device.create_texture(&depth_buffer_desc);
+            f.last_submission = None;
+        }
     }
 
     pub fn device(&self) -> &Device { &self.device }
@@ -170,21 +241,39 @@ impl<'r> Renderer<'r>
 
     pub fn frame(&'r self, frame_number: FrameNumber, input: &crate::engine::input::Input) -> RenderFrame
     {
-        let back_buffer = match self.surface.get_current_texture()
+        puffin::profile_function!();
+
+        let back_buffer;
+        let rf_data;
+
         {
-            Ok(texture) => texture,
-            Err(SurfaceError::Timeout) => self.surface.get_current_texture().expect("Get swap chain target timed out"),
-            Err(SurfaceError::Outdated | SurfaceError::Lost | SurfaceError::OutOfMemory) =>
+            puffin::profile_scope!("Wait for frame ready");
+            back_buffer = match self.surface.get_current_texture()
             {
-                self.surface.configure(&self.device, &self.surface_config);
-                self.surface.get_current_texture().expect("Failed to get swap chain target")
-            }
-        };
+                Ok(texture) => texture,
+                Err(SurfaceError::Timeout) => self.surface.get_current_texture().expect("Get swap chain target timed out"),
+                Err(SurfaceError::Outdated | SurfaceError::Lost | SurfaceError::OutOfMemory) =>
+                    {
+                        self.reconfigure();
+                        self.surface.get_current_texture().expect("Failed to get swap chain target")
+                    }
+            };
+            rf_data = &self.render_frames[frame_number.0 as usize % self.render_frames.len()];
+            match &rf_data.last_submission
+            {
+                Some(i) => { self.device.poll(Maintain::WaitForSubmissionIndex(i.clone())); }, // not web-gpu compatible
+                None => {},
+            };
+        }
+
         let back_buffer_view = back_buffer.texture.create_view(&TextureViewDescriptor::default());
+        let depth_buffer_view = rf_data.depth_buffer.create_view(&TextureViewDescriptor::default());
 
         let debug_gui = self.debug_gui.clone();
-        let raw_input = input.into();
-        // todo: parallel render support
+        let mut raw_input: egui::RawInput = input.into();
+        // todo: raw_input. max_texture_size, time, focused
+        raw_input.screen_rect = Some(Rect::from_min_max(
+            Pos2::ZERO, Pos2::new(back_buffer.texture.width() as f32, back_buffer.texture.height() as f32)));
         debug_gui.begin_frame(raw_input);
 
         RenderFrame
@@ -192,11 +281,12 @@ impl<'r> Renderer<'r>
             frame_number,
             back_buffer,
             back_buffer_view,
+            depth_buffer_view,
             debug_gui,
         }
     }
 
-    fn present_debug_gui(&mut self, clip_size: [u32; 2], target: &TextureView) -> CommandBuffer
+    fn render_debug_gui(&mut self, clip_size: [u32; 2], target: &TextureView) -> CommandBuffer
     {
         let output = self.debug_gui.end_frame();
         output.textures_delta.set.iter().for_each(|td|
@@ -250,8 +340,10 @@ impl<'r> Renderer<'r>
 
     pub fn present(&mut self, frame: RenderFrame)
     {
+        puffin::profile_function!();
+
         let back_buffer_size =frame.back_buffer.texture.size();
-        let gui_commands = self.present_debug_gui(
+        let gui_commands = self.render_debug_gui(
             [back_buffer_size.width, back_buffer_size.height],
             &frame.back_buffer_view);
         self.queue.submit([gui_commands]);
@@ -290,13 +382,14 @@ impl<'r> Renderer<'r>
 
 pub struct RenderFrame
 {
-    frame_number: FrameNumber,
-    back_buffer: SurfaceTexture,
+    pub frame_number: FrameNumber,
 
+    back_buffer: SurfaceTexture,
     pub back_buffer_view: TextureView,
+    pub depth_buffer_view: TextureView,
+
     pub debug_gui: egui::Context,
 }
 impl RenderFrame
 {
-    pub fn frame_number(&self) -> FrameNumber { self.frame_number }
 }

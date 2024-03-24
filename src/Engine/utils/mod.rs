@@ -1,4 +1,5 @@
 pub mod async_completion;
+pub mod alloc_slice;
 
 pub trait AsU8Slice<'a>
 {
@@ -25,7 +26,6 @@ impl<'a, T> AsU8Slice<'a> for [T]
         std::slice::from_raw_parts(self.as_ptr() as *const u8, std::mem::size_of_val(self))
     }
 }
-
 
 // fuck rust iterators
 // use std::fmt::{Debug, Display, Formatter, Result};

@@ -5,6 +5,7 @@ use super::colors;
 pub fn test<'f>(
     renderer: &'f Renderer,
     target: &'f TextureView,
+    depth_stencil: &'f TextureView,
     encoder: &'f mut CommandEncoder,
     clear_color: Option<colors::Color>) -> RenderPass<'f>
 {
@@ -24,7 +25,12 @@ pub fn test<'f>(
                 },
             },
         )],
-        depth_stencil_attachment: None,
+        depth_stencil_attachment: Some(RenderPassDepthStencilAttachment
+        {
+            view: depth_stencil,
+            depth_ops: Some(Operations { load: LoadOp::Clear(1.0), store: StoreOp::Store }),
+            stencil_ops: None,
+        }),
         timestamp_writes: None,
         occlusion_query_set: None,
     })

@@ -1,12 +1,13 @@
+pub mod texture;
+pub mod material;
+
 use std::any::{type_name, TypeId};
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
-use std::future::Future;
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::ops::{Deref, DerefMut};
-use std::pin::Pin;
+use std::ops::{DerefMut};
 use std::sync::{Arc, Weak};
-use std::task::{Context, Poll, Waker};
+use std::task::{Poll, Waker};
 use parking_lot::Mutex;
 use unicase::UniCase;
 
@@ -52,7 +53,6 @@ pub enum AssetPayload<A: Asset + ?Sized>
     Unavailable(AssetLoadError), // shouldn't be stored in-cache
 }
 
-
 pub struct AssetData
 {
     key: AssetKey,
@@ -71,19 +71,17 @@ impl AssetData
 
     pub fn debug_type_id(&self) -> Option<TypeId>
     {
-        match cfg!(debug_assertions)
-        {
-            true => Some(self.debug_type_id),
-            false => None,
-        }
+        #[cfg(debug_assertions)]
+        return Some(self.debug_type_id);
+        #[cfg(not(debug_assertions))]
+        return None;
     }
     pub fn debug_asset_path(&self) -> Option<&str>
     {
-        match cfg!(debug_assertions)
-        {
-            true => Some(self.debug_path.as_str()),
-            false => None,
-        }
+        #[cfg(debug_assertions)]
+        return Some(self.debug_path.as_str());
+        #[cfg(not(debug_assertions))]
+        return None;
     }
 
     pub fn payload<A: Asset>(&self) -> Arc<AssetPayload<A>>
@@ -196,7 +194,9 @@ mod tests
     {
         asset_name: String,
     }
-    impl Asset for TestAsset { }
+    impl Asset for TestAsset
+    {
+    }
 
     struct TestLoader;
     impl AssetLifecycler for TestLoader
@@ -204,7 +204,7 @@ mod tests
         fn load(&mut self, request: AssetLoadRequest)
         {
             let payload = Box::new(TestAsset { asset_name: request.key_desc.path.to_string() });
-            Arc::get_mut(&request.handle.payload) = Arc::new(AssetPayload::Available(payload));
+            *Arc::get_mut(&request.handle.payload).unwrap() = Arc::new(AssetPayload::Available(payload));
         }
 
         fn unload(&mut self, key: AssetHandle)

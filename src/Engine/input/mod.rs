@@ -3,7 +3,7 @@ use std::intrinsics::transmute;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Sub, SubAssign};
 use std::slice::Iter;
 use std::time::Instant;
-use egui::{Context, Pos2, RawInput};
+use egui::{Context, Pos2, RawInput, Ui};
 use glam::IVec2;
 use sdl2::event::Event;
 use sdl2::keyboard::Mod;
@@ -38,6 +38,7 @@ impl Input
 
     pub fn pre_update(&mut self)
     {
+        puffin::profile_function!();
         self.keyboard.pre_update();
         self.mouse.pre_update();
     }
@@ -94,7 +95,7 @@ impl Input
                 {
                     Some(key) =>
                     {
-                        if let Some(keystate) = self.keyboard.get_key_down_mut(key)
+                        if let Some(keystate) = self.keyboard.get_key_mut(key)
                         {
                             keystate.state = ButtonState::JustOff
                         }
@@ -167,6 +168,7 @@ impl From<&Input> for RawInput
         ri.modifiers.alt = input.keyboard.has_keymod(KeyMods::ALT);
         // todo: iterate keys
 
+        // todo: this should be scaled by zoom apparently
         let mouse_pos = Pos2
         {
             x: input.mouse.position.x as f32,
@@ -214,45 +216,41 @@ impl From<&Input> for RawInput
     }
 }
 
-impl super::graphics::DebugGui for Input
+impl<'n> super::graphics::debug_gui::DebugGui<'n> for Input
 {
-    fn debug_gui(&self, context: &Context)
+    fn name(&self) -> &'n str { "Input state" }
+    fn debug_gui(&self, ui: &mut Ui)
     {
-        egui::Window::new("Input state")
-            .resizable(true)
-            .show(context, |ui|
+        ui.horizontal_top(|hui|
+        {
+            hui.collapsing("Keyboard", |kbui|
             {
-                ui.horizontal_top(|hui|
+                kbui.set_min_width(120.0);
+                kbui.label(format!("Mods: {:?}", self.keyboard.mods));
+                let mut any = false;
+                for state in self.keyboard.pressed_keys.iter()
                 {
-                    hui.collapsing("Keyboard", |kbui|
-                    {
-                        kbui.set_min_width(120.0);
-                        kbui.label(format!("Mods: {:?}", self.keyboard.mods));
-                        let mut any = false;
-                        for state in self.keyboard.pressed_keys.iter()
-                        {
-                            any = true;
-                            kbui.label(format!("{:?}: {:?}", state.key_code, state.state));
-                        }
-                        if !any
-                        {
-                            kbui.label("(No keys pressed)");
-                        }
-                    });
-
-                    hui.collapsing("Mouse", |mui|
-                    {
-                        mui.set_min_width(200.0);
-                        mui.label(format!("Pos: {:?} - Delta: {:?}", self.mouse.position.to_array(), self.mouse.position_delta.to_array()));
-                        mui.label(format!("Wheel: {:?} - Delta: {:?}", self.mouse.wheel.to_array(), self.mouse.wheel_delta.to_array()));
-                        mui.label(format!("LB: {:?}", self.mouse.get_button(MouseButton::Left).state));
-                        mui.label(format!("MB: {:?}", self.mouse.get_button(MouseButton::Middle).state));
-                        mui.label(format!("RB: {:?}", self.mouse.get_button(MouseButton::Right).state));
-                        mui.label(format!("X1: {:?}", self.mouse.get_button(MouseButton::X1).state));
-                        mui.label(format!("X2: {:?}", self.mouse.get_button(MouseButton::X2).state));
-                    });
-                });
+                    any = true;
+                    kbui.label(format!("{:?}: {:?}", state.key_code, state.state));
+                }
+                if !any
+                {
+                    kbui.label("(No keys pressed)");
+                }
             });
+
+            hui.collapsing("Mouse", |mui|
+            {
+                mui.set_min_width(200.0);
+                mui.label(format!("Pos: {:?} - Delta: {:?}", self.mouse.position.to_array(), self.mouse.position_delta.to_array()));
+                mui.label(format!("Wheel: {:?} - Delta: {:?}", self.mouse.wheel.to_array(), self.mouse.wheel_delta.to_array()));
+                mui.label(format!("LB: {:?}", self.mouse.get_button(MouseButton::Left).state));
+                mui.label(format!("MB: {:?}", self.mouse.get_button(MouseButton::Middle).state));
+                mui.label(format!("RB: {:?}", self.mouse.get_button(MouseButton::Right).state));
+                mui.label(format!("X1: {:?}", self.mouse.get_button(MouseButton::X1).state));
+                mui.label(format!("X2: {:?}", self.mouse.get_button(MouseButton::X2).state));
+            });
+        });
     }
 }
 
@@ -376,7 +374,7 @@ impl KeyboardState
         self.pressed_keys.iter()
     }
 
-    fn get_key_down_mut(&mut self, key_code: KeyCode) -> Option<&mut KeyState>
+    fn get_key_mut(&mut self, key_code: KeyCode) -> Option<&mut KeyState>
     {
         self.pressed_keys.iter_mut().find(|p| p.key_code == key_code)
     }
@@ -384,15 +382,15 @@ impl KeyboardState
     {
         self.pressed_keys.iter().find(|p| p.key_code == key_code)
     }
-    pub fn is_key_down(&self, key_code: KeyCode) -> bool
+    pub fn is_down(&self, key_code: KeyCode) -> bool
     {
         matches!(self.get_key(key_code), Some(KeyState { state: ButtonState::On | ButtonState::JustOn, .. }))
     }
-    pub fn is_key_press(&self, key_code: KeyCode) -> bool
+    pub fn is_press(&self, key_code: KeyCode) -> bool
     {
         matches!(self.get_key(key_code), Some(KeyState { state: ButtonState::JustOn, .. }))
     }
-    pub fn is_key_click(&self, key_code: KeyCode) -> bool
+    pub fn is_click(&self, key_code: KeyCode) -> bool
     {
         matches!(self.get_key(key_code), Some(KeyState { state: ButtonState::JustOff, .. }))
     }

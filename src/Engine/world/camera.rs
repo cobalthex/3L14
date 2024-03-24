@@ -1,7 +1,7 @@
-use egui::Context;
+use egui::{Context, Ui};
 use glam::Mat4;
 use crate::engine::{Radians, Degrees};
-use crate::engine::graphics::DebugGui;
+use crate::engine::graphics::debug_gui::DebugGui;
 use super::Transform;
 
 pub struct Camera
@@ -55,20 +55,17 @@ impl Camera
         self.projection
     }
 }
-impl DebugGui for Camera
+impl<'n> DebugGui<'n> for Camera
 {
-    fn debug_gui(&self, context: &Context)
+    fn name(&self) -> &'n str { "Camera" } // TODO { format!("Camera '{}'", self.name.as_ref().map_or("", |n| n.as_str())) }
+
+    fn debug_gui(&self, ui: &mut Ui)
     {
-        egui::Window::new(format!("Camera '{}'", self.name.as_ref().map_or("", |n| n.as_str())))
-            .resizable(false)
-            .show(context, |ui|
-            {
-                ui.label(format!("Position: {:.2?}", self.transform.position));
-                ui.label(format!("Forward: {:.2?}", self.transform.forward()));
-                // ui.label(format!("Right: {:.2?}", self.transform.right()));
-                // ui.label(format!("Up: {:.2?}", self.transform.up()));
-                ui.label(format!("FOV: {}", self.fov));
-            });
+        ui.label(format!("Position: {:.2?}", self.transform.position));
+        ui.label(format!("Forward: {:.2?}", self.transform.forward()));
+        // ui.label(format!("Right: {:.2?}", self.transform.right()));
+        // ui.label(format!("Up: {:.2?}", self.transform.up()));
+        ui.label(format!("FOV: {}", self.fov.to_degrees()));
     }
 }
 
@@ -76,12 +73,17 @@ impl DebugGui for Camera
 pub struct CameraUniform
 {
     pub proj_view: Mat4,
+    pub total_secs: f32,
 }
 
-impl From<&Camera> for CameraUniform
+impl CameraUniform
 {
-    fn from(camera: &Camera) -> Self
+    pub fn new(camera: &Camera, clock: &crate::engine::timing::Clock) -> Self
     {
-        Self { proj_view: camera.projection() * camera.view() }
+        Self
+        {
+            proj_view: camera.projection() * camera.view(),
+            total_secs: clock.total_runtime().as_secs_f32(),
+        }
     }
 }

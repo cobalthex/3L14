@@ -1,4 +1,5 @@
 use sdl2::{*, video::*};
+use crate::AppInfo;
 
 pub struct Windows
 {
@@ -6,10 +7,20 @@ pub struct Windows
 }
 impl Windows
 {
-    pub fn new(sdl_video: &VideoSubsystem) -> Self
+    pub fn new(sdl_video: &VideoSubsystem, app_info: &AppInfo) -> Self
     {
+        #[cfg(debug_assertions)]
+        let window_title = format!(
+            "{}  -  v{}  PID:{}  Elevated:{}",
+            app_info.app_name,
+            app_info.version_str,
+            app_info.pid,
+            app_info.is_elevated);
+        #[cfg(not(debug_assertions))]
+        let window_title = String::from(app_info.app_name); // todo: make this not allocate
+
         let main_window = sdl_video
-            .window("3L14", 1920, 1080)
+            .window(window_title.as_str(), 1920, 1080)
             .resizable()
             .build()
             .unwrap();

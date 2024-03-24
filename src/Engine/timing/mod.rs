@@ -8,6 +8,11 @@ pub struct Time
     pub last_time: Instant,
     pub delta_time: Duration,
 }
+impl Time
+{
+    // calculate the instantaneous fps between now and the previous frame
+    pub fn fps(&self) -> f32 { 1.0 / self.delta_time.as_secs_f32() }
+}
 
 pub struct Clock
 {

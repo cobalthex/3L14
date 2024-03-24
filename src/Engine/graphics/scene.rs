@@ -1,15 +1,16 @@
-use std::collections::HashMap;
-use std::fs::File;
 use std::ops::Range;
-use egui::epaint::Vertex;
-use glam::{Mat4, Quat, Vec2, Vec3};
+
+use glam::{Quat, Vec2, Vec3};
+use gltf::image::Source;
 use gltf::mesh::util::ReadIndices;
-use wgpu::{BufferSlice, BufferUsages, Device, IndexFormat, Label, vertex_attr_array, VertexBufferLayout};
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use wgpu::{BufferSlice, BufferUsages, Extent3d, IndexFormat, TextureDescriptor, vertex_attr_array, VertexBufferLayout};
+use wgpu::util::{BufferInitDescriptor, DeviceExt, TextureDataOrder};
+
 use crate::engine::{AABB, AsU8Slice};
 use crate::engine::assets::Asset;
-use crate::engine::graphics::colors;
+use crate::engine::graphics::Renderer;
 use crate::engine::world::Transform;
+
 use super::colors::Color;
 
 pub trait WgpuVertexDecl
@@ -66,6 +67,9 @@ pub struct Mesh
     indices: wgpu::Buffer,
     index_count: u32,
     index_format: IndexFormat,
+
+    // todo: materials
+    texture: Option<wgpu::Texture>,
 }
 impl Mesh
 {
@@ -115,7 +119,8 @@ impl Mesh
                 2 => IndexFormat::Uint16,
                 4 => IndexFormat::Uint32,
                 _ => panic!("Unsupported index format"),
-            }
+            },
+            texture: None,
         }
     }
 }
@@ -133,7 +138,9 @@ impl Model
         self.meshes.as_ref()
     }
 }
-impl Asset for Model{}
+impl Asset for Model
+{
+}
 
 pub struct SceneNode<T>
 {
@@ -145,18 +152,21 @@ pub struct Scene
 {
     pub models: Vec<SceneNode<Model>>,
 }
-impl Asset for Scene{}
+impl Asset for Scene
+{
+}
 
 impl Scene
 {
     // todo: make async
-    pub fn try_from_file(file: &str, device: &Device) -> Result<Self, SceneImportError>
+    pub fn try_from_file(file: &str, renderer: &Renderer) -> Result<Self, SceneImportError>
     {
         // todo: vertex buffer/index buffer allocator
 
         //let (document, buffers, _img) = gltf::import(file).map_err(SceneImportError::GltfError)?;
         let gltf::Gltf { document, blob } = gltf::Gltf::open(file).map_err(SceneImportError::GltfError)?;
         let buffers =  gltf::import_buffers(&document, None, blob).map_err(SceneImportError::GltfError)?;
+        let images = gltf::import_images(&document, None, &buffers).map_err(SceneImportError::GltfError)?;
 
         let parse_mesh = |in_mesh: gltf::Mesh|
         {
@@ -196,7 +206,7 @@ impl Scene
                     });
                 }
 
-                let vbuffer = device.create_buffer_init(&BufferInitDescriptor
+                let vbuffer = renderer.device().create_buffer_init(&BufferInitDescriptor
                 {
                     label: Some(format!("{file} vertices").as_str()),
                     contents: unsafe { vertices.as_u8_slice() },
@@ -216,7 +226,7 @@ impl Scene
                         let vec = u8s.map(|u| u as u16).collect::<Vec<u16>>();
                         index_fmt = IndexFormat::Uint16;
                         index_count = vec.len();
-                        device.create_buffer_init(&BufferInitDescriptor
+                        renderer.device().create_buffer_init(&BufferInitDescriptor
                         {
                             label: Some(ibuffer_label.as_str()),
                             contents: unsafe { vec.as_u8_slice() },
@@ -228,7 +238,7 @@ impl Scene
                         let vec = u16s.collect::<Vec<u16>>();
                         index_fmt = IndexFormat::Uint16;
                         index_count = vec.len();
-                        device.create_buffer_init(&BufferInitDescriptor
+                        renderer.device().create_buffer_init(&BufferInitDescriptor
                         {
                             label: Some(ibuffer_label.as_str()),
                             contents: unsafe { vec.as_u8_slice() },
@@ -240,13 +250,39 @@ impl Scene
                         let vec = u32s.collect::<Vec<u32>>();
                         index_fmt = IndexFormat::Uint32;
                         index_count = vec.len();
-                        device.create_buffer_init(&BufferInitDescriptor
+                        renderer.device().create_buffer_init(&BufferInitDescriptor
                         {
                             label: Some(ibuffer_label.as_str()),
                             contents: unsafe { vec.as_u8_slice() },
                             usage: BufferUsages::INDEX,
                         })
                     },
+                };
+
+                let tex = match in_prim.material().pbr_metallic_roughness().base_color_texture()
+                {
+                    None => None,
+                    Some(tex) =>
+                    {
+                        let data = &images[tex.texture().source().index()];
+                        // todo: this needs to reconcile the image format
+                        let z = renderer.device().create_texture_with_data(renderer.queue(), &TextureDescriptor
+                        {
+                            label: Some("todo: texture"),
+                            size: Extent3d {
+                                width: data.width,
+                                height: data.height,
+                                depth_or_array_layers: 1,
+                            },
+                            mip_level_count: 1,
+                            sample_count: 1,
+                            dimension: wgpu::TextureDimension::D2,
+                            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                            view_formats: &[],
+                        }, TextureDataOrder::LayerMajor, data.pixels.as_slice());
+                        Some(z)
+                    }
                 };
 
                 meshes.push(Mesh
@@ -257,6 +293,7 @@ impl Scene
                     indices: ibuffer,
                     index_count: index_count as u32,
                     index_format: index_fmt,
+                    texture: tex,
                 });
             }
 

@@ -1,14 +1,14 @@
 use wgpu::*;
 use crate::engine::graphics::Renderer;
-use super::model::{VertexPosNormTexCol, WgpuVertexDecl};
+use super::scene::{VertexPosNormTexCol, WgpuVertexDecl};
 
 pub fn new(
     renderer: &Renderer,
     camera_bind_group: &BindGroupLayout,
-    transform_bind_group: &BindGroupLayout)
+    transform_bind_group: &BindGroupLayout,
+    tex_bind_group: &BindGroupLayout)
     -> RenderPipeline
 {
-
     let test_shader = renderer.device().create_shader_module(
         include_wgsl!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/shaders/test.wgsl")));
 
@@ -18,7 +18,7 @@ pub fn new(
         layout: Some(&renderer.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor
         {
             label: Some("Test render pipeline layout"),
-            bind_group_layouts: &[camera_bind_group, transform_bind_group],
+            bind_group_layouts: &[camera_bind_group, transform_bind_group, &tex_bind_group],
             push_constant_ranges: &[],
         })),
         vertex: VertexState
@@ -31,13 +31,20 @@ pub fn new(
         {
             topology: PrimitiveTopology::TriangleList,
             strip_index_format: None,
-            front_face: FrontFace::Ccw,
+            front_face: FrontFace::Cw,
             cull_mode: Some(Face::Back),
             polygon_mode: PolygonMode::Fill,
             unclipped_depth: false,
             conservative: false,
         },
-        depth_stencil: None,
+        depth_stencil: Some(wgpu::DepthStencilState
+        {
+            format: TextureFormat::Depth32Float, // depth + stencil?
+            depth_write_enabled: true,
+            depth_compare: CompareFunction::Less,
+            stencil: StencilState::default(),
+            bias: DepthBiasState::default(),
+        }),
         multisample: MultisampleState // todo: MSAA support in back buffer
         {
             count: renderer.current_sample_count(),

@@ -1,6 +1,7 @@
 struct CameraUniform
 {
     Mat4x4 proj_view;
+    float total_secs;
 };
 struct WorldUniform
 {

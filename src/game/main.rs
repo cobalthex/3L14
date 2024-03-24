@@ -1,12 +1,18 @@
 use std::env;
 use std::io::Read;
 use std::process::{ExitCode, Termination};
-use egui::{pos2};
+use std::time::Duration;
+use egui::{Area, Context, pos2, Ui};
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use game_3l14::engine::{*, timing::*, input::*, windows::*, graphics::*, world::*, assets::*};
 use clap::Parser;
 use glam::{Quat, Vec3};
 use wgpu::*;
+use wgpu::util::{DeviceExt, TextureDataOrder};
+use game_3l14::engine::alloc_slice::alloc_slice_uninit;
+use game_3l14::engine::graphics::debug_gui::AppStats;
+use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
+use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
 
 #[derive(Debug)]
 #[repr(i32)]
@@ -14,7 +20,14 @@ pub enum ExitReason
 {
     Unset = !1, // this should never be set
     UserExit = 0,
-    Panic = -99999999,
+    Panic = -99,
+}
+impl std::process::Termination for ExitReason
+{
+    fn report(self) -> ExitCode
+    {
+        (self as u8).into()
+    }
 }
 
 #[derive(Debug, Parser)]
@@ -43,32 +56,52 @@ fn shitty_join<I>(separator: &str, iter: I) -> String
     out
 }
 
-fn main()
+fn main() -> ExitReason
 {
-    println!("Started 3L14 at {} with args {}", chrono::Local::now(), shitty_join(" ", env::args()));
+    let app_info = game_3l14::AppInfo::default();
+
+    println!("Started 3L14 (PID {}) at {} with args {}", app_info.pid, app_info.start_time, shitty_join(" ", std::env::args()));
     let mut exit_reason = ExitReason::Unset;
+
+    #[cfg(debug_assertions)]
+    let _puffin_server;
+    #[cfg(debug_assertions)]
+    {
+        let server_addr = format!("0.0.0.0:{}", puffin_http::DEFAULT_PORT);
+        _puffin_server = puffin_http::Server::new(&server_addr).unwrap();
+        println!("Puffin serving on {server_addr}");
+        puffin::set_scopes_on(true);
+    }
 
     let cli_args = CliArgs::parse();
 
-
-    if cfg!(debug_assertions) &&
-       cli_args.keep_alive_on_panic
     {
         let default_panic_hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(move |panic|
+        #[cfg(debug_assertions)]
+        let keep_alive = cli_args.keep_alive_on_panic;
+        #[cfg(not(debug_assertions))]
+        let keep_alive = false;
+
+        if keep_alive
         {
-            default_panic_hook(panic);
-            println!("Ended 3L14 at {} with reason {:?}", chrono::Local::now(), ExitReason::Panic);
-            println!("<<< Press enter to exit >>>");
-            let _ = std::io::stdin().read(&mut [0u8]); // wait to exit
-        }));
-    }
-    else
-    {
-        std::panic::set_hook(Box::new(move |panic|
+            std::panic::set_hook(Box::new(move |panic|
+            {
+                default_panic_hook(panic);
+                println!("Ended 3L14 (PID {}) at {} with reason {:?}", app_info.pid, chrono::Local::now(), ExitReason::Panic);
+                println!("<<< Press enter to exit >>>");
+                let _ = std::io::stdin().read(&mut [0u8]); // wait to exit
+                std::process::exit(ExitReason::Panic as i32);
+            }));
+        }
+        else
         {
-            println!("Ended 3L14 at {} with reason {:?}", chrono::Local::now(), ExitReason::Panic);
-        }));
+            std::panic::set_hook(Box::new(move |panic|
+            {
+                default_panic_hook(panic);
+                println!("Ended 3L14 (PID {}) at {} with reason {:?}", app_info.pid, chrono::Local::now(), ExitReason::Panic);
+                std::process::exit(ExitReason::Panic as i32);
+            }));
+        }
     }
 
     let mut clock = Clock::new();
@@ -80,19 +113,25 @@ fn main()
     let sdl_video = sdl.video().unwrap();
 
     // windows
-    let windows = Windows::new(&sdl_video);
+    let windows = Windows::new(&sdl_video, &app_info);
     let mut input = Input::new(&sdl);
-
-    let mut display_app_stats = true;
 
     // let mut tp_builder = futures::executor::ThreadPoolBuilder::new();
     // let thread_pool = tp_builder.create().unwrap();
 
     let mut renderer = futures::executor::block_on(Renderer::new(windows.main_window())); // don't block?
 
+    #[cfg(debug_assertions)]
+    let mut debug_menu_memory;
+    #[cfg(debug_assertions)]
+    {
+        debug_menu_memory =  DebugMenuMemory::default();
+        debug_menu_memory.set_active_by_name::<debug_gui::AppStats>("App Stats", true); // a big fragile...
+    }
+
     let min_frame_time = std::time::Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-    let mut test_scene = Scene::try_from_file("assets/pawn.glb", renderer.device()).expect("Couldn't import scene");
+    let mut test_scene = Scene::try_from_file("assets/shapes.glb", &renderer).expect("Couldn't import scene");
 
     let mut camera = Camera::new(Some("fp_cam"), renderer.display_aspect_ratio());
     camera.transform.position = Vec3::new(0.0, 2.0, -10.0);
@@ -113,10 +152,10 @@ fn main()
             wgpu::BindGroupLayoutEntry
             {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer
                 {
-                    ty: wgpu::BufferBindingType::Uniform,
+                    ty: BufferBindingType::Uniform,
                     has_dynamic_offset: true,
                     min_binding_size: None,
                 },
@@ -125,12 +164,12 @@ fn main()
         ],
         label: Some("World bind group layout"),
     });
-    let world_bind_group = renderer.device().create_bind_group(&wgpu::BindGroupDescriptor
+    let world_bind_group = renderer.device().create_bind_group(&BindGroupDescriptor
     {
         layout: &world_bind_group_layout,
         entries:
         &[
-            wgpu::BindGroupEntry
+            BindGroupEntry
             {
                 binding: 0,
                 resource: BindingResource::Buffer(BufferBinding
@@ -148,20 +187,20 @@ fn main()
     {
         label: Some("Camera uniform buffer"),
         size: std::mem::size_of::<CameraUniform>() as BufferAddress,
-        usage: BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
     let cam_bind_group_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
     {
         entries:
         &[
-            wgpu::BindGroupLayoutEntry
+            BindGroupLayoutEntry
             {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer
                 {
-                    ty: wgpu::BufferBindingType::Uniform,
+                    ty: BufferBindingType::Uniform,
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
@@ -170,12 +209,12 @@ fn main()
         ],
         label: Some("Camera bind group layout"),
     });
-    let cam_bind_group = renderer.device().create_bind_group(&wgpu::BindGroupDescriptor
+    let cam_bind_group = renderer.device().create_bind_group(&BindGroupDescriptor
     {
         layout: &cam_bind_group_layout,
         entries:
         &[
-            wgpu::BindGroupEntry
+            BindGroupEntry
             {
                 binding: 0,
                 resource: cam_uform_buf.as_entire_binding(),
@@ -183,104 +222,227 @@ fn main()
         ],
         label: Some("Camera bind group"),
     });
+    
+    let tex_bind_group_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
+    {
+        label: Some("texture bind group layout"),
+        entries:
+        &[
+            BindGroupLayoutEntry
+            {
+                binding: 0,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture
+                {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::default(),
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry
+            {
+                binding: 1,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None,
+            }
+        ],
+    });
+    let tex;
+    {
+        let png = png::Decoder::new(std::fs::File::open("assets/test.png").unwrap());
+        let mut png_reader = png.read_info().unwrap();
+        let mut png_buf = unsafe { alloc_slice_uninit(png_reader.output_buffer_size()).unwrap() };
+        let png_info = png_reader.next_frame(&mut png_buf).unwrap();
+        tex = renderer.device().create_texture_with_data(renderer.queue(), &TextureDescriptor
+        {
+            label: Some("assets/test.png"),
+            size: Extent3d
+            {
+                width: png_info.width,
+                height: png_info.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        }, TextureDataOrder::LayerMajor, &png_buf[..png_info.buffer_size()]);
+    }
+    let sampler = renderer.device().create_sampler(&SamplerDescriptor
+    {
+        label: Some("sampler"),
+        address_mode_u: AddressMode::Repeat,
+        address_mode_v: AddressMode::Repeat,
+        address_mode_w: AddressMode::Repeat,
+        mag_filter: FilterMode::Linear,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: FilterMode::Nearest,
+        lod_min_clamp: 0.0,
+        lod_max_clamp: 0.0,
+        compare: None,
+        anisotropy_clamp: 1,
+        border_color: None,
+    });
+    let tex_bind_group = renderer.device().create_bind_group(&BindGroupDescriptor
+    {
+        label: Some("texture bind group"),
+        layout: &tex_bind_group_layout,
+        entries:
+        &[
+            BindGroupEntry
+            {
+                binding: 0,
+                resource: BindingResource::TextureView(&tex.create_view(&TextureViewDescriptor
+                {
+                    label: None,
+                    format: None,
+                    dimension: None,
+                    aspect: Default::default(),
+                    base_mip_level: 0,
+                    mip_level_count: None,
+                    base_array_layer: 0,
+                    array_layer_count: None,
+                })),
+            },
+            BindGroupEntry
+            {
+                binding: 1,
+                resource: BindingResource::Sampler(&sampler),
+            }
+        ],
+    });
 
-    let test_pipeline = test_render_pipeline::new(&renderer, &cam_bind_group_layout, &world_bind_group_layout);
+    let test_pipeline = test_render_pipeline::new(
+        &renderer,
+        &cam_bind_group_layout,
+        &world_bind_group_layout,
+        &tex_bind_group_layout);
 
     let mut worlds_buf: [TransformUniform; MAX_ENTRIES_IN_WORLD_BUF] = array_init::array_init(|_| TransformUniform::default());
 
     let mut frame_number = FrameNumber(0);
+    let mut fps_sparkline = Sparkline::<100>::new(); // todo: use
     'main_loop: loop
     {
         let mut completion = CompletionState::InProgress;
 
+        puffin::GlobalProfiler::lock().new_frame();
+
         frame_number.increment();
         let frame_time = clock.tick();
+        fps_sparkline.add(frame_time.fps());
 
-        input.pre_update();
-
-        for event in sdl_events.poll_iter()
         {
-            match event
-            {
-                SdlEvent::Quit {..} =>
-                {
-                    exit_reason = ExitReason::UserExit;
-                    completion |= CompletionState::Completed;
-                },
-                // SizeChanged?
-                SdlEvent::Window { win_event: SdlWindowEvent::Resized(w, h), .. } =>
-                {
-                    renderer.resize(w as u32, h as u32);
-                },
+            puffin::profile_scope!("Read input");
 
-                _ => input.handle_event(event, frame_time.current_time),
+            input.pre_update();
+
+            for event in sdl_events.poll_iter()
+            {
+                match event
+                {
+                    SdlEvent::Quit { .. } =>
+                        {
+                            exit_reason = ExitReason::UserExit;
+                            completion |= CompletionState::Completed;
+                        },
+                    // SizeChanged?
+                    SdlEvent::Window { win_event: SdlWindowEvent::Resized(w, h), .. } =>
+                        {
+                            renderer.resize(w as u32, h as u32);
+                        },
+                    SdlEvent::Window { win_event: SdlWindowEvent::DisplayChanged(index), .. } => 'arm:
+                        {
+                            let Ok(wind_index) = windows.main_window().display_index() else { break 'arm };
+
+                            if wind_index == index
+                            {
+                                // todo: This doesn't seem to recalculate the display refresh rate
+                                renderer.reconfigure();
+                            }
+                        },
+
+                    _ => input.handle_event(event, frame_time.current_time),
+                }
             }
         }
 
+        let kbd = input.keyboard();
+
         #[cfg(debug_assertions)]
-        if input.keyboard().is_key_down(KeyCode::Q) &&
-           input.keyboard().has_keymod(KeyMods::CTRL)
+        if kbd.is_down(KeyCode::Q) &&
+           kbd.has_keymod(KeyMods::CTRL)
         {
             exit_reason = ExitReason::UserExit;
             completion = CompletionState::Completed;
         }
 
-        if (input.keyboard().is_key_press(KeyCode::Backquote))
+        if kbd.is_press(KeyCode::Backquote)
         {
             input.mouse().set_capture(ToggleState::Toggle);
         }
 
         if input.mouse().is_captured()
         {
-            const MOUSE_SCALE: f32 = 0.01;
+            const MOUSE_SCALE: f32 = 0.015;
             let yaw = input.mouse().position_delta.x as f32 * MOUSE_SCALE; // left to right
             let pitch = input.mouse().position_delta.y as f32 * MOUSE_SCALE; // down to up
             let roll = 0.0;
             camera.transform.turn(yaw, pitch, roll);
         }
 
-        let speed = if input.keyboard().has_keymod(KeyMods::SHIFT) { 8.0 } else { 2.0 } * frame_time.delta_time.as_secs_f32();
-        let kbd = input.keyboard();
-        if kbd.is_key_down(KeyCode::W)
+        let speed = if input.keyboard().has_keymod(KeyMods::SHIFT) { 20.0 } else { 8.0 } * frame_time.delta_time.as_secs_f32();
+        if kbd.is_down(KeyCode::W)
         {
             camera.transform.position += camera.transform.forward() * speed;
         }
-        if kbd.is_key_down(KeyCode::A)
+        if kbd.is_down(KeyCode::A)
         {
             camera.transform.position += camera.transform.left() * speed;
         }
-        if kbd.is_key_down(KeyCode::S)
+        if kbd.is_down(KeyCode::S)
         {
             camera.transform.position += camera.transform.backward() * speed;
         }
-        if kbd.is_key_down(KeyCode::D)
+        if kbd.is_down(KeyCode::D)
         {
             camera.transform.position += camera.transform.right() * speed;
         }
-        if kbd.is_key_down(KeyCode::E)
+        if kbd.is_down(KeyCode::E)
         {
             camera.transform.position += camera.transform.up() * speed;
         }
-        if kbd.is_key_down(KeyCode::Q)
+        if kbd.is_down(KeyCode::Q)
         {
             camera.transform.position += camera.transform.down() * speed;
         }
-        if kbd.is_key_press(KeyCode::Z)
+        if kbd.is_press(KeyCode::Z)
         {
             let rounding = std::f32::consts::FRAC_PI_4;
             let (axis, mut angle) = camera.transform.rotation.to_axis_angle();
             angle = f32::round(angle / rounding) * rounding;
             camera.transform.rotation = Quat::from_axis_angle(axis, angle);
         }
-        if kbd.is_key_press(KeyCode::X)
+        if kbd.is_press(KeyCode::X)
         {
             camera.transform.rotation = Quat::IDENTITY;
         }
         camera.update_view();
 
-        if input.keyboard().is_key_press(KeyCode::F1)
+        if kbd.is_press(KeyCode::F1)
         {
-            display_app_stats = !display_app_stats
+            if kbd.has_keymod(KeyMods::ALT)
+            {
+                debug_menu_memory.toggle_active(&debug_gui::FrameProfiler);
+            }
+            else
+            {
+                debug_menu_memory.is_active ^= true;
+            }
         }
 
         // if let Some(delta) = min_frame_time.checked_sub(frame_start_time.delta_time)
@@ -288,28 +450,32 @@ fn main()
         //     sleep(delta)
         // }
 
-        if input.keyboard().is_key_down(KeyCode::R)
+        if kbd.is_down(KeyCode::R)
         {
             let rotation_speed = Degrees(45.0 * frame_time.delta_time.as_secs_f32());
-            let rotation = -Quat::from_rotation_y(rotation_speed.radians_f32());
+            let rotation = -Quat::from_rotation_y(rotation_speed.to_radians_f32());
             test_scene.models[0].transform.rotation *= rotation;
         }
 
-        let cam_uform = CameraUniform::from(&camera);
+        let cam_uform = CameraUniform::new(&camera, &clock);
         renderer.queue().write_buffer(&cam_uform_buf, 0, unsafe { [cam_uform].as_u8_slice() });
 
         let render_frame = renderer.frame(frame_number, &input);
         {
+            puffin::profile_scope!("Render frame");
+
             let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
             {
                 let mut test_pass = render_passes::test(
                     &renderer,
                     &render_frame.back_buffer_view,
+                    &render_frame.depth_buffer_view,
                     &mut encoder,
                     Some(colors::CORNFLOWER_BLUE));
 
                 test_pass.set_pipeline(&test_pipeline);
                 test_pass.set_bind_group(0, &cam_bind_group, &[]);
+                test_pass.set_bind_group(2, &tex_bind_group, &[]);
 
                 let mut world_index = 0;
                 for model in test_scene.models.iter()
@@ -340,40 +506,27 @@ fn main()
             // todo: only update what was written to
             renderer.queue().write_buffer(&world_uform_buf, 0, unsafe { worlds_buf.as_u8_slice() });
             renderer.queue().submit([encoder.finish()]);
-
-            input.debug_gui(&render_frame.debug_gui);
-            camera.debug_gui(&render_frame.debug_gui);
-
-            egui::Window::new("App Stats")
-                .open(&mut display_app_stats)
-                .movable(true)
-                .resizable(false)
-                .title_bar(false)
-                .default_pos(pos2(40.0, 80.0))
-                .show(&render_frame.debug_gui, |ui|
-                    {
-                        // // todo: figure out how to make whole window draggable
-                        // let interact = ui.interact(ui.max_rect(), egui::Id::new("App Stats"), egui::Sense::click_and_drag());
-                        // if input.mouse().get_button(MouseButton::Left).state == ButtonState::JustOn // interact 'should' have a value to use here
-                        // {
-                        //     ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag)
-                        // }
-
-                        let fps = 1.0 / frame_time.delta_time.as_secs_f32();
-                        ui.label(format!("FPS: {fps:.1}"));
-                        #[cfg(debug_assertions)]
-                        {
-                            ui.label(format!("Frame: {frame_number}"));
-                            ui.label(format!("App time: {:.1}s", clock.total_runtime().as_secs_f32()));
-
-                            let main_window_size = windows.main_window().size();
-                            ui.label(format!("Window: {} x {}", main_window_size.0, main_window_size.1));
-
-                            let viewport_size = renderer.display_size();
-                            ui.label(format!("Viewport: {} x {}", viewport_size.x, viewport_size.y));
-                        }
-                    });
         }
+
+        let app_stats = debug_gui::AppStats
+        {
+            fps: frame_time.fps(),
+            frame_number,
+            app_runtime: clock.total_runtime().as_secs_f64(),
+            main_window_size: windows.main_window().size(),
+            viewport_size: renderer.display_size().into(),
+        };
+
+        if cfg!(debug_assertions)
+        {
+            let mut debug_menu = DebugMenu::new(&mut debug_menu_memory, &render_frame.debug_gui);
+            debug_menu.add(&app_stats);
+            debug_menu.add(&debug_gui::FrameProfiler);
+            debug_menu.add(&input);
+            debug_menu.add(&camera);
+            debug_menu.present();
+        }
+
         renderer.present(render_frame);
 
         if completion == CompletionState::Completed
@@ -384,5 +537,6 @@ fn main()
 
     std::mem::drop(renderer);
 
-    println!("Ended 3L14 at {} with reason {:?}", chrono::Local::now(), exit_reason);
+    println!("Ended 3L14 (PID {}) at {} with reason {:?}", app_info.pid, chrono::Local::now(), exit_reason);
+    exit_reason
 }
