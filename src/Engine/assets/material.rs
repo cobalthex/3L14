@@ -1,4 +1,5 @@
-use super::{Asset, AssetHandle, AssetLifecycler, AssetLoadRequest};
+use arc_swap::ArcSwap;
+use super::*;
 
 pub struct Material
 {
@@ -12,6 +13,7 @@ impl Asset for Material
 {
 }
 
+#[derive(Default)]
 pub struct MaterialLifecycler
 {
 
@@ -20,15 +22,18 @@ impl MaterialLifecycler
 {
 
 }
-impl AssetLifecycler for MaterialLifecycler
+impl AssetLifecycler<Material> for MaterialLifecycler
 {
-    fn load(&mut self, request: AssetLoadRequest)
+    fn get_or_create(&self, request: AssetLoadRequest) -> ArcSwap<AssetPayload<Material>>
     {
         todo!()
     }
-
-    fn unload(&mut self, handle: AssetHandle)
+    
+    fn stats(&self) -> AssetLifecyclerStats
     {
-        todo!()
+        AssetLifecyclerStats
+        {
+            active_assets: 0,
+        }
     }
 }

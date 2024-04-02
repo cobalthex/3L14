@@ -10,9 +10,9 @@ use glam::{Quat, Vec3};
 use wgpu::*;
 use wgpu::util::{DeviceExt, TextureDataOrder};
 use game_3l14::engine::alloc_slice::alloc_slice_uninit;
-use game_3l14::engine::graphics::debug_gui::AppStats;
 use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
 use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
+use game_3l14::engine::assets;
 
 #[derive(Debug)]
 #[repr(i32)]
@@ -56,6 +56,11 @@ fn shitty_join<I>(separator: &str, iter: I) -> String
     out
 }
 
+define_assets![
+    texture::Texture,
+    material::Material,
+];
+
 fn main() -> ExitReason
 {
     let app_info = game_3l14::AppInfo::default();
@@ -77,11 +82,11 @@ fn main() -> ExitReason
 
     {
         let default_panic_hook = std::panic::take_hook();
+
         #[cfg(debug_assertions)]
         let keep_alive = cli_args.keep_alive_on_panic;
         #[cfg(not(debug_assertions))]
         let keep_alive = false;
-
         if keep_alive
         {
             std::panic::set_hook(Box::new(move |panic|
@@ -106,7 +111,15 @@ fn main() -> ExitReason
 
     let mut clock = Clock::new();
 
-    let assets = AssetCache::default();
+    let assets;
+    {
+        let textures = assets::texture::TextureLifecycler::default();
+        let materials = assets::material::MaterialLifecycler::default();
+        Assets::new(
+            textures,
+            materials,
+        );
+    }
 
     let sdl = sdl2::init().unwrap();
     let mut sdl_events = sdl.event_pump().unwrap();

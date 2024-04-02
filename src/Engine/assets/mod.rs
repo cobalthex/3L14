@@ -1,15 +1,15 @@
-pub mod texture;
-pub mod material;
+#![allow(private_bounds)] // todo: https://github.com/rust-lang/rust/issues/115475
 
-use std::any::{type_name, TypeId};
-use std::collections::HashMap;
+use std::any::TypeId;
 use std::fmt::{Debug, Display};
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::ops::{DerefMut};
-use std::sync::{Arc, Weak};
-use std::task::{Poll, Waker};
-use parking_lot::Mutex;
+use std::sync::Arc;
+
+use arc_swap::{ArcSwap, DefaultStrategy, Guard};
 use unicase::UniCase;
+
+pub mod texture;
+pub mod material;
 
 pub trait AssetPath: AsRef<str> + Hash + Display + Debug { }
 impl<T> AssetPath for T where T: AsRef<str> + Hash + Display + Debug { }
@@ -27,7 +27,7 @@ impl<S: AssetPath> From<&AssetKeyDesc<S>> for AssetKey
 {
     fn from(desc: &AssetKeyDesc<S>) -> Self
     {
-        let mut hasher =DefaultHasher::default();
+        let mut hasher = DefaultHasher::default();
         desc.hash(&mut hasher);
         Self(hasher.finish())
     }
@@ -43,193 +43,195 @@ pub trait Asset: Sync + Send
 
 pub enum AssetLoadError
 {
-   NotFound,
+    NotFound,
+
+    #[cfg(test)]
+    TestEmpty,
 }
 
-pub enum AssetPayload<A: Asset + ?Sized>
+pub enum AssetPayload<A: Asset>
 {
     Pending,
-    Available(Box<A>),
+    Available(A),
     Unavailable(AssetLoadError), // shouldn't be stored in-cache
 }
 
-pub struct AssetData
+// TODO: lifetime management?
+pub struct AssetHandle<A: Asset>
 {
     key: AssetKey,
-
-    // split into own struct?
-    #[cfg(debug_assertions)]
-    debug_type_id: TypeId,
-    #[cfg(debug_assertions)]
-    debug_path: UniCase<String>,
-
-    payload: Arc<AssetPayload<dyn Asset>>,
+    payload: ArcSwap<AssetPayload<A>>,
 }
-impl AssetData
+impl<A: Asset> AssetHandle<A>
 {
     pub fn key(&self) -> AssetKey { self.key }
-
-    pub fn debug_type_id(&self) -> Option<TypeId>
+    pub fn payload(&self) -> Guard<Arc<AssetPayload<A>>, DefaultStrategy>
     {
-        #[cfg(debug_assertions)]
-        return Some(self.debug_type_id);
-        #[cfg(not(debug_assertions))]
-        return None;
+        self.payload.load()
     }
-    pub fn debug_asset_path(&self) -> Option<&str>
-    {
-        #[cfg(debug_assertions)]
-        return Some(self.debug_path.as_str());
-        #[cfg(not(debug_assertions))]
-        return None;
-    }
-
-    pub fn payload<A: Asset>(&self) -> Arc<AssetPayload<A>>
-    {
-        todo!()
-    }
+    // downgrade?
 }
-
-pub type AssetHandle = Arc<AssetData>;
-pub type WeakAssetHandle = Weak<AssetData>;
 
 pub struct AssetLoadRequest<'a>
 {
     key_desc: AssetKeyDesc<&'a str>,
-    handle: AssetHandle,
-
-    // method to mark loaded (privately)
+    // metadata: &'a AssetMetadata,
 }
 
-pub trait AssetLifecycler
+pub struct AssetLifecyclerStats
 {
-    fn load(&mut self, request: AssetLoadRequest); // load handle is async?
-    fn unload(&mut self, handle: AssetHandle); // does this function make sense, how will it be called?
-
-    // reload
+    pub active_assets: usize,
 }
 
-#[derive(Default)]
-struct AssetCacheInternal
+pub trait AssetLifecycler<A: Asset>
 {
-    cache: HashMap<AssetKey, WeakAssetHandle>, // todo: make more efficient storage?
-    lifecyclers: HashMap<TypeId, Box<dyn AssetLifecycler>>,
+    fn get_or_create(&self, request: AssetLoadRequest) -> ArcSwap<AssetPayload<A>>; // Return a handle immediately, perform loads asynchronously if necessary
+    // reload ?
+
+    // todo: controlled destruction
+    fn stats(&self) -> AssetLifecyclerStats;
 }
 
-#[derive(Default)]
-pub struct AssetCache
+// Internal trait used by the assets container to forward load requests
+trait TypedAssetLoadProxy<A: Asset>
 {
-    storage: Mutex<AssetCacheInternal>,
+    fn load_internal(&self, request: AssetLoadRequest) -> ArcSwap<AssetPayload<A>>;
 }
-impl AssetCache
-{
-    // todo: multi-load requests
 
-    /// Load or retrieve an existing asset.
-    pub fn load<A: Asset + 'static, S: AssetPath>(&self, asset_path: UniCase<&S>) -> AssetHandle
+/// Define an asset container
+/// each entry must be module::TypeName,
+///   where each TypeName derives Asset
+///   and has a corresponding module::TypeNameLifecycler which implements AssetLifecycler&lt;TypeName&gt;
+/// e.g.
+/// texture::Texture
+/// texture::TextureLifecycler
+/// impl AssetLifecycler&lt;texture::Texture&gt; for texture::TextureLifecycler
+#[macro_export]
+macro_rules! define_assets // todo: take any length asset type path, impl not ideal inside here
+{
+    ($($asset_module:ident::$asset_type:ident),* $(,)?) =>
     {
-        let key_desc = AssetKeyDesc
+        paste::paste!
         {
-            path: UniCase::unicode(asset_path.as_ref()),
-            type_id: TypeId::of::<A>(),
-        };
-        let asset_key = (&key_desc).into();
-
-        let mut locked = self.storage.lock();
-        if let Some(existing) = locked.cache.get(&asset_key)
-        {
-            if let Some(strong) = existing.upgrade()
+            pub struct Assets
             {
-                assert_eq!(strong.key, asset_key);
-                #[cfg(debug_assertions)]
-                assert_eq!(strong.debug_type_id, TypeId::of::<A>());
-                #[cfg(debug_assertions)]
-                assert_eq!(strong.debug_path, asset_path);
+                $(pub [<$asset_type:snake s>]: $asset_module::[<$asset_type Lifecycler>]),*
+            }
+            $(
+            #[allow(private_bounds)]
+            impl TypedAssetLoadProxy<$asset_module::$asset_type> for Assets
+            {
+                fn load_internal(&self, request: AssetLoadRequest) -> ArcSwap<AssetPayload<$asset_module::$asset_type>>
+                {
+                    self.[<$asset_type:snake s>].get_or_create(request)
+                }
+            }
+            )*
 
-                return strong;
+            impl Assets
+            {
+                pub fn new($([<$asset_type:snake s>]: $asset_module::[<$asset_type Lifecycler>]),*) -> Self
+                {
+                    Self
+                    {
+                        $([<$asset_type:snake s>]),*
+                    }
+                }
+
+                pub fn load<A: Asset + 'static, S: AssetPath>(&self, asset_path: UniCase<&S>)
+                    -> AssetHandle<A>
+                    where Self: TypedAssetLoadProxy<A>
+                {
+                    let key_desc = AssetKeyDesc
+                    {
+                        path: UniCase::unicode(asset_path.as_ref()),
+                        type_id: TypeId::of::<A>(),
+                    };
+                    let asset_key = (&key_desc).into();
+
+                    let load = AssetLoadRequest
+                    {
+                        key_desc,
+                    };
+                    let payload: ArcSwap<AssetPayload<A>> = TypedAssetLoadProxy::<A>::load_internal(self, load);
+
+                    AssetHandle
+                    {
+                        key: asset_key,
+                        payload,
+                    }
+                }
             }
         }
-
-        let Some(lifecycler) = locked.lifecyclers.get_mut(&TypeId::of::<A>()) else
-        {
-            // return result?
-            panic!("Unknown asset type! Asset type {} is missing an asset lifecycler", type_name::<A>());
-        };
-
-        let asset = AssetData
-        {
-            key: asset_key,
-            #[cfg(debug_assertions)]
-            debug_type_id: TypeId::of::<A>(),
-            #[cfg(debug_assertions)]
-            debug_path: asset_path.to_string().into(), // store elsewhere?
-            payload: Arc::new(AssetPayload::Pending),
-        };
-        let handle = AssetHandle::new(asset);
-
-        let load = AssetLoadRequest
-        {
-            key_desc,
-            handle: handle.clone(),
-        };
-        lifecycler.load(load);
-
-        let _ = locked.cache.insert(asset_key, Arc::downgrade(&handle));
-        handle
-    }
-
-    pub fn prune(&self)
-    {
-        let mut locked = self.storage.lock();
-        locked.cache.retain(|_, v| v.strong_count() != 0);
-    }
+    };
 }
 
 #[cfg(test)]
 mod tests
 {
+    use arc_swap::ArcSwapOption;
     use super::*;
+    use unicase::UniCase;
 
     struct TestAsset
     {
-        asset_name: String,
+        name: &'static str,
     }
-    impl Asset for TestAsset
+    impl Asset for TestAsset { }
+
+    #[derive(Default)]
+    struct TestAssetLifecycler
     {
+        pub factory: ArcSwapOption<&'static dyn Fn(AssetLoadRequest) -> AssetPayload<TestAsset>>,
+    }
+    impl AssetLifecycler<TestAsset> for TestAssetLifecycler
+    {
+        fn get_or_create(&self, request: AssetLoadRequest) -> ArcSwap<AssetPayload<TestAsset>>
+        {
+            ArcSwap::from_pointee(match self.factory.load().as_ref()
+            {
+                Some(f) => f(request),
+                None => AssetPayload::Unavailable(AssetLoadError::TestEmpty),
+            })
+        }
     }
 
-    struct TestLoader;
-    impl AssetLifecycler for TestLoader
-    {
-        fn load(&mut self, request: AssetLoadRequest)
-        {
-            let payload = Box::new(TestAsset { asset_name: request.key_desc.path.to_string() });
-            *Arc::get_mut(&request.handle.payload).unwrap() = Arc::new(AssetPayload::Available(payload));
-        }
-
-        fn unload(&mut self, key: AssetHandle)
-        {
-            todo!()
-        }
-    }
+    define_assets![self::TestAsset];
 
     #[test]
-    #[should_panic]
-    fn unsupported_asset_loader()
+    fn load_texture()
     {
-        let cache = AssetCache::default();
-        let handle = cache.load::<TestAsset, _>(UniCase::unicode(&"test"));
-    }
+        let assets = Assets::new(TestAssetLifecycler::default());
+        let mut req: AssetHandle<TestAsset> = assets.load(UniCase::new(&"test"));
 
-    #[test]
-    fn pending_asset_load()
-    {
-        let cache = AssetCache::default();
-        let handle = cache.load::<TestAsset, _>(UniCase::unicode(&"test"));
-        match *handle.payload
+        match req.payload.load().as_ref()
+        {
+            AssetPayload::Unavailable(AssetLoadError::TestEmpty) => {},
+            _ => panic!("Invalid result"),
+        }
+
+        assets.test_assets.factory.store(Some(Arc::new(&|_req|
+        {
+            AssetPayload::Pending
+        })));
+
+        req = assets.load(UniCase::new(&"test"));
+        match req.payload.load().as_ref()
         {
             AssetPayload::Pending => {},
-            _ => panic!("Payload is not pending"),
+            _ => panic!("Asset not pending"),
+        }
+
+        assets.test_assets.factory.store(Some(Arc::new(&|_req|
+            {
+                AssetPayload::Available(TestAsset { name: "test asset"})
+            })));
+
+        req = assets.load(UniCase::new(&"test"));
+        match req.payload.load().as_ref()
+        {
+            AssetPayload::Available(a) => assert_eq!(a.name, "test asset"),
+            _ => panic!("Asset not available"),
         }
     }
 }
