@@ -1,4 +1,5 @@
 use std::alloc::{Layout, LayoutError};
+use std::ops::Deref;
 use std::ptr;
 
 #[derive(Debug)]
@@ -44,37 +45,59 @@ pub unsafe fn alloc_slice_uninit<T>(n: usize) -> Result<Box<[T]>, AllocError>
 pub fn alloc_slice_default<T: Default>(n: usize) -> Result<Box<[T]>, AllocError>
 {
     unsafe
+    {
+        let alloc = match alloc_slice_internal::<T>(n)
         {
-            let alloc = match alloc_slice_internal::<T>(n)
-            {
-                Ok(a) => a,
-                Err(e) => return Err(e),
-            };
+            Ok(a) => a,
+            Err(e) => return Err(e),
+        };
 
-            let t_ptr: *mut T = alloc.0.cast();
-            for i in 0..n
-            {
-                ptr::write(t_ptr.add(i), T::default());
-            }
-            Ok(Box::from_raw(std::slice::from_raw_parts_mut(t_ptr, n)))
+        let t_ptr: *mut T = alloc.0.cast();
+        for i in 0..n
+        {
+            ptr::write(t_ptr.add(i), T::default());
         }
+        Ok(Box::from_raw(std::slice::from_raw_parts_mut(t_ptr, n)))
+    }
 }
 
 pub fn alloc_slice_copy<T: Copy>(n: usize, val: T) -> Result<Box<[T]>, AllocError>
 {
     unsafe
+    {
+        let alloc = match alloc_slice_internal::<T>(n)
         {
-            let alloc = match alloc_slice_internal::<T>(n)
-            {
-                Ok(a) => a,
-                Err(e) => return Err(e),
-            };
+            Ok(a) => a,
+            Err(e) => return Err(e),
+        };
 
-            let t_ptr: *mut T = alloc.0.cast();
-            for i in 0..n
-            {
-                ptr::write(t_ptr.add(i), val);
-            }
-            Ok(Box::from_raw(std::slice::from_raw_parts_mut(t_ptr, n)))
+        let t_ptr: *mut T = alloc.0.cast();
+        for i in 0..n
+        {
+            ptr::write(t_ptr.add(i), val);
         }
+        Ok(Box::from_raw(std::slice::from_raw_parts_mut(t_ptr, n)))
+    }
 }
+
+pub fn alloc_slice_fn<T, F: Fn(usize) -> T>(n: usize, create_fn: F) -> Result<Box<[T]>, AllocError>
+{
+    unsafe
+    {
+        let alloc = match alloc_slice_internal::<T>(n)
+        {
+            Ok(a) => a,
+            Err(e) => return Err(e),
+        };
+
+        let t_ptr: *mut T = alloc.0.cast();
+        for i in 0..n
+        {
+            ptr::write(t_ptr.add(i), create_fn(i));
+        }
+        Ok(Box::from_raw(std::slice::from_raw_parts_mut(t_ptr, n)))
+    }
+}
+
+use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+use std::sync::Arc;

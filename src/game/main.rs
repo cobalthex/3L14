@@ -12,7 +12,7 @@ use wgpu::util::{DeviceExt, TextureDataOrder};
 use game_3l14::engine::alloc_slice::alloc_slice_uninit;
 use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
 use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
-use game_3l14::engine::assets;
+use game_3l14::engine::assets::*;
 
 #[derive(Debug)]
 #[repr(i32)]
@@ -56,16 +56,11 @@ fn shitty_join<I>(separator: &str, iter: I) -> String
     out
 }
 
-define_assets![
-    texture::Texture,
-    material::Material,
-];
-
 fn main() -> ExitReason
 {
-    let app_info = game_3l14::AppInfo::default();
+    let app_run = game_3l14::AppRun::default();
 
-    println!("Started 3L14 (PID {}) at {} with args {}", app_info.pid, app_info.start_time, shitty_join(" ", std::env::args()));
+    println!("Started 3L14 (PID {}) at {} with args {}", app_run.pid, app_run.start_time, shitty_join(" ", std::env::args()));
     let mut exit_reason = ExitReason::Unset;
 
     #[cfg(debug_assertions)]
@@ -92,7 +87,7 @@ fn main() -> ExitReason
             std::panic::set_hook(Box::new(move |panic|
             {
                 default_panic_hook(panic);
-                println!("Ended 3L14 (PID {}) at {} with reason {:?}", app_info.pid, chrono::Local::now(), ExitReason::Panic);
+                println!("Ended 3L14 (PID {}) at {} with reason {:?}", app_run.pid, chrono::Local::now(), ExitReason::Panic);
                 println!("<<< Press enter to exit >>>");
                 let _ = std::io::stdin().read(&mut [0u8]); // wait to exit
                 std::process::exit(ExitReason::Panic as i32);
@@ -103,7 +98,7 @@ fn main() -> ExitReason
             std::panic::set_hook(Box::new(move |panic|
             {
                 default_panic_hook(panic);
-                println!("Ended 3L14 (PID {}) at {} with reason {:?}", app_info.pid, chrono::Local::now(), ExitReason::Panic);
+                println!("Ended 3L14 (PID {}) at {} with reason {:?}", app_run.pid, chrono::Local::now(), ExitReason::Panic);
                 std::process::exit(ExitReason::Panic as i32);
             }));
         }
@@ -111,28 +106,29 @@ fn main() -> ExitReason
 
     let mut clock = Clock::new();
 
-    let assets;
-    {
-        let textures = assets::texture::TextureLifecycler::default();
-        let materials = assets::material::MaterialLifecycler::default();
-        Assets::new(
-            textures,
-            materials,
-        );
-    }
-
     let sdl = sdl2::init().unwrap();
     let mut sdl_events = sdl.event_pump().unwrap();
     let sdl_video = sdl.video().unwrap();
 
     // windows
-    let windows = Windows::new(&sdl_video, &app_info);
+    let windows = Windows::new(&sdl_video, &app_run);
     let mut input = Input::new(&sdl);
 
     // let mut tp_builder = futures::executor::ThreadPoolBuilder::new();
     // let thread_pool = tp_builder.create().unwrap();
 
-    let mut renderer = futures::executor::block_on(Renderer::new(windows.main_window())); // don't block?
+    let mut renderer = futures::executor::block_on(Renderer::new(windows.main_window())); // don't block
+
+    let assets;
+    {
+        let textures = assets::texture::TextureLifecycler::new(renderer.device());
+        let materials = assets::material::MaterialLifecycler::default();
+        // assets = Assets::new(
+        //     textures,
+        //     materials,
+        // );
+        assets = Assets::new(assets::tests::TestAssetLifecycler::default());
+    }
 
     #[cfg(debug_assertions)]
     let mut debug_menu_memory;
@@ -537,6 +533,7 @@ fn main() -> ExitReason
             debug_menu.add(&debug_gui::FrameProfiler);
             debug_menu.add(&input);
             debug_menu.add(&camera);
+            debug_menu.add(&assets);
             debug_menu.present();
         }
 
@@ -549,7 +546,10 @@ fn main() -> ExitReason
     }
 
     std::mem::drop(renderer);
+    std::mem::drop(assets);
 
-    println!("Ended 3L14 (PID {}) at {} with reason {:?}", app_info.pid, chrono::Local::now(), exit_reason);
+    std::thread::sleep(Duration::from_micros(10)); // allow logs to flush -- TEMP
+
+    println!("Ended 3L14 (PID {}) at {} with reason {:?}", app_run.pid, chrono::Local::now(), exit_reason);
     exit_reason
 }

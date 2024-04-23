@@ -17,7 +17,7 @@ pub struct AsyncCompletion
 }
 impl AsyncCompletion
 {
-    pub fn mark_complete(self)
+    pub fn complete(self)
     {
         let mut locked = self.internal.lock();
         locked.completed = true;
@@ -83,7 +83,7 @@ mod tests
         assert_eq!(Future::poll(Pin::new(&mut completion), &mut Context::from_waker(&waker)), Poll::Pending);
         assert_eq!(Future::poll(Pin::new(&mut completion), &mut Context::from_waker(&waker)), Poll::Pending);
 
-        completion.clone().mark_complete();
+        completion.clone().complete();
         assert_eq!(Future::poll(Pin::new(&mut completion), &mut Context::from_waker(&waker)), Poll::Ready(()));
     }
 }

@@ -18,7 +18,7 @@ macro_rules! iif_debug {
 pub const TEST_VAL: u32 = iif_debug!(10, 0);
 
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct AppInfo
+pub struct AppRun
 {
     pub app_name: &'static str,
     pub version_str: &'static str,
@@ -28,7 +28,7 @@ pub struct AppInfo
     pub pid: u32,
     pub is_elevated: bool,
 }
-impl Default for AppInfo
+impl Default for AppRun
 {
     fn default() -> Self
     {

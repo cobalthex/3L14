@@ -24,16 +24,16 @@ impl MaterialLifecycler
 }
 impl AssetLifecycler<Material> for MaterialLifecycler
 {
-    fn get_or_create(&self, request: AssetLoadRequest) -> ArcSwap<AssetPayload<Material>>
+    fn get_or_create(&self, request: AssetLoadRequest<Material>)
     {
         todo!()
     }
-    
+
     fn stats(&self) -> AssetLifecyclerStats
     {
         AssetLifecyclerStats
         {
-            active_assets: 0,
+            active_count: 0,
         }
     }
 }

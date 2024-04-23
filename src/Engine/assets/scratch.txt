@@ -1,0 +1,4 @@
+- centralied asset tracking?
+- asset dependency loading (leave to higher level?)
+- use channel for dropping
+
