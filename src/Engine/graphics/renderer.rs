@@ -186,7 +186,7 @@ impl<'r> Renderer<'r>
         println!("Refreshed swap chain");
     }
 
-    pub fn resize(&mut self, new_width: u32, new_height: u32)
+    pub fn resize(&self, new_width: u32, new_height: u32)
     {
         puffin::profile_function!();
 

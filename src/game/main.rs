@@ -12,7 +12,8 @@ use wgpu::util::{DeviceExt, TextureDataOrder};
 use game_3l14::engine::alloc_slice::alloc_slice_uninit;
 use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
 use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
-use game_3l14::engine::assets::*;
+use game_3l14::engine::assets::material::*;
+use game_3l14::engine::assets::texture::*;
 
 #[derive(Debug)]
 #[repr(i32)]
@@ -56,6 +57,22 @@ fn shitty_join<I>(separator: &str, iter: I) -> String
     out
 }
 
+// TODO: macro-ize this
+pub struct GameAssets<'a>
+{
+    pub textures: TextureLifecycler<'a>,
+    pub materials: MaterialLifecycler,
+}
+impl<'a> AssetLifecyclers for GameAssets<'a> { }
+impl<'a> AssetLifecyclerLookup<texture::Texture<'a>> for GameAssets<'a>
+{
+    fn lifecycler(&self) -> &impl AssetLifecycler<texture::Texture<'a>> { &self.textures }
+}
+impl<'a> AssetLifecyclerLookup<assets::material::Material> for GameAssets<'a>
+{
+    fn lifecycler(&self) -> &impl AssetLifecycler<assets::material::Material> { &self.materials }
+}
+
 fn main() -> ExitReason
 {
     let app_run = game_3l14::AppRun::default();
@@ -79,9 +96,9 @@ fn main() -> ExitReason
         let default_panic_hook = std::panic::take_hook();
 
         #[cfg(debug_assertions)]
-        let keep_alive = cli_args.keep_alive_on_panic;
+            let keep_alive = cli_args.keep_alive_on_panic;
         #[cfg(not(debug_assertions))]
-        let keep_alive = false;
+            let keep_alive = false;
         if keep_alive
         {
             std::panic::set_hook(Box::new(move |panic|
@@ -116,29 +133,22 @@ fn main() -> ExitReason
 
     // let mut tp_builder = futures::executor::ThreadPoolBuilder::new();
     // let thread_pool = tp_builder.create().unwrap();
-
-    let mut renderer = futures::executor::block_on(Renderer::new(windows.main_window())); // don't block
-
-    let assets;
+    let mut renderer = Renderer::new(windows.main_window()); // don't block
+    let assets = Assets::new(GameAssets
     {
-        let textures = assets::texture::TextureLifecycler::new(renderer.device());
-        let materials = assets::material::MaterialLifecycler::default();
-        // assets = Assets::new(
-        //     textures,
-        //     materials,
-        // );
-        assets = Assets::new(assets::tests::TestAssetLifecycler::default());
-    }
+        textures: TextureLifecycler::new(renderer.device()),
+        materials: MaterialLifecycler::default(),
+    });
 
     #[cfg(debug_assertions)]
     let mut debug_menu_memory;
     #[cfg(debug_assertions)]
     {
-        debug_menu_memory =  DebugMenuMemory::default();
+        debug_menu_memory = DebugMenuMemory::default();
         debug_menu_memory.set_active_by_name::<debug_gui::AppStats>("App Stats", true); // a big fragile...
     }
 
-    let min_frame_time = std::time::Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
+    let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
     let mut test_scene = Scene::try_from_file("assets/shapes.glb", &renderer).expect("Couldn't import scene");
 
@@ -231,7 +241,7 @@ fn main() -> ExitReason
         ],
         label: Some("Camera bind group"),
     });
-    
+
     let tex_bind_group_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
     {
         label: Some("texture bind group layout"),
@@ -361,9 +371,9 @@ fn main() -> ExitReason
                         },
                     // SizeChanged?
                     SdlEvent::Window { win_event: SdlWindowEvent::Resized(w, h), .. } =>
-                        {
-                            renderer.resize(w as u32, h as u32);
-                        },
+                    {
+                        renderer.resize(w as u32, h as u32);
+                    },
                     SdlEvent::Window { win_event: SdlWindowEvent::DisplayChanged(index), .. } => 'arm:
                         {
                             let Ok(wind_index) = windows.main_window().display_index() else { break 'arm };
@@ -384,7 +394,7 @@ fn main() -> ExitReason
 
         #[cfg(debug_assertions)]
         if kbd.is_down(KeyCode::Q) &&
-           kbd.has_keymod(KeyMods::CTRL)
+            kbd.has_keymod(KeyMods::CTRL)
         {
             exit_reason = ExitReason::UserExit;
             completion = CompletionState::Completed;
@@ -447,9 +457,7 @@ fn main() -> ExitReason
             if kbd.has_keymod(KeyMods::ALT)
             {
                 debug_menu_memory.toggle_active(&debug_gui::FrameProfiler);
-            }
-            else
-            {
+            } else {
                 debug_menu_memory.is_active ^= true;
             }
         }
@@ -501,7 +509,7 @@ fn main() -> ExitReason
                         test_pass.set_vertex_buffer(0, mesh.vertices());
                         test_pass.set_index_buffer(mesh.indices(), mesh.index_format());
 
-                        test_pass.draw_indexed(mesh.index_range(),0,0..1);
+                        test_pass.draw_indexed(mesh.index_range(), 0, 0..1);
                     }
 
                     if world_index >= MAX_ENTRIES_IN_WORLD_BUF
@@ -545,8 +553,9 @@ fn main() -> ExitReason
         }
     }
 
-    std::mem::drop(renderer);
     std::mem::drop(assets);
+    std::mem::drop(renderer);
+    std::mem::drop(windows);
 
     std::thread::sleep(Duration::from_micros(10)); // allow logs to flush -- TEMP
 

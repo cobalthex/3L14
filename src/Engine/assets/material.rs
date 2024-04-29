@@ -1,4 +1,3 @@
-use arc_swap::ArcSwap;
 use super::*;
 
 pub struct Material

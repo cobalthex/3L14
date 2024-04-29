@@ -17,7 +17,6 @@ use parking_lot::Mutex;
 use crate::engine::graphics::debug_gui::DebugGui;
 use crate::engine::utils::alloc_slice::alloc_slice_fn;
 
-
 pub mod texture;
 pub mod material;
 
@@ -164,20 +163,6 @@ pub trait AssetLifecycler<A: Asset>: Sync
     fn stats(&self) -> AssetLifecyclerStats;
 }
 
-// macro_rules! define_asset_lifecyclers
-// {
-//     ( $( $name:ident )+ ) =>
-//     {
-//         impl<$($name: AssetLifecycler),+> AssetLifecyclerLookup for ($($name,)+)
-//         {
-//             fn do_something(self) -> Self {
-//                 let ($($name,)+) = self;
-//                 ($($name.do_something(),)+)
-//             }
-//         }
-//     };
-// }
-
 pub trait AssetLifecyclerLookup<A: Asset>
 {
     fn lifecycler(&self) -> &impl AssetLifecycler<A>;
@@ -289,6 +274,8 @@ impl<L: AssetLifecyclers> Assets<L>
         asset_handle: AssetHandle<A>,
         asset_lifecycler: &dyn AssetLifecycler<A>)
     {
+        puffin::profile_function!();
+
         // todo: put this elsewhere
         fn open_asset_from_file<S: AssetPath>(asset_path: &UniCase<S>) -> Result<impl Read, std::io::Error>
         {
@@ -507,4 +494,6 @@ mod tests
             }
         }
     }
+
+    // todo: hot-reloading
 }
