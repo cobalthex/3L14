@@ -57,7 +57,7 @@ pub fn new(
             entry_point: "fs_main",
             targets: &[Some(ColorTargetState
             {
-                format: renderer.surface_config().format,
+                format: renderer.surface_format(),
                 blend: Some(BlendState::REPLACE),
                 write_mask: ColorWrites::ALL,
             })],

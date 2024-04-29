@@ -3,6 +3,7 @@ use std::thread::current;
 use egui::epaint::Shadow;
 use egui::{Pos2, Rect, Rounding, Stroke, Visuals};
 use egui_wgpu::ScreenDescriptor;
+use parking_lot::RwLock;
 use sdl2::video::Window;
 #[allow(deprecated)]
 use wgpu::rwh::{HasRawDisplayHandle, HasRawWindowHandle};
@@ -17,17 +18,22 @@ struct RenderFrameData
     depth_buffer: Texture,
 }
 
+struct MSAAConfiguration
+{
+    max_sample_count: u32,
+    current_sample_count: u32, // pipelines and ms-framebuffer will need to be recreated if this is changed
+    buffer: Option<TextureView>,
+}
+
 pub struct Renderer<'r>
 {
     device: Device,
     queue: Queue,
 
     surface: Surface<'r>,
-    surface_config: SurfaceConfiguration,
 
-    max_sample_count: u32,
-    current_sample_count: u32, // pipelines and ms-framebuffer will need to be recreated if this is changed
-    msaa_buffer: Option<TextureView>,
+    surface_config: RwLock<SurfaceConfiguration>,
+    msaa_config: RwLock<MSAAConfiguration>,
 
     debug_gui: egui::Context,
     debug_gui_renderer: egui_wgpu::Renderer,
@@ -121,7 +127,7 @@ impl<'r> Renderer<'r>
             allow_msaa &&
             current_sample_count > 1
         {
-            Some(Self::create_msaa_buffer(current_sample_count, &device, &surface_config))
+            Some(Self::create_msaa_buffer(current_sample_count, &device, surface_config.width, surface_config.height, surface_config.format))
         }
         else
         {
@@ -170,20 +176,17 @@ impl<'r> Renderer<'r>
             device,
             queue,
             surface,
-            surface_config,
-            max_sample_count,
-            current_sample_count,
-            msaa_buffer,
+            surface_config: RwLock::new(surface_config),
+            msaa_config: RwLock::new(MSAAConfiguration
+            {
+                max_sample_count,
+                current_sample_count,
+                buffer: msaa_buffer,
+            }),
             debug_gui,
             debug_gui_renderer,
             render_frames,
         }
-    }
-
-    pub fn reconfigure(&self)
-    {
-        self.surface.configure(&self.device, &self.surface_config);
-        println!("Refreshed swap chain");
     }
 
     pub fn resize(&self, new_width: u32, new_height: u32)
@@ -195,27 +198,40 @@ impl<'r> Renderer<'r>
             panic!("Render width/height cannot be zero");
         }
 
-        println!("Resizing renderer from {}x{} to {}x{}",
-            self.surface_config.width, self.surface_config.height,
-            new_width, new_height);
+        let surface_format;
+        {
+            let surf_config = self.surface_config.write();
+            surface_format = surf_config.format;
 
-        self.surface_config.width = new_width;
-        self.surface_config.height = new_height;
-        self.surface.configure(&self.device, &self.surface_config);
+            println!("Resizing renderer from {}x{} to {}x{}",
+                     surf_config.width, surf_config.height,
+                     new_width, new_height);
+
+            surf_config.width = new_width;
+            surf_config.height = new_height;
+            self.surface.configure(&self.device, &surf_config);
+        }
+
         // max_sample_count may need to be recreated
-        self.msaa_buffer = self.msaa_buffer.as_ref().map(|_| Self::create_msaa_buffer(self.current_sample_count, &self.device, &self.surface_config));
+        let current_sample_count;
+        {
+            let msaa_config = self.msaa_config.write();
+            current_sample_count = msaa_config.current_sample_count;
+            
+            msaa_config.buffer = msaa_config.buffer.as_ref().map(|_| Self::create_msaa_buffer(current_sample_count, &self.device, new_width, new_height, surface_format));
+        }
 
         let depth_buffer_desc = TextureDescriptor
         {
             label: Some("Depth buffer"),
             size: Extent3d
             {
-                width: self.surface_config.width,
-                height: self.surface_config.height,
+                width: new_width,
+                height: new_height,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: self.current_sample_count,
+            sample_count: current_sample_count,
             dimension: TextureDimension::D2,
             format: TextureFormat::Depth32Float,
             usage: TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT,
@@ -231,9 +247,17 @@ impl<'r> Renderer<'r>
     pub fn device(&self) -> &Device { &self.device }
     pub fn queue(&self) -> &Queue { &self.queue }
 
-    pub fn surface_config(&self) -> &SurfaceConfiguration { &self.surface_config }
-    pub fn display_size(&self) -> glam::UVec2 { glam::UVec2::new(self.surface_config.width, self.surface_config.height) }
-    pub fn display_aspect_ratio(&self) -> f32 { (self.surface_config.width as f32) / (self.surface_config.height as f32) }
+    pub fn display_size(&self) -> glam::UVec2
+    {
+        let surf_conf = self.surface_config.read();
+        glam::UVec2::new(surf_conf.width, surf_conf.height)
+    }
+    pub fn display_aspect_ratio(&self) -> f32
+    {
+        let surf_conf = self.surface_config.read();
+        (surf_conf.width as f32) / (surf_conf.height as f32)
+    }
+    pub fn surface_format(&self) -> TextureFormat { self.surface_config.read().format }
 
     pub fn max_sample_count(&self) -> u32 { self.max_sample_count }
     pub fn current_sample_count(&self) -> u32 { self.current_sample_count }
@@ -254,7 +278,8 @@ impl<'r> Renderer<'r>
                 Err(SurfaceError::Timeout) => self.surface.get_current_texture().expect("Get swap chain target timed out"),
                 Err(SurfaceError::Outdated | SurfaceError::Lost | SurfaceError::OutOfMemory) =>
                     {
-                        self.reconfigure();
+                        let surf_conf = self.surface_config.read();
+                        self.surface.configure(&self.device, &surf_conf);
                         self.surface.get_current_texture().expect("Failed to get swap chain target")
                     }
             };
@@ -351,12 +376,12 @@ impl<'r> Renderer<'r>
     }
 
     // taken from MSAA line sample
-    fn create_msaa_buffer(sample_count: u32, device: &wgpu::Device, surface_config: &SurfaceConfiguration) -> wgpu::TextureView
+    fn create_msaa_buffer(sample_count: u32, device: &wgpu::Device, width: u32, height: u32, surface_format: TextureFormat) -> wgpu::TextureView
     {
         let multisampled_texture_extent = wgpu::Extent3d
         {
-            width: surface_config.width,
-            height: surface_config.height,
+            width,
+            height,
             depth_or_array_layers: 1,
         };
         let multisampled_frame_descriptor = &wgpu::TextureDescriptor {
@@ -365,7 +390,7 @@ impl<'r> Renderer<'r>
             mip_level_count: 1,
             sample_count,
             dimension: TextureDimension::D2,
-            format: surface_config.format,
+            format: surface_format,
             usage: TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         };
