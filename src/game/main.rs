@@ -133,7 +133,7 @@ fn main() -> ExitReason
 
     // let mut tp_builder = futures::executor::ThreadPoolBuilder::new();
     // let thread_pool = tp_builder.create().unwrap();
-    let mut renderer = Renderer::new(windows.main_window()); // don't block
+    let mut renderer = futures::executor::block_on(Renderer::new(windows.main_window())); // don't block
     let assets = Assets::new(GameAssets
     {
         textures: TextureLifecycler::new(renderer.device()),
@@ -380,8 +380,7 @@ fn main() -> ExitReason
 
                             if wind_index == index
                             {
-                                // todo: This doesn't seem to recalculate the display refresh rate
-                                renderer.reconfigure();
+                                // todo: find a way to recalculate refresh rate -- reconfigure surface_config does not work
                             }
                         },
 
@@ -484,9 +483,7 @@ fn main() -> ExitReason
             let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
             {
                 let mut test_pass = render_passes::test(
-                    &renderer,
-                    &render_frame.back_buffer_view,
-                    &render_frame.depth_buffer_view,
+                    &render_frame,
                     &mut encoder,
                     Some(colors::CORNFLOWER_BLUE));
 

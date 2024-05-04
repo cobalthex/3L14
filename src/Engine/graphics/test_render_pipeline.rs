@@ -47,7 +47,7 @@ pub fn new(
         }),
         multisample: MultisampleState // todo: MSAA support in back buffer
         {
-            count: renderer.current_sample_count(),
+            count: renderer.msaa_max_sample_count(), // TODO .current_sample_count(),
             mask: !0,
             alpha_to_coverage_enabled: false,
         },

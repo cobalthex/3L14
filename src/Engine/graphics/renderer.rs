@@ -1,5 +1,7 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::thread::current;
+use arc_swap::ArcSwapOption;
 use egui::epaint::Shadow;
 use egui::{Pos2, Rect, Rounding, Stroke, Visuals};
 use egui_wgpu::ScreenDescriptor;
@@ -18,11 +20,12 @@ struct RenderFrameData
     depth_buffer: Texture,
 }
 
-struct MSAAConfiguration
+// TODO: need a way to hold the reference for the duration of the frame
+//  ArcSwap inside RenderFarmeData + deref?
+pub struct MSAAConfiguration
 {
-    max_sample_count: u32,
-    current_sample_count: u32, // pipelines and ms-framebuffer will need to be recreated if this is changed
-    buffer: Option<TextureView>,
+    pub current_sample_count: u32, // pipelines and ms-framebuffer will need to be recreated if this is changed
+    pub buffer: TextureView,
 }
 
 pub struct Renderer<'r>
@@ -33,13 +36,15 @@ pub struct Renderer<'r>
     surface: Surface<'r>,
 
     surface_config: RwLock<SurfaceConfiguration>,
-    msaa_config: RwLock<MSAAConfiguration>,
+
+    max_sample_count: u32,
+    msaa_config: ArcSwapOption<MSAAConfiguration>,
 
     debug_gui: egui::Context,
     debug_gui_renderer: egui_wgpu::Renderer,
 
     // todo: this needs to know when a new frame is available before picking one
-    render_frames: [RenderFrameData; MAX_CONSEC_FRAMES],
+    render_frames: RwLock<[RenderFrameData; MAX_CONSEC_FRAMES]>,
 }
 impl<'r> Renderer<'r>
 {
@@ -123,11 +128,15 @@ impl<'r> Renderer<'r>
         };
 
         let current_sample_count = max_sample_count;
-        let msaa_buffer = if
+        let msaa_config = if
             allow_msaa &&
             current_sample_count > 1
         {
-            Some(Self::create_msaa_buffer(current_sample_count, &device, surface_config.width, surface_config.height, surface_config.format))
+            Some(MSAAConfiguration
+            {
+                current_sample_count,
+                buffer: Self::create_msaa_buffer(current_sample_count, &device, surface_config.width, surface_config.height, surface_config.format)
+            })
         }
         else
         {
@@ -177,15 +186,11 @@ impl<'r> Renderer<'r>
             queue,
             surface,
             surface_config: RwLock::new(surface_config),
-            msaa_config: RwLock::new(MSAAConfiguration
-            {
-                max_sample_count,
-                current_sample_count,
-                buffer: msaa_buffer,
-            }),
+            max_sample_count,
+            msaa_config: ArcSwapOption::from_pointee(msaa_config),
             debug_gui,
             debug_gui_renderer,
-            render_frames,
+            render_frames: RwLock::new(render_frames),
         }
     }
 
@@ -200,7 +205,7 @@ impl<'r> Renderer<'r>
 
         let surface_format;
         {
-            let surf_config = self.surface_config.write();
+            let mut surf_config = self.surface_config.write();
             surface_format = surf_config.format;
 
             println!("Resizing renderer from {}x{} to {}x{}",
@@ -212,14 +217,17 @@ impl<'r> Renderer<'r>
             self.surface.configure(&self.device, &surf_config);
         }
 
+        let mut current_sample_count = 1;
         // max_sample_count may need to be recreated
-        let current_sample_count;
+        self.msaa_config.store(self.msaa_config.load().as_ref().map(|c|
         {
-            let msaa_config = self.msaa_config.write();
-            current_sample_count = msaa_config.current_sample_count;
-            
-            msaa_config.buffer = msaa_config.buffer.as_ref().map(|_| Self::create_msaa_buffer(current_sample_count, &self.device, new_width, new_height, surface_format));
-        }
+            current_sample_count = c.current_sample_count;
+            Arc::new(MSAAConfiguration
+            {
+                current_sample_count,
+                buffer: Self::create_msaa_buffer(current_sample_count, &self.device, new_width, new_height, surface_format),
+            })
+        }));
 
         let depth_buffer_desc = TextureDescriptor
         {
@@ -237,10 +245,14 @@ impl<'r> Renderer<'r>
             usage: TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         };
-        for f in &mut self.render_frames
+
         {
-            f.depth_buffer = self.device.create_texture(&depth_buffer_desc);
-            f.last_submission = None;
+            let mut render_frames = self.render_frames.write();
+            for f in render_frames.as_mut()
+            {
+                f.depth_buffer = self.device.create_texture(&depth_buffer_desc);
+                f.last_submission = None;
+            }
         }
     }
 
@@ -259,16 +271,14 @@ impl<'r> Renderer<'r>
     }
     pub fn surface_format(&self) -> TextureFormat { self.surface_config.read().format }
 
-    pub fn max_sample_count(&self) -> u32 { self.max_sample_count }
-    pub fn current_sample_count(&self) -> u32 { self.current_sample_count }
-    pub fn msaa_buffer(&self) -> Option<&TextureView> { self.msaa_buffer.as_ref() }
+    pub fn msaa_max_sample_count(&self) -> u32 { self.max_sample_count }
 
     pub fn frame(&'r self, frame_number: FrameNumber, input: &crate::engine::input::Input) -> RenderFrame
     {
         puffin::profile_function!();
 
         let back_buffer;
-        let rf_data;
+        let depth_buffer_view;
 
         {
             puffin::profile_scope!("Wait for frame ready");
@@ -283,16 +293,19 @@ impl<'r> Renderer<'r>
                         self.surface.get_current_texture().expect("Failed to get swap chain target")
                     }
             };
-            rf_data = &self.render_frames[frame_number.0 as usize % self.render_frames.len()];
+
+            let render_frames = self.render_frames.read();
+
+            let rf_data = &render_frames[frame_number.0 as usize % render_frames.len()];
             match &rf_data.last_submission
             {
                 Some(i) => { self.device.poll(Maintain::WaitForSubmissionIndex(i.clone())); }, // not web-gpu compatible
                 None => {},
             };
+            depth_buffer_view = rf_data.depth_buffer.create_view(&TextureViewDescriptor::default());
         }
 
         let back_buffer_view = back_buffer.texture.create_view(&TextureViewDescriptor::default());
-        let depth_buffer_view = rf_data.depth_buffer.create_view(&TextureViewDescriptor::default());
 
         let debug_gui = self.debug_gui.clone();
         let mut raw_input: egui::RawInput = input.into();
@@ -307,11 +320,12 @@ impl<'r> Renderer<'r>
             back_buffer,
             back_buffer_view,
             depth_buffer_view,
+            msaa_config: self.msaa_config.load_full(),
             debug_gui,
         }
     }
 
-    fn render_debug_gui(&mut self, clip_size: [u32; 2], target: &TextureView) -> CommandBuffer
+    fn render_debug_gui(&self, clip_size: [u32; 2], target: &TextureView) -> CommandBuffer
     {
         let output = self.debug_gui.end_frame();
         output.textures_delta.set.iter().for_each(|td|
@@ -363,11 +377,11 @@ impl<'r> Renderer<'r>
         command_encoder.finish()
     }
 
-    pub fn present(&mut self, frame: RenderFrame)
+    pub fn present(&self, frame: RenderFrame)
     {
         puffin::profile_function!();
 
-        let back_buffer_size =frame.back_buffer.texture.size();
+        let back_buffer_size = frame.back_buffer.texture.size();
         let gui_commands = self.render_debug_gui(
             [back_buffer_size.width, back_buffer_size.height],
             &frame.back_buffer_view);
@@ -412,6 +426,8 @@ pub struct RenderFrame
     back_buffer: SurfaceTexture,
     pub back_buffer_view: TextureView,
     pub depth_buffer_view: TextureView,
+
+    pub msaa_config: Option<Arc<MSAAConfiguration>>,
 
     pub debug_gui: egui::Context,
 }
