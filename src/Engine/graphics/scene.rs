@@ -159,6 +159,31 @@ impl Asset for Scene
 {
 }
 
+pub struct GltfTexture
+{
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+    pub texel_data: Vec<u8>,
+    read_offset: usize,
+}
+impl std::io::Read for GltfTexture
+{
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize>
+    {
+        let slice = self.texel_data.as_slice();
+        match (&slice[self.read_offset..]).read(buf)
+        {
+            Ok(ok) =>
+            {
+                self.read_offset += ok;
+                Ok(ok)
+            }
+            Err(e) => Err(e)
+        }
+    }
+}
+
 impl Scene
 {
     // todo: make async
@@ -270,8 +295,15 @@ impl Scene
                     {
                         let tex_index = tex.texture().source().index();
                         let data = &images[tex_index];
-                        let tex_name = format!("{file}:tex{tex_index}");
-                        let reader = Cursor::new(data.pixels.clone()); // wasteful but whatever
+                        let tex_name = tex.texture().name().map_or_else(|| { format!("{file}:tex{}", tex_index) }, |n| n.to_string());
+                        let reader = GltfTexture
+                        {
+                            name: tex_name.clone(),
+                            width: data.width,
+                            height: data.height,
+                            texel_data: data.pixels.clone(),
+                            read_offset: 0,
+                        };
                         let tex: AssetHandle<Texture> = assets.load_from(UniCase::new(&tex_name), reader, false);
                         // todo: this needs to reconcile the image format
                         Some(tex)

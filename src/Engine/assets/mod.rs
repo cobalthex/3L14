@@ -10,15 +10,17 @@ use std::sync::Arc;
 use std::io::Read;
 use std::marker::PhantomData;
 use std::mem::{size_of, swap};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::{Context, Poll, Waker};
 use arc_swap::{ArcSwapOption};
 use egui::Ui;
 use unicase::UniCase;
-use std::thread::Builder;
+use std::thread::{Builder, JoinHandle};
+use std::time::Duration;
 use arc_swap::access::Access;
 use crossbeam::channel::{unbounded, Sender, Receiver};
 use crossbeam::channel::internal::SelectHandle;
+use egui_extras::Column;
 use parking_lot::{Mutex, MutexGuard};
 use crate::engine::AsIterator;
 use crate::engine::graphics::debug_gui::DebugGui;
@@ -57,7 +59,11 @@ impl Debug for AssetKey
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
         let sizeof = size_of::<Self>();
-        f.write_fmt(format_args!("⨇⟨{:0width$x}⟩", self.0, width = sizeof))
+        match f.alternate()
+        {
+            true => f.write_fmt(format_args!("0x{:0width$x}", self.0, width = sizeof)),
+            false => f.write_fmt(format_args!("⨇⟨{:0width$x}⟩", self.0, width = sizeof)),
+        }
     }
 }
 
@@ -92,7 +98,7 @@ pub struct AssetHandleInner<A: Asset>
 
     key: AssetKey,
     payload: ArcSwapOption<AssetPayload<A>>, // will be None while pending
-    dropper: Sender<AssetDropJob>,
+    dropper: Sender<AssetLifecycleJob>,
 
     // necessary?
     ready_waker: Mutex<Option<Waker>>,
@@ -153,8 +159,9 @@ impl<A: Asset> AssetHandle<A>
         self.inner().ref_count.load(Ordering::Acquire)
     }
 
+    // Create a handle from an untyped inner handle, note: does not increment ref-count
     #[inline]
-    fn from_untyped_unchecked(untyped: UntypedHandleInner) -> Self
+    fn attach_from_untyped(untyped: UntypedHandleInner) -> Self
     {
         Self
         {
@@ -223,7 +230,7 @@ impl<A: Asset> Drop for AssetHandle<A>
             fill
         };
 
-        inner.dropper.send(AssetDropJob { handle: (inner_untyped as UntypedHandleInner), drop_fn: Self::maybe_drop }).unwrap(); // todo: error handling
+        inner.dropper.send(AssetLifecycleJob::Drop(AssetDropJob { handle: (inner_untyped as UntypedHandleInner), drop_fn: Self::maybe_drop })).unwrap(); // todo: error handling
     }
 }
 impl<A: Asset> Future for &AssetHandle<A> // non-reffing requires being able to consume an Arc
@@ -291,12 +298,21 @@ pub trait AssetLifecyclers: Sync + Send
 {
 }
 
-type AssetLoadJob = Box<dyn FnOnce() + Send>;
-
 struct AssetDropJob
 {
     handle: UntypedHandleInner,
     drop_fn: fn(UntypedHandleInner) -> Option<AssetKey>
+}
+
+type AssetLoadJob = Box<dyn FnOnce() + Send>;
+
+enum AssetLifecycleJob
+{
+    StopWorkers, // signal to the worker threads to stop work
+
+    Load(AssetLoadJob),
+    Reload, // TODO
+    Drop(AssetDropJob),
 }
 
 type UntypedHandleInner = usize; // For internal use
@@ -309,28 +325,45 @@ struct HandleEntry
 }
 type HandleBank = HashMap<AssetKey, HandleEntry>;
 
+struct AssetsStorage<L: AssetLifecyclers>
+{
+    handles: Mutex<HandleBank>,
+    lifecyclers: L,
+}
+
+const NUM_ASSET_JOB_THREADS: usize = 1;
 pub struct Assets<L: AssetLifecyclers>
 {
-    load_scheduler: Sender<AssetLoadJob>,
-    drop_channel: (Sender<AssetDropJob>, Receiver<AssetDropJob>),
-    handles: Mutex<HandleBank>,
+    storage: Arc<AssetsStorage<L>>,
 
-    pub lifecyclers: Arc<L>, // todo: this shouldn't need to be an arc
-
+    worker_threads: [Option<JoinHandle<()>>; NUM_ASSET_JOB_THREADS],
+    lifecycle_channel: Sender<AssetLifecycleJob>,
 }
-impl<'a, L: AssetLifecyclers> Assets<L>
+impl<L: AssetLifecyclers> Assets<L>
 {
     #[must_use]
     pub fn new(asset_lifecyclers: L) -> Self
+        where L: 'static
     {
-        let lifecyclers = Arc::new(asset_lifecyclers);
+        let storage = Arc::new(AssetsStorage
+        {
+            handles: Mutex::new(HandleBank::new()),
+            lifecyclers: asset_lifecyclers,
+        });
+        //
+        // let fs_watcher = notify_debouncer_mini::new_debouncer(
+        //     Duration::from_secs(3),
+        //     |evt|
+        //     {
+        //
+        //     });
 
-        const NUM_ASSET_JOB_THREADS: usize = 1;
-        let (send, recv) = unbounded::<AssetLoadJob>();
-        let _threads = alloc_slice_fn(NUM_ASSET_JOB_THREADS, |i|
+        let (send, recv) = unbounded::<AssetLifecycleJob>();
+        let worker_threads = array_init::array_init::<_, _, NUM_ASSET_JOB_THREADS>(|i|
         {
             let this_recv = recv.clone();
-            Builder::new()
+            let this_storage = storage.clone();
+            let thread = Builder::new()
                 .name(format!("Asset worker thread {0}", i))
                 .spawn(move ||
                 {
@@ -341,26 +374,68 @@ impl<'a, L: AssetLifecyclers> Assets<L>
                         {
                             Ok(job) =>
                             {
-                                job();
+                                match job
+                                {
+                                    AssetLifecycleJob::StopWorkers => { break 'worker; },
+                                    AssetLifecycleJob::Load(load) => { (load)(); },
+                                    AssetLifecycleJob::Reload => {}, // TODO
+                                    AssetLifecycleJob::Drop(dropping) =>
+                                    {
+                                        let mut handle_bank = this_storage.handles.lock(); // must lock before below to make sure that the handle doesn't get cloned between the drop and below
+
+                                        // this uses some co-operative multiplayer w/ AssetHandleInner to check and/or destroy the handle inner
+                                        // could cast to some null type asset handle, but that is very not safe
+                                        match (dropping.drop_fn)(dropping.handle)
+                                        {
+                                            None => { }
+                                            Some(key) =>
+                                            {
+                                                match handle_bank.remove(&key)
+                                                {
+                                                    None =>
+                                                    {
+                                                        eprintln!("An asset was dropped, but it didn't exist in the Assets handle bank!")
+                                                    },
+                                                    Some(entry) =>
+                                                    {
+                                                        // handle no longer valid but can be latent verified
+                                                        debug_assert_eq!(dropping.handle, entry.untyped_handle);
+                                                        eprintln!("Unloaded asset {} '{}'", entry.asset_type, entry.asset_path);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                }
                             },
-                            Err(_) =>
+                            Err(err) =>
                             {
-                                eprintln!("Terminating asset worker {}", i);
+                                eprintln!("Terminating asset worker {} due to {err}", i);
                                 break 'worker;
                             }
                         }
                     }
-            }).unwrap()
+            }).expect("Failed to create asset worker thread");
+            Some(thread)
         });
 
         Self
         {
-            load_scheduler: send,
-            drop_channel: unbounded(),
-            lifecyclers,
-
-            handles: Mutex::new(HandleBank::new()),
+            storage,
+            worker_threads,
+            lifecycle_channel: send,
         }
+    }
+
+    pub fn lifecycler<A: Asset + 'static>(&self) -> &(impl AssetLifecycler<A> + '_)
+        where L: AssetLifecyclerLookup<A>
+    {
+        self.storage.lifecyclers.lifecycler()
+    }
+
+    pub fn lifecyclers(&self) -> &L
+    {
+        &self.storage.lifecyclers
     }
 
     // todo: never unload assets?
@@ -375,7 +450,7 @@ impl<'a, L: AssetLifecyclers> Assets<L>
         };
         let asset_key = (&key_desc).into();
 
-        let mut handle_bank= self.handles.lock();
+        let mut handle_bank = self.storage.handles.lock();
 
         let mut pre_existing = true;
         let handle_entry = handle_bank.entry(asset_key).or_insert_with(||
@@ -396,7 +471,7 @@ impl<'a, L: AssetLifecyclers> Assets<L>
                 ref_count: AtomicUsize::new(0), // this will be incremented below
                 key: asset_key,
                 payload: ArcSwapOption::new(None),
-                dropper: self.drop_channel.0.clone(),
+                dropper: self.lifecycle_channel.clone(),
                 ready_waker: Mutex::new(None),
             };
             let ptr = Box::into_raw(Box::new(inner)) as UntypedHandleInner; // manage memory through Box
@@ -417,51 +492,10 @@ impl<'a, L: AssetLifecyclers> Assets<L>
                 },
             }
         });
-        let handle = AssetHandle::from_untyped_unchecked(handle_entry.untyped_handle);
+        let handle = AssetHandle::attach_from_untyped(handle_entry.untyped_handle);
         handle.add_ref();
 
-        self.prune_stale_handles_locked(&mut handle_bank); // this can safely go at any point, going after reduces an edge-case immediate drop+load. Ideally should go in the thread, but that requires the handle bank be shareable (maybe?)
         (pre_existing, handle)
-    }
-
-    // TODO: might be able to get away with just keeping handle entries forever, rehydrating when necessary
-    // this would play nicely w/ a manifest
-    // alternatively run in the worker thread?
-    fn prune_stale_handles_locked(&self, handle_bank: &mut MutexGuard<HandleBank>)
-    {
-        let mut prune_count = 0usize;
-        // b/c the handle bank is locked, there is no race condition when dropping handles that may have been requested
-        while let Ok(dropping) = self.drop_channel.1.try_recv()
-        {
-            // this uses some co-operative multiplayer w/ AssetHandleInner to check and/or destroy the handle inner
-            // could cast to some null type asset handle, but that is very not safe
-            match (dropping.drop_fn)(dropping.handle)
-            {
-                None => { continue; }
-                Some(key) =>
-                {
-                    match handle_bank.remove(&key)
-                    {
-                        None =>
-                        {
-                            eprintln!("An asset was dropped, but it didn't exist in the Assets handle bank!")
-                        },
-                        Some(entry) =>
-                        {
-                            // handle no longer valid but can be latent verified
-                            debug_assert_eq!(dropping.handle, entry.untyped_handle);
-                            eprintln!("Unloaded asset {} '{}'", entry.asset_type, entry.asset_path);
-                        }
-                    }
-                    prune_count += 1;
-                }
-            }
-        }
-
-        if prune_count > 0
-        {
-            eprintln!("Pruned {} assets", prune_count)
-        }
     }
 
     #[must_use]
@@ -477,15 +511,15 @@ impl<'a, L: AssetLifecyclers> Assets<L>
         // create and enqueue load job
         {
             // pass-thru pre-existence?
-
+            let storage_copy = self.storage.clone();
             let asset_path_copy = UniCase::unicode(asset_path.to_string());
             let handle_copy = asset_handle.clone();
-            let lifecyclers_copy = self.lifecyclers.clone();
+            let storage_copy = self.storage.clone();
             let job = Box::new(move ||
             {
-                Self::load_job_fn(asset_path_copy, handle_copy, lifecyclers_copy.lifecycler())
+                Self::load_job_fn(asset_path_copy, handle_copy, storage_copy.lifecyclers.lifecycler())
             });
-            self.load_scheduler.send(job).unwrap(); // todo: error handling
+            self.lifecycle_channel.send(AssetLifecycleJob::Load(job)).unwrap(); // todo: error handling
         }
 
         asset_handle
@@ -521,12 +555,12 @@ impl<'a, L: AssetLifecyclers> Assets<L>
             // TODO: convert this to a struct w/ fn() ?
             let input_data_box = Box::new(input_data);
             let handle_copy = asset_handle.clone();
-            let lifecyclers_copy = self.lifecyclers.clone();
+            let storage_copy = self.storage.clone();
             let job = Box::new(move ||
             {
-                Self::load_from_job_fn(input_data_box, handle_copy, lifecyclers_copy.lifecycler())
+                Self::load_from_job_fn(input_data_box, handle_copy, storage_copy.lifecyclers.lifecycler())
             });
-            self.load_scheduler.send(job).unwrap(); // todo: error handling
+            self.lifecycle_channel.send(AssetLifecycleJob::Load(job)).unwrap(); // todo: error handling
         }
 
         asset_handle
@@ -534,14 +568,14 @@ impl<'a, L: AssetLifecyclers> Assets<L>
 
     pub fn num_active_assets(&self) -> usize
     {
-        let handles = self.handles.lock();
+        let handles = self.storage.handles.lock();
         handles.len()
     }
 
     fn load_job_fn<A: Asset>(
         asset_path: UniCase<String>,
         asset_handle: AssetHandle<A>,
-        asset_lifecycler: &'a dyn AssetLifecycler<A>)
+        asset_lifecycler: &dyn AssetLifecycler<A>)
     {
         puffin::profile_function!();
 
@@ -579,7 +613,7 @@ impl<'a, L: AssetLifecyclers> Assets<L>
     fn load_from_job_fn<A: Asset>(
         input_data: Box<dyn Read>,
         asset_handle: AssetHandle<A>,
-        asset_lifecycler: &'a dyn AssetLifecycler<A>)
+        asset_lifecycler: &dyn AssetLifecycler<A>)
     {
         puffin::profile_function!();
         let load = AssetLoadRequest
@@ -600,7 +634,7 @@ impl<'i, 'a: 'i, L: AssetLifecyclers> DebugGui<'a> for Assets<L>
     }
     fn debug_gui(&'a self, ui: &mut Ui)
     {
-        for l in self.lifecyclers.as_iter()
+        for l in self.storage.lifecyclers.as_iter()
         {
             egui::CollapsingHeader::new(l.name())
                 .default_open(true)
@@ -611,8 +645,33 @@ impl<'i, 'a: 'i, L: AssetLifecyclers> DebugGui<'a> for Assets<L>
         }
 
         ui.separator();
-        let total_active_count = self.num_active_assets();
-        ui.label(format!("Total active: {0}", total_active_count));
+
+        let handle_bank = self.storage.handles.lock();
+
+        let total_active_count = handle_bank.len();
+        ui.label(format!("Total active handles: {0}", total_active_count));
+
+        ui.collapsing("Handles", |cui|
+        {
+            egui::Grid::new("Handles table")
+                .striped(true)
+                .num_columns(3)
+                .show(cui, |gui|
+                {
+                    gui.heading("Asset Key");
+                    gui.heading("Asset Type");
+                    gui.heading("Asset Path");
+                    gui.end_row();
+
+                    for (key, handle) in handle_bank.iter()
+                    {
+                        gui.label(format!("{key:#?}")); // right click to copy?
+                        gui.label(handle.asset_type);
+                        gui.label(handle.asset_path.as_ref());
+                        gui.end_row();
+                    }
+                });
+        });
     }
 }
 #[cfg(debug_assertions)]
@@ -620,10 +679,15 @@ impl<L: AssetLifecyclers> Drop for Assets<L>
 {
     fn drop(&mut self)
     {
-        let mut handle_bank = self.handles.lock();
-        self.prune_stale_handles_locked(&mut handle_bank);
-        // TODO: drop order is non-deterministic, this may be causing a race here
+        self.lifecycle_channel.send(AssetLifecycleJob::StopWorkers).unwrap();
+        for thread in &mut self.worker_threads
+        {
+            thread.take()
+                .unwrap() // this should never be None
+                .join().unwrap();
+        }
 
+        let mut handle_bank = self.storage.handles.lock();
         if !handle_bank.is_empty()
         {
             eprintln!("! Leak detected: {} active asset handle(s):", handle_bank.len());
@@ -696,12 +760,12 @@ mod tests
 
     fn set_passthru(assets: &Assets<TestLifecyclers>, passthru: Option<fn(AssetLoadRequest<TestAsset>)>)
     {
-        let mut locked = assets.lifecyclers.test_assets.passthru.lock();
+        let mut locked = &mut *assets.lifecyclers().test_assets.passthru.lock();
         *locked = passthru.map(|f| Passthru { call_count: 0, passthru_fn: f });
     }
     fn get_passthru_call_count(assets: &Assets<TestLifecyclers>) -> Option<usize>
     {
-        let locked = &*assets.lifecyclers.test_assets.passthru.lock();
+        let locked = &*assets.lifecyclers().test_assets.passthru.lock();
         locked.as_ref().map(|p| p.call_count)
     }
 

@@ -588,6 +588,7 @@ fn main() -> ExitReason
         }
     }
 
+    std::mem::drop(test_scene);
     std::mem::drop(assets);
     std::mem::drop(renderer);
     std::mem::drop(windows);

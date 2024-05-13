@@ -49,6 +49,8 @@ arc-swap = { version = "1.7.1", features = ["weak"] }
 log = "0.4.21"
 
 getrandom = { features = ["js"] }
+notify = "6.1.1"
+notify-debouncer-mini = "0.4.1"
 
 [dev-dependencies]
 criterion = { version = "0.5.1" }

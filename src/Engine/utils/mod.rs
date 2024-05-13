@@ -1,32 +1,83 @@
 pub mod common_traits;
+
+use std::fmt::{Display, Formatter};
 pub use common_traits::*;
 
 pub mod async_completion;
 pub mod alloc_slice;
 
-pub trait AsU8Slice<'a>
+pub struct FormatBytes
 {
-    unsafe fn as_u8_slice(&'a self) -> &'a [u8];
+    pub bytes: f64
 }
-impl<'a, T> AsU8Slice<'a> for Vec<T>
+#[allow(non_upper_case_globals)]
+impl FormatBytes
 {
-    unsafe fn as_u8_slice(&'a self) -> &'a [u8]
+    pub const Ki: f64 = 1.0 * 1024.0; // Kibi (Ki)
+    pub const Mi: f64 = Self::Ki * 1024.0; // Mebi (Mi)
+    pub const Gi: f64 = Self::Mi * 1024.0; // Gibi (Gi)
+    pub const Ti: f64 = Self::Gi * 1024.0; // Tebi (Ti)
+    // Pebi (Pi)
+    // Exbi (Ei)
+    // Zebi (Zi)
+    // Yobi (Yi)
+}
+impl Display for FormatBytes
+{
+    #[allow(clippy::identity_op)]
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
-        std::slice::from_raw_parts(self.as_ptr() as *const u8, self.len() * std::mem::size_of::<T>())
+        // todo: support decimals?
+
+        // larger sizes not likely to ever be used
+        if self.bytes > Self::Ti
+        {
+            f.write_fmt(format_args!("{}TiB", self.bytes / Self::Ti))
+        }
+        else if self.bytes > Self::Gi
+        {
+            f.write_fmt(format_args!("{}GiB", self.bytes / Self::Gi))
+        }
+        else if self.bytes > Self::Mi
+        {
+            f.write_fmt(format_args!("{}MiB", self.bytes / Self::Mi))
+        }
+        else if self.bytes > Self::Ki
+        {
+            f.write_fmt(format_args!("{}KiB", self.bytes / Self::Ki))
+        }
+        else
+        {
+            f.write_fmt(format_args!("{}B", self.bytes))
+        }
     }
 }
-impl<'a, T> AsU8Slice<'a> for &'a [T]
+#[macro_export]
+macro_rules! format_bytes
 {
-    unsafe fn as_u8_slice(&'a self) -> &'a [u8]
-    {
-        std::slice::from_raw_parts(self.as_ptr() as *const u8, std::mem::size_of_val(*self))
-    }
+    ($val:expr) => { $crate::engine::utils::FormatBytes { bytes: $val as f64 } };
 }
-impl<'a, T> AsU8Slice<'a> for [T]
+
+#[cfg(test)]
+mod format_bytes_tests
 {
-    unsafe fn as_u8_slice(&self) -> &'a [u8]
+    use super::*;
+
+    #[test]
+    fn values()
     {
-        std::slice::from_raw_parts(self.as_ptr() as *const u8, std::mem::size_of_val(self))
+        assert_eq!("123B", format!("{}", format_bytes!(123.0)));
+        assert_eq!("123KiB", format!("{}", format_bytes!(123.0 * FormatBytes::Ki)));
+        assert_eq!("123MiB", format!("{}", format_bytes!(123.0 * FormatBytes::Mi)));
+        assert_eq!("123GiB", format!("{}", format_bytes!(123.0 * FormatBytes::Gi)));
+        assert_eq!("123TiB", format!("{}", format_bytes!(123.0 * FormatBytes::Ti)));
+    }
+
+    #[test]
+    fn decimals()
+    {
+        assert_eq!("123.5MiB", format!("{:.1}", format_bytes!(123.0 * FormatBytes::Mi + (FormatBytes::Mi / 2.0))));
+        // assert_eq!("123.0MiB", format!("{:.1}", format_bytes!(123.0 * FormatBytes::Mi))); // ?
     }
 }
 

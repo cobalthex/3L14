@@ -39,3 +39,5 @@ impl<'a> DebugGui<'a> for MaterialLifecycler
 
     }
 }
+
+// material loads/owns texture and creates view for texture
