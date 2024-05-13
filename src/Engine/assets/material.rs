@@ -1,3 +1,4 @@
+use crate::engine::assets::texture::TextureLifecycler;
 use super::*;
 
 pub struct Material
@@ -23,16 +24,18 @@ impl MaterialLifecycler
 }
 impl AssetLifecycler<Material> for MaterialLifecycler
 {
-    fn get_or_create(&self, request: AssetLoadRequest<Material>)
+    fn create_or_update(&self, request: AssetLoadRequest<Material>)
     {
         todo!()
     }
+}
 
-    fn stats(&self) -> AssetLifecyclerStats
+impl<'a> DebugGui<'a> for MaterialLifecycler
+{
+    fn name(&self) -> &'a str { "Materials" }
+
+    fn debug_gui(&self, ui: &mut Ui)
     {
-        AssetLifecyclerStats
-        {
-            active_count: 0,
-        }
+
     }
 }

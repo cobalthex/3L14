@@ -1,6 +1,6 @@
 use std::alloc::{Layout, LayoutError};
-use std::ops::Deref;
 use std::ptr;
+use futures::stream::All;
 
 #[derive(Debug)]
 pub enum AllocError
@@ -98,6 +98,3 @@ pub fn alloc_slice_fn<T, F: Fn(usize) -> T>(n: usize, create_fn: F) -> Result<Bo
         Ok(Box::from_raw(std::slice::from_raw_parts_mut(t_ptr, n)))
     }
 }
-
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
-use std::sync::Arc;

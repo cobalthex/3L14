@@ -1,13 +1,16 @@
+use std::io::Cursor;
 use std::ops::Range;
 
 use glam::{Quat, Vec2, Vec3};
 use gltf::image::Source;
 use gltf::mesh::util::ReadIndices;
+use unicase::UniCase;
 use wgpu::{BufferSlice, BufferUsages, Extent3d, IndexFormat, TextureDescriptor, vertex_attr_array, VertexBufferLayout};
 use wgpu::util::{BufferInitDescriptor, DeviceExt, TextureDataOrder};
 
 use crate::engine::{AABB, AsU8Slice};
-use crate::engine::assets::Asset;
+use crate::engine::assets::{Asset, AssetHandle, AssetLifecyclerLookup, AssetLifecyclers, Assets};
+use crate::engine::assets::texture::Texture;
 use crate::engine::graphics::Renderer;
 use crate::engine::world::Transform;
 
@@ -69,7 +72,7 @@ pub struct Mesh
     index_format: IndexFormat,
 
     // todo: materials
-    texture: Option<wgpu::Texture>,
+    texture: Option<AssetHandle<Texture>>,
 }
 impl Mesh
 {
@@ -159,7 +162,8 @@ impl Asset for Scene
 impl Scene
 {
     // todo: make async
-    pub fn try_from_file(file: &str, renderer: &Renderer) -> Result<Self, SceneImportError>
+    pub fn try_from_file<A: AssetLifecyclers>(file: &str, assets: &Assets<A>, renderer: &Renderer) -> Result<Self, SceneImportError>
+        where A: AssetLifecyclerLookup<Texture> + 'static
     {
         // todo: vertex buffer/index buffer allocator
 
@@ -264,24 +268,13 @@ impl Scene
                     None => None,
                     Some(tex) =>
                     {
-                        let data = &images[tex.texture().source().index()];
+                        let tex_index = tex.texture().source().index();
+                        let data = &images[tex_index];
+                        let tex_name = format!("{file}:tex{tex_index}");
+                        let reader = Cursor::new(data.pixels.clone()); // wasteful but whatever
+                        let tex: AssetHandle<Texture> = assets.load_from(UniCase::new(&tex_name), reader, false);
                         // todo: this needs to reconcile the image format
-                        let z = renderer.device().create_texture_with_data(renderer.queue(), &TextureDescriptor
-                        {
-                            label: Some("todo: texture"),
-                            size: Extent3d {
-                                width: data.width,
-                                height: data.height,
-                                depth_or_array_layers: 1,
-                            },
-                            mip_level_count: 1,
-                            sample_count: 1,
-                            dimension: wgpu::TextureDimension::D2,
-                            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                            view_formats: &[],
-                        }, TextureDataOrder::LayerMajor, data.pixels.as_slice());
-                        Some(z)
+                        Some(tex)
                     }
                 };
 

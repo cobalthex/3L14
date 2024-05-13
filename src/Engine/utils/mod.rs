@@ -1,3 +1,6 @@
+pub mod common_traits;
+pub use common_traits::*;
+
 pub mod async_completion;
 pub mod alloc_slice;
 

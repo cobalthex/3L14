@@ -1,18 +1,17 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::thread::current;
 use arc_swap::ArcSwapOption;
 use egui::epaint::Shadow;
 use egui::{Pos2, Rect, Rounding, Stroke, Visuals};
 use egui_wgpu::ScreenDescriptor;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use sdl2::video::Window;
 #[allow(deprecated)]
 use wgpu::rwh::{HasRawDisplayHandle, HasRawWindowHandle};
 use wgpu::*;
 use crate::engine::FrameNumber;
 
-pub const MAX_CONSEC_FRAMES: usize = 3;
+pub const MAX_CONSECUTIVE_FRAMES: usize = 3;
 
 struct RenderFrameData
 {
@@ -21,7 +20,7 @@ struct RenderFrameData
 }
 
 // TODO: need a way to hold the reference for the duration of the frame
-//  ArcSwap inside RenderFarmeData + deref?
+//  ArcSwap inside RenderFrameData + deref?
 pub struct MSAAConfiguration
 {
     pub current_sample_count: u32, // pipelines and ms-framebuffer will need to be recreated if this is changed
@@ -34,6 +33,8 @@ pub struct Renderer<'r>
     queue: Queue,
 
     surface: Surface<'r>,
+    
+    // todo: some of these should probably be spaced apart (cache-line size) to avoid cache line sync serializing
 
     surface_config: RwLock<SurfaceConfiguration>,
 
@@ -41,14 +42,27 @@ pub struct Renderer<'r>
     msaa_config: ArcSwapOption<MSAAConfiguration>,
 
     debug_gui: egui::Context,
-    debug_gui_renderer: egui_wgpu::Renderer,
+    debug_gui_renderer: Mutex<egui_wgpu::Renderer>,
 
     // todo: this needs to know when a new frame is available before picking one
-    render_frames: RwLock<[RenderFrameData; MAX_CONSEC_FRAMES]>,
+    render_frames: RwLock<[RenderFrameData; MAX_CONSECUTIVE_FRAMES]>,
 }
 impl<'r> Renderer<'r>
 {
-    pub async fn new(window: &Window) -> Renderer
+    pub fn new(window: &Window) -> Self
+    {
+        #[allow(deprecated)]
+        let window_handle = SurfaceTargetUnsafe::RawHandle
+        {
+            raw_display_handle: window.raw_display_handle().expect("Failed to get display handle"),
+            raw_window_handle: window.raw_window_handle().expect("Failed to get window handle"),
+        };
+        let window_size = window.size();
+
+        futures::executor::block_on(Self::new_async(window_handle, window_size))
+    }
+
+    async fn new_async(window_handle: SurfaceTargetUnsafe, window_size: (u32, u32)) -> Self
     {
         puffin::profile_function!();
 
@@ -66,50 +80,42 @@ impl<'r> Renderer<'r>
             gles_minor_version: Gles3MinorVersion::default(),
         });
 
-        #[allow(deprecated)]
-        let handle = SurfaceTargetUnsafe::RawHandle
-        {
-            raw_display_handle: window.raw_display_handle().expect("Failed to get display handle"),
-            raw_window_handle: window.raw_window_handle().expect("Failed to get window handle"),
-        };
-        let surface = unsafe { instance.create_surface_unsafe(handle).expect("Failed to create swap-chain") };
+
+        let surface = unsafe { instance.create_surface_unsafe(window_handle).expect("Failed to create swap-chain") };
 
         // enumerate adapters?
-        let adapter = instance
-            .request_adapter(&RequestAdapterOptions
+        let adapter =
+            instance.request_adapter(&RequestAdapterOptions
             {
                 power_preference: PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 // Request an adapter which can render to our surface
                 compatible_surface: Some(&surface),
-            })
-            .await
+            }).await
             .expect("Failed to find an appropriate adapter");
 
         let adapter_info = adapter.get_info();
         println!("Creating render device with {:?}", adapter_info);
 
         // Create the logical device and command queue
-        let (device, queue) = adapter
-            .request_device(&DeviceDescriptor
+        let (device, queue) =
+            adapter.request_device(&DeviceDescriptor
+            {
+                label: Some("Primary WGPU device"),
+                required_features:
+                    Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES |
+                    Features::PUSH_CONSTANTS,
+                // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
+                required_limits: Limits
                 {
-                    label: Some("Primary WGPU device"),
-                    required_features:
-                        Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES |
-                        Features::PUSH_CONSTANTS,
-                    // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
-                    required_limits: Limits
-                    {
-                        max_push_constant_size: 256, // doesn't support WebGPU
-                        .. Default::default()
-                    }.using_resolution(adapter.limits()),
-                },
-                None,
-            )
-            .await
+                    max_push_constant_size: 256, // doesn't support WebGPU
+                    .. Default::default()
+                }.using_resolution(adapter.limits()),
+            },
+            None,
+            ).await
             .expect("Failed to create device");
 
-        let window_size = window.size();
         let surface_config = surface
             .get_default_config(&adapter, window_size.0, window_size.1)
             .unwrap();
@@ -120,10 +126,10 @@ impl<'r> Renderer<'r>
             .flags;
         let max_sample_count: u32 =
         {
-            if sample_flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X16) { 16 }
-            else if sample_flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X8) { 8 }
-            else if sample_flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X4) { 4 }
-            else if sample_flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X2) { 2 }
+            if sample_flags.contains(TextureFormatFeatureFlags::MULTISAMPLE_X16) { 16 }
+            else if sample_flags.contains(TextureFormatFeatureFlags::MULTISAMPLE_X8) { 8 }
+            else if sample_flags.contains(TextureFormatFeatureFlags::MULTISAMPLE_X4) { 4 }
+            else if sample_flags.contains(TextureFormatFeatureFlags::MULTISAMPLE_X2) { 2 }
             else { 1 }
         };
 
@@ -171,7 +177,7 @@ impl<'r> Renderer<'r>
             usage: TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         };
-        let render_frames = std::array::from_fn::<_, MAX_CONSEC_FRAMES, _>(|_|
+        let render_frames = std::array::from_fn::<_, MAX_CONSECUTIVE_FRAMES, _>(|_|
         {
             RenderFrameData
             {
@@ -189,7 +195,7 @@ impl<'r> Renderer<'r>
             max_sample_count,
             msaa_config: ArcSwapOption::from_pointee(msaa_config),
             debug_gui,
-            debug_gui_renderer,
+            debug_gui_renderer: Mutex::new(debug_gui_renderer),
             render_frames: RwLock::new(render_frames),
         }
     }
@@ -327,11 +333,13 @@ impl<'r> Renderer<'r>
 
     fn render_debug_gui(&self, clip_size: [u32; 2], target: &TextureView) -> CommandBuffer
     {
+        let mut gui_renderer = self.debug_gui_renderer.lock();
+
         let output = self.debug_gui.end_frame();
         output.textures_delta.set.iter().for_each(|td|
-            self.debug_gui_renderer.update_texture(&self.device, &self.queue, td.0, &td.1));
+            gui_renderer.update_texture(&self.device, &self.queue, td.0, &td.1));
         output.textures_delta.free.iter().for_each(|t|
-            self.debug_gui_renderer.free_texture(t));
+            gui_renderer.free_texture(t));
 
         let desc = ScreenDescriptor
         {
@@ -345,7 +353,7 @@ impl<'r> Renderer<'r>
         {
             label: Some("Debug GUI encoder"),
         });
-        self.debug_gui_renderer.update_buffers(
+        gui_renderer.update_buffers(
             &self.device,
             &self.queue,
             &mut command_encoder,
@@ -372,7 +380,7 @@ impl<'r> Renderer<'r>
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            self.debug_gui_renderer.render(&mut render_pass, &primitives, &desc);
+            gui_renderer.render(&mut render_pass, &primitives, &desc);
         }
         command_encoder.finish()
     }
@@ -390,15 +398,15 @@ impl<'r> Renderer<'r>
     }
 
     // taken from MSAA line sample
-    fn create_msaa_buffer(sample_count: u32, device: &wgpu::Device, width: u32, height: u32, surface_format: TextureFormat) -> wgpu::TextureView
+    fn create_msaa_buffer(sample_count: u32, device: &Device, width: u32, height: u32, surface_format: TextureFormat) -> TextureView
     {
-        let multisampled_texture_extent = wgpu::Extent3d
+        let multisampled_texture_extent = Extent3d
         {
             width,
             height,
             depth_or_array_layers: 1,
         };
-        let multisampled_frame_descriptor = &wgpu::TextureDescriptor {
+        let multisampled_frame_descriptor = &TextureDescriptor {
             label: Some("MSAA framebuffer texture"),
             size: multisampled_texture_extent,
             mip_level_count: 1,

@@ -3,7 +3,7 @@ use std::intrinsics::transmute;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Sub, SubAssign};
 use std::slice::Iter;
 use std::time::Instant;
-use egui::{Context, Pos2, RawInput, Ui};
+use egui::{Pos2, RawInput, Ui};
 use glam::IVec2;
 use sdl2::event::Event;
 use sdl2::keyboard::Mod;
@@ -460,7 +460,7 @@ const MAX_MOUSE_BUTTON_STATES: usize = 5;
 struct SdlMouseUtil(sdl2::mouse::MouseUtil);
 impl Debug for SdlMouseUtil
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { Ok(()) }
+    fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result { Ok(()) }
 }
 
 #[derive(Debug)]

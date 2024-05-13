@@ -1,28 +1,28 @@
 use egui::{Context, Ui, Window};
 use crate::engine::FrameNumber;
 
-pub trait DebugGuiBase<'n>
+pub trait DebugGuiBase<'a>
 {
     // This should be a unique name
-    fn name(&self) -> &'n str;
+    fn name(&'a self) -> &'a str;
 
-    fn debug_gui_base(&self, is_active: &mut bool, debug_gui: &egui::Context);
+    fn debug_gui_base(&'a self, is_active: &mut bool, debug_gui: &egui::Context);
 }
 
-pub trait DebugGui<'n>
+pub trait DebugGui<'a>
 {
     // This should be a unique name
-    fn name(&self) -> &'n str;
+    fn name(&'a self) -> &'a str;
 
-    fn debug_gui(&self, ui: &mut Ui);
+    fn debug_gui(&'a self, ui: &mut Ui);
 }
-impl<'n, T: DebugGui<'n>> DebugGuiBase<'n> for T
+impl<'a, T: DebugGui<'a>> DebugGuiBase<'a> for T
 {
-    fn name(&self) -> &'n str {
+    fn name(&'a self) -> &'a str {
         self.name()
     }
 
-    fn debug_gui_base(&self, is_active: &mut bool, debug_gui: &Context)
+    fn debug_gui_base(&'a self, is_active: &mut bool, debug_gui: &Context)
     {
         Window::new(self.name())
             .movable(true)

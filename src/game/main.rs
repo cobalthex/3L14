@@ -1,8 +1,6 @@
-use std::env;
 use std::io::Read;
-use std::process::{ExitCode, Termination};
+use std::process::ExitCode;
 use std::time::Duration;
-use egui::{Area, Context, pos2, Ui};
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use game_3l14::engine::{*, timing::*, input::*, windows::*, graphics::*, world::*, assets::*};
 use clap::Parser;
@@ -14,6 +12,7 @@ use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMem
 use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
 use game_3l14::engine::assets::material::*;
 use game_3l14::engine::assets::texture::*;
+use game_3l14::engine::graphics::debug_gui::DebugGui;
 
 #[derive(Debug)]
 #[repr(i32)]
@@ -57,6 +56,11 @@ fn shitty_join<I>(separator: &str, iter: I) -> String
     out
 }
 
+fn magic_elide_lifetime<'from, 'to, T>(t: &'from T) -> &'to T // stupid bullshit
+{
+    unsafe { &*(t as *const T) }
+}
+
 // TODO: macro-ize this
 pub struct GameAssets<'a>
 {
@@ -64,13 +68,48 @@ pub struct GameAssets<'a>
     pub materials: MaterialLifecycler,
 }
 impl<'a> AssetLifecyclers for GameAssets<'a> { }
-impl<'a> AssetLifecyclerLookup<texture::Texture<'a>> for GameAssets<'a>
+impl<'a> AssetLifecyclerLookup<texture::Texture> for GameAssets<'a>
 {
-    fn lifecycler(&self) -> &impl AssetLifecycler<texture::Texture<'a>> { &self.textures }
+    fn lifecycler(&self) -> &impl AssetLifecycler<texture::Texture> { &self.textures }
 }
-impl<'a> AssetLifecyclerLookup<assets::material::Material> for GameAssets<'a>
+impl<'a> AssetLifecyclerLookup<Material> for GameAssets<'a>
 {
-    fn lifecycler(&self) -> &impl AssetLifecycler<assets::material::Material> { &self.materials }
+    fn lifecycler(&self) -> &impl AssetLifecycler<Material> { &self.materials }
+}
+pub struct GameAssetsIterator<'i, 'a>
+{
+    assets: &'i GameAssets<'a>,
+    which: usize,
+}
+impl<'i, 'a> Iterator for GameAssetsIterator<'i, 'a>
+{
+    type Item = &'i dyn DebugGui<'a>;
+
+    fn next(&mut self) -> Option<Self::Item>
+    {
+        let next: Option<Self::Item> = match self.which
+        {
+            0 => Some(&self.assets.textures),
+            1 => Some(&self.assets.materials),
+            _ => None
+        };
+        self.which += 1;
+        next
+    }
+}
+impl<'i, 'a: 'i> AsIterator<'i> for GameAssets<'a>
+{
+    type Item = &'i dyn DebugGui<'a>;
+    type AsIter = GameAssetsIterator<'i, 'a>;
+
+    fn as_iter(&'i self) -> Self::AsIter
+    {
+        Self::AsIter
+        {
+            assets: self,
+            which: 0,
+        }
+    }
 }
 
 fn main() -> ExitReason
@@ -96,9 +135,9 @@ fn main() -> ExitReason
         let default_panic_hook = std::panic::take_hook();
 
         #[cfg(debug_assertions)]
-            let keep_alive = cli_args.keep_alive_on_panic;
+        let keep_alive = cli_args.keep_alive_on_panic;
         #[cfg(not(debug_assertions))]
-            let keep_alive = false;
+        let keep_alive = false;
         if keep_alive
         {
             std::panic::set_hook(Box::new(move |panic|
@@ -131,12 +170,10 @@ fn main() -> ExitReason
     let windows = Windows::new(&sdl_video, &app_run);
     let mut input = Input::new(&sdl);
 
-    // let mut tp_builder = futures::executor::ThreadPoolBuilder::new();
-    // let thread_pool = tp_builder.create().unwrap();
-    let mut renderer = futures::executor::block_on(Renderer::new(windows.main_window())); // don't block
+    let renderer = Renderer::new(windows.main_window());
     let assets = Assets::new(GameAssets
     {
-        textures: TextureLifecycler::new(renderer.device()),
+        textures: TextureLifecycler::new(magic_elide_lifetime(&renderer)),
         materials: MaterialLifecycler::default(),
     });
 
@@ -148,9 +185,9 @@ fn main() -> ExitReason
         debug_menu_memory.set_active_by_name::<debug_gui::AppStats>("App Stats", true); // a big fragile...
     }
 
-    let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
+    // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-    let mut test_scene = Scene::try_from_file("assets/shapes.glb", &renderer).expect("Couldn't import scene");
+    let mut test_scene = Scene::try_from_file("assets/shapes.glb", &assets, &renderer).expect("Couldn't import scene");
 
     let mut camera = Camera::new(Some("fp_cam"), renderer.display_aspect_ratio());
     camera.transform.position = Vec3::new(0.0, 2.0, -10.0);
@@ -268,13 +305,14 @@ fn main() -> ExitReason
             }
         ],
     });
-    let tex;
+    let tex =
     {
-        let png = png::Decoder::new(std::fs::File::open("assets/test.png").unwrap());
+        let png_file = std::fs::File::open("assets/test.png").unwrap();
+        let png = png::Decoder::new(png_file);
         let mut png_reader = png.read_info().unwrap();
         let mut png_buf = unsafe { alloc_slice_uninit(png_reader.output_buffer_size()).unwrap() };
         let png_info = png_reader.next_frame(&mut png_buf).unwrap();
-        tex = renderer.device().create_texture_with_data(renderer.queue(), &TextureDescriptor
+        renderer.device().create_texture_with_data(renderer.queue(), &TextureDescriptor
         {
             label: Some("assets/test.png"),
             size: Extent3d
@@ -289,8 +327,8 @@ fn main() -> ExitReason
             format: TextureFormat::Rgba8Unorm,
             usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
-        }, TextureDataOrder::LayerMajor, &png_buf[..png_info.buffer_size()]);
-    }
+        }, TextureDataOrder::LayerMajor, &png_buf[..png_info.buffer_size()])
+    };
     let sampler = renderer.device().create_sampler(&SamplerDescriptor
     {
         label: Some("sampler"),

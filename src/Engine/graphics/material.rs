@@ -1,6 +1,5 @@
 use nameof::name_of_type;
 use wgpu::{BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, ShaderStages, TextureSampleType, TextureViewDimension};
-use wgpu::core::resource::TextureViewNotRenderableReason::Dimension;
 use crate::engine::graphics::colors::Color;
 
 // todo: in the future these should be data driven (maybe parametric?)

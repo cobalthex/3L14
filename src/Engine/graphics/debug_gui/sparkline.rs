@@ -1,4 +1,3 @@
-use std::mem::MaybeUninit;
 use egui::{Pos2, Sense, Stroke, Vec2};
 
 pub struct Sparkline<const N_ENTRIES: usize>
