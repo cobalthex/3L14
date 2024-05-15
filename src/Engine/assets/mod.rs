@@ -10,24 +10,27 @@ use std::sync::Arc;
 use std::io::Read;
 use std::marker::PhantomData;
 use std::mem::{size_of, swap};
+use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::{Context, Poll, Waker};
 use arc_swap::{ArcSwapOption};
 use egui::Ui;
 use unicase::UniCase;
 use std::thread::{Builder, JoinHandle};
-use std::time::Duration;
 use arc_swap::access::Access;
-use crossbeam::channel::{unbounded, Sender, Receiver};
-use crossbeam::channel::internal::SelectHandle;
-use egui_extras::Column;
-use parking_lot::{Mutex, MutexGuard};
+use crossbeam::channel::{unbounded, Sender};
+use gltf::json::Value::Null;
+use parking_lot::Mutex;
 use crate::engine::AsIterator;
 use crate::engine::graphics::debug_gui::DebugGui;
-use crate::engine::utils::alloc_slice::alloc_slice_fn;
 
 pub mod texture;
 pub mod material;
+
+// An internal only asset that can be used for type erasure
+// This should not be used publicly, and dynamic dispatch cannot be used
+struct NullAsset;
+impl Asset for NullAsset { }
 
 pub trait AssetPath: AsRef<str> + Hash + Display + Debug { }
 impl<T> AssetPath for T where T: AsRef<str> + Hash + Display + Debug { }
@@ -87,10 +90,18 @@ pub enum AssetLoadError
 #[derive(Debug)]
 pub enum AssetPayload<A: Asset>
 {
+    // Unloaded,
     Pending, // This state is must only be set while there is an active AssetLoadRequest being queued/processed. Store sentinel of the asset load request?
     Available(A),
     Unavailable(AssetLoadError), // shouldn't be stored in-cache? (reload on error?)
 }
+
+type _PayloadProjectionFn<A> = fn(&Option<Arc<AssetPayload<A>>>) -> &AssetPayload<A>;
+pub type PayloadGuard<A> = arc_swap::access::MapGuard<
+    arc_swap::Guard<Option<Arc<AssetPayload<A>>>, arc_swap::DefaultStrategy>,
+    _PayloadProjectionFn<A>,
+    Option<Arc<AssetPayload<A>>>,
+    AssetPayload<A>>; // holy shit this is ugly; this *should* be safe;
 
 pub struct AssetHandleInner<A: Asset>
 {
@@ -113,29 +124,6 @@ impl<A: Asset> AssetHandleInner<A>
             waker.wake();
         }
     }
-}
-pub struct AssetHandle<A: Asset>
-{
-    inner: *const AssetHandleInner<A>,
-    phantom: PhantomData<AssetHandleInner<A>>,
-}
-
-type _PayloadProjectionFn<A> = fn(&Option<Arc<AssetPayload<A>>>) -> &AssetPayload<A>;
-pub type PayloadGuard<A> = arc_swap::access::MapGuard<
-    arc_swap::Guard<Option<Arc<AssetPayload<A>>>, arc_swap::DefaultStrategy>,
-    _PayloadProjectionFn<A>,
-    Option<Arc<AssetPayload<A>>>,
-    AssetPayload<A>>; // holy shit this is ugly; this *should* be safe;
-
-impl<A: Asset> AssetHandle<A>
-{
-    // creation managed by <Assets>
-
-    #[inline]
-    pub fn key(&self) -> AssetKey
-    {
-        self.inner().key
-    }
 
     fn map_payload(payload: &Option<Arc<AssetPayload<A>>>) -> &AssetPayload<A>
     {
@@ -146,41 +134,72 @@ impl<A: Asset> AssetHandle<A>
         }
     }
 
-    // Retrieve the current payload, holds a strong reference for as long as the guard exists
     #[inline]
     pub fn payload(&self) -> PayloadGuard<A>
     {
-        self.inner().payload.map(Self::map_payload as _PayloadProjectionFn<A>).load()
+        self.payload.map(Self::map_payload as _PayloadProjectionFn<A>).load()
     }
 
     #[inline]
     pub fn ref_count(&self) -> usize
     {
-        self.inner().ref_count.load(Ordering::Acquire)
+        self.ref_count.load(Ordering::Acquire)
+    }
+}
+
+pub struct AssetHandle<A: Asset>
+{
+    inner: *const AssetHandleInner<A>,
+    phantom: PhantomData<AssetHandleInner<A>>,
+}
+
+impl<A: Asset> AssetHandle<A>
+{
+    // creation managed by <Assets>
+
+    #[inline]
+    fn inner(&self) -> &AssetHandleInner<A>
+    {
+        unsafe { &*self.inner }
     }
 
-    // Create a handle from an untyped inner handle, note: does not increment ref-count
     #[inline]
-    fn attach_from_untyped(untyped: UntypedHandleInner) -> Self
+    pub fn key(&self) -> AssetKey
     {
-        Self
+        self.inner().key
+    }
+
+    // Retrieve the current payload, holds a strong reference for as long as the guard exists
+    #[inline]
+    pub fn payload(&self) -> PayloadGuard<A>
+    {
+        self.inner().payload()
+    }
+
+    #[inline]
+    pub fn ref_count(&self) -> usize
+    {
+        self.inner().ref_count()
+    }
+
+    // Create a handle from an untyped inner handle
+    #[inline]
+    unsafe fn clone_from_untyped(untyped: UntypedHandleInner) -> Self
+    {
+        let cloned = Self
         {
             inner: untyped as *const AssetHandleInner<A>,
             phantom: Default::default(),
-        }
+        };
+        cloned.add_ref();
+        cloned
     }
 
     #[inline]
     fn add_ref(&self) // add a ref (will cause a leak if misused)
     {
         // see Arc::clone() for details on ordering requirements
-        let _old_refs = self.inner().ref_count.fetch_add(1, Ordering::Relaxed);
-    }
-
-    #[inline]
-    fn inner(&self) -> &AssetHandleInner<A>
-    {
-        unsafe { &*self.inner }
+        let _old_refs = self.inner().ref_count.fetch_add(1, Ordering::Acquire);
     }
 
     fn maybe_drop(untyped: UntypedHandleInner) -> Option<AssetKey>
@@ -207,8 +226,8 @@ impl<A: Asset> Clone for AssetHandle<A>
         self.add_ref();
         Self
         {
-            inner: self.inner.clone(),
-            phantom: self.phantom.clone(),
+            inner: self.inner,
+            phantom: self.phantom,
         }
     }
 }
@@ -378,7 +397,10 @@ impl<L: AssetLifecyclers> Assets<L>
                                 {
                                     AssetLifecycleJob::StopWorkers => { break 'worker; },
                                     AssetLifecycleJob::Load(load) => { (load)(); },
-                                    AssetLifecycleJob::Reload => {}, // TODO
+                                    AssetLifecycleJob::Reload =>
+                                    {
+                                        // TODO
+                                    },
                                     AssetLifecycleJob::Drop(dropping) =>
                                     {
                                         let mut handle_bank = this_storage.handles.lock(); // must lock before below to make sure that the handle doesn't get cloned between the drop and below
@@ -400,7 +422,7 @@ impl<L: AssetLifecyclers> Assets<L>
                                                     {
                                                         // handle no longer valid but can be latent verified
                                                         debug_assert_eq!(dropping.handle, entry.untyped_handle);
-                                                        eprintln!("Unloaded asset {} '{}'", entry.asset_type, entry.asset_path);
+                                                        eprintln!("Unloaded asset <{}> '{}'", entry.asset_type, entry.asset_path);
                                                     }
                                                 }
                                             }
@@ -492,8 +514,7 @@ impl<L: AssetLifecyclers> Assets<L>
                 },
             }
         });
-        let handle = AssetHandle::attach_from_untyped(handle_entry.untyped_handle);
-        handle.add_ref();
+        let handle = unsafe { AssetHandle::clone_from_untyped(handle_entry.untyped_handle) };
 
         (pre_existing, handle)
     }
@@ -541,7 +562,7 @@ impl<L: AssetLifecyclers> Assets<L>
             {
                 true =>
                 {
-                    eprintln!("Reloading asset {} '{}'", type_name::<A>(), asset_path); // return entry which has name?
+                    eprintln!("Reloading asset <{}> '{}'", type_name::<A>(), asset_path); // return entry which has name?
                     asset_handle.inner().payload.store(None);
                 },
                 false => { return asset_handle; }
@@ -570,6 +591,23 @@ impl<L: AssetLifecyclers> Assets<L>
     {
         let handles = self.storage.handles.lock();
         handles.len()
+    }
+
+    // Returns true if an asset belonging to the asset key has been loaded
+    // Returns false on error/pending, or if the asset does not exist
+    pub fn is_loaded(&self, key: AssetKey) -> bool
+    {
+        let handles = self.storage.handles.lock();
+        match handles.get(&key)
+        {
+            None => false,
+            Some(entry) =>
+            {
+                // as long as handles is locked, this handle will always be valid
+                let inner = unsafe { &*(entry.untyped_handle as *const AssetHandleInner::<NullAsset>) };
+                std::mem::discriminant(&*inner.payload()) == std::mem::discriminant(&AssetPayload::Available(NullAsset))
+            }
+        }
     }
 
     fn load_job_fn<A: Asset>(
@@ -616,6 +654,7 @@ impl<L: AssetLifecyclers> Assets<L>
         asset_lifecycler: &dyn AssetLifecycler<A>)
     {
         puffin::profile_function!();
+
         let load = AssetLoadRequest
         {
             key: asset_handle.key(),
@@ -659,15 +698,20 @@ impl<'i, 'a: 'i, L: AssetLifecyclers> DebugGui<'a> for Assets<L>
                 .show(cui, |gui|
                 {
                     gui.heading("Asset Key");
+                    gui.heading("Refs");
                     gui.heading("Asset Type");
                     gui.heading("Asset Path");
                     gui.end_row();
 
-                    for (key, handle) in handle_bank.iter()
+                    for (key, entry) in handle_bank.iter()
                     {
+                        // as long as handle_bank is locked, this handle will always be valid
+                        let handle_unsafe = unsafe { &*(entry.untyped_handle as *const AssetHandleInner::<NullAsset>) };
+
                         gui.label(format!("{key:#?}")); // right click to copy?
-                        gui.label(handle.asset_type);
-                        gui.label(handle.asset_path.as_ref());
+                        gui.label(format!("{}", handle_unsafe.ref_count()));
+                        gui.label(entry.asset_type);
+                        gui.label(entry.asset_path.as_ref());
                         gui.end_row();
                     }
                 });
@@ -693,7 +737,7 @@ impl<L: AssetLifecyclers> Drop for Assets<L>
             eprintln!("! Leak detected: {} active asset handle(s):", handle_bank.len());
             for handle in handle_bank.iter()
             {
-                eprintln!("    {:?} {} '{}'", handle.0, handle.1.asset_type, handle.1.asset_path);
+                eprintln!("    {:?} <{}> '{}'", handle.0, handle.1.asset_type, handle.1.asset_path);
             }
             #[cfg(test)]
             panic!("Leaked assets!");

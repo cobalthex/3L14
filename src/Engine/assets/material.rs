@@ -1,9 +1,15 @@
-use crate::engine::assets::texture::TextureLifecycler;
+use crate::engine::assets::texture::{Texture};
 use super::*;
+
+/*
+
+Materials can exist 
+
+ */
 
 pub struct Material
 {
-
+    pub albedo_map: AssetHandle<Texture>,
 }
 impl Material
 {

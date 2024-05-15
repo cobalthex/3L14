@@ -10,12 +10,13 @@ use super::*;
 
 pub struct Texture
 {
-    gpu_handle: wgpu::Texture,
+    gpu_tex: wgpu::Texture,
+    gpu_view: wgpu::TextureView,
     desc: wgpu::TextureDescriptor<'static>,
 }  
 impl Texture
 {
-    pub fn gpu_handle(&self) -> &wgpu::Texture { &self.gpu_handle }
+    pub fn gpu_handle(&self) -> &wgpu::Texture { &self.gpu_tex }
     pub fn desc(&self) -> &wgpu::TextureDescriptor { &self.desc }
 
     pub fn total_device_bytes(&self) -> i64
@@ -29,22 +30,6 @@ impl Texture
             total_size += area * block_size.unwrap() as i64;
         }
         total_size
-    }
-
-    // TODO: material system should own these, need a way to update on hot-reload
-    pub fn create_view(&self) -> wgpu::TextureView
-    {
-        self.gpu_handle.create_view(&TextureViewDescriptor
-        {
-            label: None,
-            format: None,
-            dimension: None,
-            aspect: Default::default(),
-            base_mip_level: 0,
-            mip_level_count: None,
-            base_array_layer: 0,
-            array_layer_count: None,
-        })
     }
 }
 impl Asset for Texture
@@ -94,9 +79,22 @@ impl<'r> TextureLifecycler<'r>
             TextureDataOrder::LayerMajor,
             texels);
 
+        let view = tex.create_view(&TextureViewDescriptor
+        {
+            label: None,
+            format: None,
+            dimension: None,
+            aspect: Default::default(),
+            base_mip_level: 0,
+            mip_level_count: None,
+            base_array_layer: 0,
+            array_layer_count: None,
+        });
+
         let payload = Texture
         {
-            gpu_handle: tex,
+            gpu_tex: tex,
+            gpu_view: view,
             desc: dtor,
         };
 
