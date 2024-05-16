@@ -10,8 +10,7 @@ use std::sync::Arc;
 use std::io::Read;
 use std::marker::PhantomData;
 use std::mem::{size_of, swap};
-use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll, Waker};
 use arc_swap::{ArcSwapOption};
 use egui::Ui;
@@ -19,18 +18,24 @@ use unicase::UniCase;
 use std::thread::{Builder, JoinHandle};
 use arc_swap::access::Access;
 use crossbeam::channel::{unbounded, Sender};
-use gltf::json::Value::Null;
 use parking_lot::Mutex;
 use crate::engine::AsIterator;
 use crate::engine::graphics::debug_gui::DebugGui;
 
 pub mod texture;
+pub use texture::*;
 pub mod material;
+pub use material::*;
+pub mod shader;
+pub use shader::*;
 
-// An internal only asset that can be used for type erasure
-// This should not be used publicly, and dynamic dispatch cannot be used
-struct NullAsset;
-impl Asset for NullAsset { }
+// TODO: split this file
+
+pub trait Asset: Sync + Send
+{
+    // Have all dependencies of this asset been loaded? (always true if no dependencies)
+    fn all_dependencies_loaded(&self) -> bool { true }
+}
 
 pub trait AssetPath: AsRef<str> + Hash + Display + Debug { }
 impl<T> AssetPath for T where T: AsRef<str> + Hash + Display + Debug { }
@@ -70,10 +75,6 @@ impl Debug for AssetKey
     }
 }
 
-pub trait Asset: Sync + Send
-{
-}
-
 #[derive(Debug)]
 pub enum AssetLoadError
 {
@@ -92,8 +93,32 @@ pub enum AssetPayload<A: Asset>
 {
     // Unloaded,
     Pending, // This state is must only be set while there is an active AssetLoadRequest being queued/processed. Store sentinel of the asset load request?
-    Available(A),
+    Available(A), // The asset is loaded and ready to use
     Unavailable(AssetLoadError), // shouldn't be stored in-cache? (reload on error?)
+}
+impl<A: Asset> AssetPayload<A>
+{
+    // Is this payload available?
+    #[inline]
+    pub fn is_available(&self) -> bool
+    {
+        match self
+        {
+            Self::Available(a) => true,
+            _ => false,
+        }
+    }
+
+    // Is this + all dependencies loaded/available?
+    #[inline]
+    pub fn is_loaded_recursive(&self) -> bool
+    {
+        match self
+        {
+            Self::Available(a) => a.all_dependencies_loaded(),
+            _ => false,
+        }
+    }
 }
 
 type _PayloadProjectionFn<A> = fn(&Option<Arc<AssetPayload<A>>>) -> &AssetPayload<A>;
@@ -149,7 +174,7 @@ impl<A: Asset> AssetHandleInner<A>
 
 pub struct AssetHandle<A: Asset>
 {
-    inner: *const AssetHandleInner<A>,
+    inner: *const AssetHandleInner<A>, // store v-table? (use box), would *maybe* allow calls to virtual methods (test?)
     phantom: PhantomData<AssetHandleInner<A>>,
 }
 
@@ -163,6 +188,7 @@ impl<A: Asset> AssetHandle<A>
         unsafe { &*self.inner }
     }
 
+    // The key uniquely identifying this asset
     #[inline]
     pub fn key(&self) -> AssetKey
     {
@@ -176,10 +202,18 @@ impl<A: Asset> AssetHandle<A>
         self.inner().payload()
     }
 
+    // The number of references to this asset
     #[inline]
     pub fn ref_count(&self) -> usize
     {
         self.inner().ref_count()
+    }
+
+    // Is this asset + all dependencies loaded
+    #[inline]
+    pub fn is_loaded(&self) -> bool
+    {
+        self.payload().is_available()
     }
 
     // Create a handle from an untyped inner handle
@@ -272,6 +306,25 @@ impl<A: Asset> Future for &AssetHandle<A> // non-reffing requires being able to 
         }
     }
 }
+impl<A: Asset> PartialEq for AssetHandle<A>
+{
+    fn eq(&self, other: &Self) -> bool
+    {
+        self.inner == other.inner
+    }
+}
+impl<A: Asset> PartialEq<AssetKey> for AssetHandle<A> // let's hope there's never a collision
+{
+    fn eq(&self, key: &AssetKey) -> bool
+    {
+        self.key() == *key
+    }
+}
+
+// An internal only asset that can be used for type erasure
+// This should not be used publicly, and dynamic dispatch cannot be used
+struct NullAsset;
+impl Asset for NullAsset { }
 
 pub struct AssetLoadRequest<A: Asset>
 {
@@ -377,16 +430,18 @@ impl<L: AssetLifecyclers> Assets<L>
         //
         //     });
 
+        // TODO: broadcasted change notifications
+
         let (send, recv) = unbounded::<AssetLifecycleJob>();
         let worker_threads = array_init::array_init::<_, _, NUM_ASSET_JOB_THREADS>(|i|
         {
             let this_recv = recv.clone();
             let this_storage = storage.clone();
             let thread = Builder::new()
-                .name(format!("Asset worker thread {0}", i))
+                .name(format!("Asset worker thread {}", i))
                 .spawn(move ||
                 {
-                    eprintln!("Starting asset worker {}", i);
+                    eprintln!("Starting asset worker thread {}", i);
                     'worker: loop
                     {
                         match this_recv.recv()
@@ -432,7 +487,7 @@ impl<L: AssetLifecyclers> Assets<L>
                             },
                             Err(err) =>
                             {
-                                eprintln!("Terminating asset worker {} due to {err}", i);
+                                eprintln!("Terminating asset worker thread {} due to {err}", i);
                                 break 'worker;
                             }
                         }
@@ -463,11 +518,11 @@ impl<L: AssetLifecyclers> Assets<L>
     // todo: never unload assets?
 
     #[must_use]
-    fn create_or_update_handle<A: Asset + 'static, S: AssetPath>(&self, asset_path: UniCase<&S>) -> (bool /* pre-existing */, AssetHandle<A>)
+    fn create_or_update_handle<A: Asset + 'static, S: AssetPath>(&self, asset_path: &S) -> (bool /* pre-existing */, AssetHandle<A>)
     {
         let key_desc = AssetKeyDesc
         {
-            path: UniCase::unicode(asset_path.as_ref()),
+            path: UniCase::new(asset_path.as_ref()),
             type_id: TypeId::of::<A>(),
         };
         let asset_key = (&key_desc).into();
@@ -501,7 +556,7 @@ impl<L: AssetLifecyclers> Assets<L>
             HandleEntry
             {
                 untyped_handle: ptr,
-                asset_path: UniCase::unicode(asset_path.to_string()),
+                asset_path: UniCase::new(asset_path.to_string()),
                 #[cfg(debug_assertions)]
                 asset_type:
                 {
@@ -520,7 +575,7 @@ impl<L: AssetLifecyclers> Assets<L>
     }
 
     #[must_use]
-    pub fn load<A: Asset + 'static, S: AssetPath>(&self, asset_path: UniCase<&S>) -> AssetHandle<A>
+    pub fn load<A: Asset + 'static, S: AssetPath>(&self, asset_path: &S) -> AssetHandle<A>
         where L: AssetLifecyclerLookup<A> + 'static
     {
         let (pre_existed, asset_handle) = self.create_or_update_handle(asset_path);
@@ -533,7 +588,7 @@ impl<L: AssetLifecyclers> Assets<L>
         {
             // pass-thru pre-existence?
             let storage_copy = self.storage.clone();
-            let asset_path_copy = UniCase::unicode(asset_path.to_string());
+            let asset_path_copy = UniCase::new(asset_path.to_string());
             let handle_copy = asset_handle.clone();
             let storage_copy = self.storage.clone();
             let job = Box::new(move ||
@@ -549,7 +604,7 @@ impl<L: AssetLifecyclers> Assets<L>
     #[must_use]
     pub fn load_from<A: Asset + 'static, S: AssetPath, R: Read + Send + 'static>(
         &self,
-        asset_path: UniCase<&S>,
+        asset_path: &S,
         input_data: R, // take box?,
         update_if_exists: bool,
     ) -> AssetHandle<A>
@@ -595,7 +650,8 @@ impl<L: AssetLifecyclers> Assets<L>
 
     // Returns true if an asset belonging to the asset key has been loaded
     // Returns false on error/pending, or if the asset does not exist
-    pub fn is_loaded(&self, key: AssetKey) -> bool
+    // Does not check if dependencies are loaded (requires an asset handle)
+    pub fn is_loaded_no_dependencies(&self, key: AssetKey) -> bool
     {
         let handles = self.storage.handles.lock();
         match handles.get(&key)
@@ -605,7 +661,9 @@ impl<L: AssetLifecyclers> Assets<L>
             {
                 // as long as handles is locked, this handle will always be valid
                 let inner = unsafe { &*(entry.untyped_handle as *const AssetHandleInner::<NullAsset>) };
-                std::mem::discriminant(&*inner.payload()) == std::mem::discriminant(&AssetPayload::Available(NullAsset))
+                // not safe to call virtual methods with a punned handle
+                //std::mem::discriminant(&*inner.payload()) == std::mem::discriminant(&AssetPayload::Available(NullAsset))
+                inner.payload().is_available()
             }
         }
     }
@@ -749,9 +807,8 @@ impl<L: AssetLifecyclers> Drop for Assets<L>
 #[cfg(test)]
 mod tests
 {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::AtomicUsize;
     use super::*;
-    use unicase::UniCase;
 
     #[derive(Debug)]
     pub struct TestAsset
@@ -829,7 +886,7 @@ mod tests
         {
             let assets = Assets::new(TestLifecyclers::default());
 
-            let req: AssetHandle<TestAsset> = assets.load(UniCase::new(&"$BAD_FILE$"));
+            let req: AssetHandle<TestAsset> = assets.load(&"$BAD_FILE$");
             match &*await_asset(req)
             {
                 AssetPayload::Unavailable(AssetLoadError::NotFound) => {},
@@ -846,7 +903,7 @@ mod tests
                 req.error(AssetLoadError::TestEmpty);
             }));
 
-            let req: AssetHandle<TestAsset> = assets.load(UniCase::new(&"test_asset_file"));
+            let req: AssetHandle<TestAsset> = assets.load(&"test_asset_file");
             match &*await_asset(req)
             {
                 AssetPayload::Unavailable(AssetLoadError::TestEmpty) => {},
@@ -859,7 +916,7 @@ mod tests
         {
             let assets = Assets::new(TestLifecyclers::default());
 
-            let req = assets.load(UniCase::new(&"test_asset_file"));
+            let req = assets.load(&"test_asset_file");
             match *req.payload()
             {
                 AssetPayload::Pending => {},
@@ -877,14 +934,14 @@ mod tests
 
             assert_eq!(Some(0), get_passthru_call_count(&assets));
 
-            let _req1 = assets.load(UniCase::new(&"test_asset_file"));
+            let _req1 = assets.load(&"test_asset_file");
             std::thread::sleep(std::time::Duration::from_secs(1)); // crude
             assert_eq!(Some(1), get_passthru_call_count(&assets));
 
-            let _req2 = assets.load(UniCase::new(&"test_asset_file"));
+            let _req2 = assets.load(&"test_asset_file");
             assert_eq!(Some(1), get_passthru_call_count(&assets));
 
-            let _req3 = assets.load(UniCase::new(&"test_asset_file"));
+            let _req3 = assets.load(&"test_asset_file");
             assert_eq!(Some(1), get_passthru_call_count(&assets));
         }
 
@@ -897,7 +954,7 @@ mod tests
                 req.finish(TestAsset { name: "test asset".to_string() });
             }));
 
-            let req = assets.load(UniCase::new(&"test_asset_file"));
+            let req = assets.load(&"test_asset_file");
             match &*await_asset(req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.name, "test asset"),
@@ -922,7 +979,7 @@ mod tests
             }));
 
             let input_bytes = loaded_asset_name.as_bytes();
-            let req = assets.load_from(UniCase::new(&"test_asset_file"), input_bytes, false);
+            let req = assets.load_from(&"test_asset_file", input_bytes, false);
             match &*await_asset(req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.name, loaded_asset_name),
@@ -948,7 +1005,7 @@ mod tests
                 }));
 
             let mut input_bytes = first_asset_name.as_bytes();
-            let mut req = assets.load_from(UniCase::new(&"test_asset_file"), input_bytes, false);
+            let mut req = assets.load_from(&"test_asset_file", input_bytes, false);
             match &*await_asset(req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.name, first_asset_name),
@@ -957,14 +1014,14 @@ mod tests
 
             // check that it doesn't reload when update_if_exists is false
             input_bytes = second_asset_name.as_bytes();
-            req = assets.load_from(UniCase::new(&"test_asset_file"), input_bytes, false);
+            req = assets.load_from(&"test_asset_file", input_bytes, false);
             match &*await_asset(req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.name, first_asset_name),
                 _ => panic!("Asset not available"),
             }
 
-            req = assets.load_from(UniCase::new(&"test_asset_file"), input_bytes, true);
+            req = assets.load_from(&"test_asset_file", input_bytes, true);
             match &*await_asset(req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.name, second_asset_name),

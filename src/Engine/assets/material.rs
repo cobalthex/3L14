@@ -36,14 +36,14 @@ impl AssetLifecycler<Material> for MaterialLifecycler
     }
 }
 
-impl<'a> DebugGui<'a> for MaterialLifecycler
-{
-    fn name(&self) -> &'a str { "Materials" }
-
-    fn debug_gui(&self, ui: &mut Ui)
-    {
-
-    }
-}
+// impl<'a> DebugGui<'a> for MaterialLifecycler
+// {
+//     fn name(&self) -> &'a str { "Materials" }
+// 
+//     fn debug_gui(&self, ui: &mut Ui)
+//     {
+// 
+//     }
+// }
 
 // material loads/owns texture and creates view for texture

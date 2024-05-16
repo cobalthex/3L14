@@ -5,9 +5,9 @@ use wgpu::{ShaderModuleDescriptor, ShaderSource};
 use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadError, AssetLoadRequest};
 use crate::engine::graphics::Renderer;
 
-struct Shader
+pub struct Shader
 {
-    module: ShaderModule,
+    pub module: ShaderModule,
     // entry_point: String,
     // stage: ShaderStage,
 }
@@ -16,9 +16,16 @@ impl Shader
 }
 impl Asset for Shader { }
 
-struct ShaderLifecycler<'r>
+pub struct ShaderLifecycler<'r>
 {
     renderer: &'r Renderer<'r>,
+}
+impl<'r> ShaderLifecycler<'r>
+{
+    pub fn new(renderer: &'r Renderer<'r>) -> Self
+    {
+        Self { renderer }
+    }
 }
 impl<'r> AssetLifecycler<Shader> for ShaderLifecycler<'r>
 {
@@ -49,3 +56,12 @@ impl<'r> AssetLifecycler<Shader> for ShaderLifecycler<'r>
         });
     }
 }
+// impl<'a> DebugGui<'a> for ShaderLifecycler
+// {
+//     fn name(&self) -> &'a str { "Shaders" }
+//
+//     fn debug_gui(&self, ui: &mut Ui)
+//     {
+//
+//     }
+// }

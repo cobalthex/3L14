@@ -304,7 +304,7 @@ impl Scene
                             texel_data: data.pixels.clone(),
                             read_offset: 0,
                         };
-                        let tex: AssetHandle<Texture> = assets.load_from(UniCase::new(&tex_name), reader, false);
+                        let tex: AssetHandle<Texture> = assets.load_from(&tex_name, reader, false);
                         // todo: this needs to reconcile the image format
                         Some(tex)
                     }

@@ -12,4 +12,3 @@ pub use renderer::*;
 pub mod debug_gui;
 
 pub mod material;
-mod shader;

@@ -1,3 +1,5 @@
+mod assets;
+
 use std::io::Read;
 use std::process::ExitCode;
 use std::time::Duration;
@@ -10,9 +12,7 @@ use wgpu::util::{DeviceExt, TextureDataOrder};
 use game_3l14::engine::alloc_slice::alloc_slice_uninit;
 use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
 use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
-use game_3l14::engine::assets::material::*;
-use game_3l14::engine::assets::texture::*;
-use game_3l14::engine::graphics::debug_gui::DebugGui;
+use crate::assets::GameAssets;
 
 #[derive(Debug)]
 #[repr(i32)]
@@ -62,55 +62,6 @@ fn magic_elide_lifetime<'from, 'to, T>(t: &'from T) -> &'to T // stupid bullshit
 }
 
 // TODO: macro-ize this
-pub struct GameAssets<'a>
-{
-    pub textures: TextureLifecycler<'a>,
-    pub materials: MaterialLifecycler,
-}
-impl<'a> AssetLifecyclers for GameAssets<'a> { }
-impl<'a> AssetLifecyclerLookup<texture::Texture> for GameAssets<'a>
-{
-    fn lifecycler(&self) -> &impl AssetLifecycler<texture::Texture> { &self.textures }
-}
-impl<'a> AssetLifecyclerLookup<Material> for GameAssets<'a>
-{
-    fn lifecycler(&self) -> &impl AssetLifecycler<Material> { &self.materials }
-}
-pub struct GameAssetsIterator<'i, 'a>
-{
-    assets: &'i GameAssets<'a>,
-    which: usize,
-}
-impl<'i, 'a> Iterator for GameAssetsIterator<'i, 'a>
-{
-    type Item = &'i dyn DebugGui<'a>;
-
-    fn next(&mut self) -> Option<Self::Item>
-    {
-        let next: Option<Self::Item> = match self.which
-        {
-            0 => Some(&self.assets.textures),
-            1 => Some(&self.assets.materials),
-            _ => None
-        };
-        self.which += 1;
-        next
-    }
-}
-impl<'i, 'a: 'i> AsIterator<'i> for GameAssets<'a>
-{
-    type Item = &'i dyn DebugGui<'a>;
-    type AsIter = GameAssetsIterator<'i, 'a>;
-
-    fn as_iter(&'i self) -> Self::AsIter
-    {
-        Self::AsIter
-        {
-            assets: self,
-            which: 0,
-        }
-    }
-}
 
 fn main() -> ExitReason
 {
@@ -173,8 +124,9 @@ fn main() -> ExitReason
     let renderer = Renderer::new(windows.main_window());
     let assets = Assets::new(GameAssets
     {
-        textures: TextureLifecycler::new(magic_elide_lifetime(&renderer)),
+        textures: TextureLifecycler::new(magic_elide_lifetime(&renderer)), // TODO: figure out this lifetime
         materials: MaterialLifecycler::default(),
+        shaders: ShaderLifecycler::new(magic_elide_lifetime(&renderer)),
     });
 
     #[cfg(debug_assertions)]
@@ -188,6 +140,7 @@ fn main() -> ExitReason
     // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
     let mut test_scene = Scene::try_from_file("assets/shapes.glb", &assets, &renderer).expect("Couldn't import scene");
+    let test_shader = assets.load::<Shader, _>(&"shaders/test.wgsl");
 
     let mut camera = Camera::new(Some("fp_cam"), renderer.display_aspect_ratio());
     camera.transform.position = Vec3::new(0.0, 2.0, -10.0);
