@@ -32,7 +32,6 @@ impl<'r> AssetLifecycler<Shader> for ShaderLifecycler<'r>
     fn create_or_update(&self, mut request: AssetLoadRequest<Shader>)
     {
         let mut source_text = String::new();
-
         match request.input.read_to_string(&mut source_text)
         {
             Ok(_) => {}

@@ -1,16 +1,13 @@
-use std::io::Cursor;
 use std::ops::Range;
 
 use glam::{Quat, Vec2, Vec3};
-use gltf::image::Source;
 use gltf::mesh::util::ReadIndices;
-use unicase::UniCase;
-use wgpu::{BufferSlice, BufferUsages, Extent3d, IndexFormat, TextureDescriptor, vertex_attr_array, VertexBufferLayout};
-use wgpu::util::{BufferInitDescriptor, DeviceExt, TextureDataOrder};
+use wgpu::{BufferSlice, BufferUsages, IndexFormat, vertex_attr_array, VertexBufferLayout};
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
 use crate::engine::{AABB, AsU8Slice};
 use crate::engine::assets::{Asset, AssetHandle, AssetLifecyclerLookup, AssetLifecyclers, Assets};
-use crate::engine::assets::texture::Texture;
+use crate::engine::graphics::assets::texture::Texture;
 use crate::engine::graphics::Renderer;
 use crate::engine::world::Transform;
 
@@ -143,6 +140,13 @@ impl Model
 }
 impl Asset for Model
 {
+    fn all_dependencies_loaded(&self) -> bool
+    {
+        self.meshes.iter().all(|m|
+        {
+            m.texture.as_ref().map_or(true, |t| t.is_loaded_recursive())
+        })
+    }
 }
 
 pub struct SceneNode<T>
@@ -157,6 +161,10 @@ pub struct Scene
 }
 impl Asset for Scene
 {
+    fn all_dependencies_loaded(&self) -> bool
+    {
+        self.models.iter().all(|m| m.object.all_dependencies_loaded())
+    }
 }
 
 pub struct GltfTexture

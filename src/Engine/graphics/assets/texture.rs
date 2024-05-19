@@ -1,12 +1,16 @@
+use std::io::Read;
 use std::sync::atomic::{AtomicI64, Ordering};
 use arc_swap::ArcSwap;
+use egui::Ui;
 use png::DecodingError;
 use wgpu::{Extent3d, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor};
 use wgpu::util::{DeviceExt, TextureDataOrder};
 use crate::engine::alloc_slice::alloc_slice_uninit;
 use crate::engine::graphics::Renderer;
 use crate::format_bytes;
-use super::*;
+
+use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadRequest, AssetPayload};
+use crate::engine::graphics::debug_gui::DebugGui;
 
 pub struct Texture
 {
@@ -156,7 +160,7 @@ impl<'a> AssetLifecycler<Texture> for TextureLifecycler<'a>
 impl<'r> DebugGui<'r> for TextureLifecycler<'r>
 {
     fn name(&self) -> &'r str { "Textures" }
-
+ 
     fn debug_gui(&self, ui: &mut Ui)
     {
         ui.label(format!("Total device bytes: {:.1}", format_bytes!(self.device_bytes.load(Ordering::Relaxed))));

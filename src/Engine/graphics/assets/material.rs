@@ -1,11 +1,5 @@
-use crate::engine::assets::texture::{Texture};
-use super::*;
-
-/*
-
-Materials can exist 
-
- */
+use crate::engine::assets::*;
+use crate::engine::graphics::assets::texture::Texture;
 
 pub struct Material
 {
@@ -35,15 +29,3 @@ impl AssetLifecycler<Material> for MaterialLifecycler
         todo!()
     }
 }
-
-// impl<'a> DebugGui<'a> for MaterialLifecycler
-// {
-//     fn name(&self) -> &'a str { "Materials" }
-// 
-//     fn debug_gui(&self, ui: &mut Ui)
-//     {
-// 
-//     }
-// }
-
-// material loads/owns texture and creates view for texture

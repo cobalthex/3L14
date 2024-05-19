@@ -1,6 +1,10 @@
 use game_3l14::engine::AsIterator;
 use game_3l14::engine::assets::*;
-use game_3l14::engine::graphics::debug_gui::DebugGui;
+
+pub use game_3l14::engine::graphics::assets::material::*;
+pub use game_3l14::engine::graphics::assets::shader::*;
+pub use game_3l14::engine::graphics::assets::texture::*;
+pub use game_3l14::engine::graphics::debug_gui::DebugGui;
 
 // TODO: macroize this
 
@@ -11,9 +15,9 @@ pub(crate) struct GameAssets<'a>
     pub shaders: ShaderLifecycler<'a>,
 }
 impl<'a> AssetLifecyclers for GameAssets<'a> { }
-impl<'a> AssetLifecyclerLookup<texture::Texture> for GameAssets<'a>
+impl<'a> AssetLifecyclerLookup<Texture> for GameAssets<'a>
 {
-    fn lifecycler(&self) -> &impl AssetLifecycler<texture::Texture> { &self.textures }
+    fn lifecycler(&self) -> &impl AssetLifecycler<Texture> { &self.textures }
 }
 impl<'a> AssetLifecyclerLookup<Material> for GameAssets<'a>
 {

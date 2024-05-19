@@ -9,7 +9,7 @@ use sdl2::video::Window;
 #[allow(deprecated)]
 use wgpu::rwh::{HasRawDisplayHandle, HasRawWindowHandle};
 use wgpu::*;
-use crate::engine::FrameNumber;
+use crate::engine::{DataPayload, FrameNumber};
 
 pub const MAX_CONSECUTIVE_FRAMES: usize = 3;
 
@@ -441,4 +441,9 @@ pub struct RenderFrame
 }
 impl RenderFrame
 {
+}
+
+pub trait RenderFuture<Payload, Error>
+{
+    fn poll(&self, renderer: &Renderer) -> DataPayload<Payload, Error>;
 }

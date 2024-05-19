@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use arc_swap::ArcSwapOption;
 use wgpu::*;
-use crate::engine::assets::{AssetHandle, Shader};
+use crate::engine::assets::AssetHandle;
+use crate::engine::graphics::assets::shader::Shader;
 use crate::engine::graphics::Renderer;
 use super::scene::{VertexPosNormTexCol, WgpuVertexDecl};
 
@@ -35,8 +36,8 @@ impl TestPipeline
             _ => todo!(),
             None =>
             {
-                if !self.vertex_shader.is_loaded() ||
-                    !self.pixel_shader.is_loaded()
+                if !self.vertex_shader.is_loaded_recursive() ||
+                    !self.pixel_shader.is_loaded_recursive()
                 {
                     return None;
                 }
@@ -66,7 +67,7 @@ impl TestPipeline
             })),
             vertex: VertexState
             {
-                module: &vertex_shader,g
+                module: vertex_shader,
                 entry_point: "vs_main",
                 buffers: &[VertexPosNormTexCol::layout()],
             },
@@ -96,7 +97,7 @@ impl TestPipeline
             },
             fragment: Some(FragmentState
             {
-                module: &pixel_shader,
+                module: pixel_shader,
                 entry_point: "fs_main",
                 targets: &[Some(ColorTargetState
                 {
