@@ -27,7 +27,7 @@ impl Transform
     pub fn down(&self) -> Vec3 { self.rotation * -super::WORLD_UP }
 
     // Apply an in-place rotation to this transform
-    pub fn turn(&mut self, yaw: f32, pitch: f32, roll: f32)
+    pub fn rotate(&mut self, yaw: f32, pitch: f32, roll: f32)
     {
         // todo: yaw,pitch only version?
         let yaw_quat = Quat::from_axis_angle(WORLD_UP, yaw);

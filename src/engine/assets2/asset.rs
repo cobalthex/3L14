@@ -8,13 +8,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll, Waker};
 use arc_swap::access::Access;
 use arc_swap::ArcSwapOption;
-use crossbeam::channel::Sender;
 use parking_lot::Mutex;
 use crate::engine::DataPayload;
 
-use super::*;
+pub type AssetId = u64;
 
-pub(super) type UntypedHandleInner = usize;
+pub trait Asset: Sync + Send
+{
+    // Have all dependencies of this asset been loaded? (always true if no dependencies)
+    fn all_dependencies_loaded(&self) -> bool { true }
+}
 
 #[derive(Debug)]
 pub enum AssetLoadError
@@ -55,9 +58,8 @@ pub(super) struct AssetHandleInner<A: Asset>
 {
     pub ref_count: AtomicUsize,
 
-    pub key: AssetKey,
+    pub id: AssetId,
     pub payload: ArcSwapOption<AssetPayload<A>>, // will be None while pending
-    pub dropper: Sender<AssetLifecycleJob>,
 
     // necessary?
     pub ready_waker: Mutex<Option<Waker>>,
@@ -124,9 +126,9 @@ impl<A: Asset> AssetHandle<A>
 
     // The key uniquely identifying this asset
     #[inline]
-    pub fn key(&self) -> AssetKey
+    pub fn key(&self) -> AssetId
     {
-        self.inner().key
+        self.inner().id
     }
 
     // Retrieve the current payload, holds a strong reference for as long as the guard exists
@@ -150,41 +152,14 @@ impl<A: Asset> AssetHandle<A>
         self.payload().is_loaded_recursive()
     }
 
-    // Create a handle from an untyped inner handle
-    #[inline]
-    pub(super) unsafe fn clone_from_untyped(untyped: UntypedHandleInner) -> Self
-    {
-        let cloned = Self
-        {
-            inner: untyped as *const AssetHandleInner<A>,
-            phantom: Default::default(),
-        };
-        cloned.add_ref();
-        cloned
-    }
-
     #[inline]
     pub(super) fn add_ref(&self) // add a ref (will cause a leak if misused)
     {
         // see Arc::clone() for details on ordering requirements
         let _old_refs = self.inner().ref_count.fetch_add(1, Ordering::Acquire);
     }
-
-    pub(super) fn maybe_drop(untyped: UntypedHandleInner) -> Option<AssetKey>
-    {
-        let retyped = unsafe { &*(untyped as *const AssetHandleInner<A>) };
-        match retyped.ref_count.load(Ordering::Acquire)
-        {
-            0 =>
-                {
-                    let rv = Some(retyped.key); // retyped cannot be used after this
-                    let _ = unsafe { Box::from_raw(untyped as *mut AssetHandleInner<A>) }; // will drop at the end of this function
-                    rv
-                },
-            _ => None,
-        }
-    }
 }
+
 unsafe impl<A: Asset> Send for AssetHandle<A> {}
 unsafe impl<A: Asset> Sync for AssetHandle<A> {}
 impl<A: Asset> Clone for AssetHandle<A>
@@ -217,7 +192,8 @@ impl<A: Asset> Drop for AssetHandle<A>
                 fill
             };
 
-        inner.dropper.send(AssetLifecycleJob::Drop(AssetDropJob { handle: (inner_untyped as UntypedHandleInner), drop_fn: Self::maybe_drop })).expect("Failed to drop asset as the drop channel already closed"); // todo: error handling
+        
+        // TODO: drop send
     }
 }
 impl<A: Asset> Future for &AssetHandle<A> // non-reffing requires being able to consume an Arc
@@ -231,11 +207,11 @@ impl<A: Asset> Future for &AssetHandle<A> // non-reffing requires being able to 
         match *self.payload()
         {
             AssetPayload::Pending =>
-                {
-                    let mut locked = inner.ready_waker.lock();
-                    swap(&mut *locked, &mut Some(cx.waker().clone()));
-                    Poll::Pending
-                },
+            {
+                let mut locked = inner.ready_waker.lock();
+                swap(&mut *locked, &mut Some(cx.waker().clone()));
+                Poll::Pending
+            },
             AssetPayload::Available(_) | AssetPayload::Unavailable(_) => Poll::Ready(inner.payload.load_full().unwrap()),
         }
     }
@@ -247,9 +223,9 @@ impl<A: Asset> PartialEq for AssetHandle<A>
         self.inner == other.inner
     }
 }
-impl<A: Asset> PartialEq<AssetKey> for AssetHandle<A> // let's hope there's never a collision
+impl<A: Asset> PartialEq<AssetId> for AssetHandle<A> // let's hope there's never a collision
 {
-    fn eq(&self, key: &AssetKey) -> bool
+    fn eq(&self, key: &AssetId) -> bool
     {
         self.key() == *key
     }

@@ -125,9 +125,9 @@ fn main() -> ExitReason
 
     let assets = Assets::new(GameAssets
     {
-        textures: TextureLifecycler::new(magic_elide_lifetime(&renderer)), // TODO: figure out this lifetime
-        materials: MaterialLifecycler::default(),
-        shaders: ShaderLifecycler::new(magic_elide_lifetime(&renderer)),
+        //textures: TextureLifecycler::new(magic_elide_lifetime(&renderer)), // TODO: figure out this lifetime
+        //materials: MaterialLifecycler::default(),
+        //shaders: ShaderLifecycler::new(magic_elide_lifetime(&renderer)),
     });
     {
 
@@ -142,7 +142,7 @@ fn main() -> ExitReason
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
         let mut test_scene = Scene::try_from_file("assets/shapes.glb", &assets, &renderer).expect("Couldn't import scene");
-        let test_shader = assets.load::<Shader, _>(&"shaders/test.wgsl");
+        // let test_shader = assets.load::<Shader, _>(&"shaders/test.wgsl");
 
         let mut camera = Camera::new(Some("fp_cam"), renderer.display_aspect_ratio());
         camera.transform.position = Vec3::new(0.0, 2.0, -10.0);
@@ -403,7 +403,7 @@ fn main() -> ExitReason
                 let yaw = input.mouse().position_delta.x as f32 * MOUSE_SCALE; // left to right
                 let pitch = input.mouse().position_delta.y as f32 * MOUSE_SCALE; // down to up
                 let roll = 0.0;
-                camera.transform.turn(yaw, pitch, roll);
+                camera.transform.rotate(yaw, pitch, roll);
             }
 
             let speed = if input.keyboard().has_keymod(KeyMods::SHIFT) { 20.0 } else { 8.0 } * frame_time.delta_time.as_secs_f32();
@@ -537,7 +537,7 @@ fn main() -> ExitReason
                 debug_menu.add(&debug_gui::FrameProfiler);
                 debug_menu.add(&input);
                 debug_menu.add(&camera);
-                debug_menu.add(&assets);
+                // debug_menu.add(&assets);
                 debug_menu.present();
             }
 

@@ -9,7 +9,7 @@ use crate::engine::alloc_slice::alloc_slice_uninit;
 use crate::engine::graphics::Renderer;
 use crate::format_bytes;
 
-use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadRequest, AssetPayload};
+use crate::engine::assets::{Asset, AssetLifecycler, AssetLifecyclers, AssetLoadRequest, AssetPayload};
 use crate::engine::graphics::debug_gui::DebugGui;
 
 pub struct Texture
@@ -119,9 +119,9 @@ impl<'r> TextureLifecycler<'r>
         Ok(tex)
     }
 }
-impl<'a> AssetLifecycler<Texture> for TextureLifecycler<'a>
+impl<'a, L: AssetLifecyclers + 'static> AssetLifecycler<Texture, L> for TextureLifecycler<'a>
 {
-    fn create_or_update(&self, mut request: AssetLoadRequest<Texture>)
+    fn create_or_update(&self, mut request: AssetLoadRequest<Texture, L>)
     {
         // TESTING
         let gltf_texture = unsafe
@@ -160,7 +160,7 @@ impl<'a> AssetLifecycler<Texture> for TextureLifecycler<'a>
 impl<'r> DebugGui<'r> for TextureLifecycler<'r>
 {
     fn name(&self) -> &'r str { "Textures" }
- 
+
     fn debug_gui(&self, ui: &mut Ui)
     {
         ui.label(format!("Total device bytes: {:.1}", format_bytes!(self.device_bytes.load(Ordering::Relaxed))));

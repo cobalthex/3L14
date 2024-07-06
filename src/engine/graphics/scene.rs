@@ -196,7 +196,6 @@ impl Scene
 {
     // todo: make async
     pub fn try_from_file<A: AssetLifecyclers>(file: &str, assets: &Assets<A>, renderer: &Renderer) -> Result<Self, SceneImportError>
-        where A: AssetLifecyclerLookup<Texture> + 'static
     {
         // todo: vertex buffer/index buffer allocator
 
@@ -296,27 +295,27 @@ impl Scene
                     },
                 };
 
-                let tex = match in_prim.material().pbr_metallic_roughness().base_color_texture()
-                {
-                    None => None,
-                    Some(tex) =>
-                    {
-                        let tex_index = tex.texture().source().index();
-                        let data = &images[tex_index];
-                        let tex_name = tex.texture().name().map_or_else(|| { format!("{file}:tex{}", tex_index) }, |n| n.to_string());
-                        let reader = GltfTexture
-                        {
-                            name: tex_name.clone(),
-                            width: data.width,
-                            height: data.height,
-                            texel_data: data.pixels.clone(),
-                            read_offset: 0,
-                        };
-                        let tex: AssetHandle<Texture> = assets.load_from(&tex_name, reader, false);
-                        // todo: this needs to reconcile the image format
-                        Some(tex)
-                    }
-                };
+                // let tex = match in_prim.material().pbr_metallic_roughness().base_color_texture()
+                // {
+                //     None => None,
+                //     Some(tex) =>
+                //     {
+                //         let tex_index = tex.texture().source().index();
+                //         let data = &images[tex_index];
+                //         let tex_name = tex.texture().name().map_or_else(|| { format!("{file}:tex{}", tex_index) }, |n| n.to_string());
+                //         let reader = GltfTexture
+                //         {
+                //             name: tex_name.clone(),
+                //             width: data.width,
+                //             height: data.height,
+                //             texel_data: data.pixels.clone(),
+                //             read_offset: 0,
+                //         };
+                //         let tex: AssetHandle<Texture> = assets.load_from(&tex_name, reader, false);
+                //         // todo: this needs to reconcile the image format
+                //         Some(tex)
+                //     }
+                // };
 
                 meshes.push(Mesh
                 {
@@ -326,7 +325,7 @@ impl Scene
                     indices: ibuffer,
                     index_count: index_count as u32,
                     index_format: index_fmt,
-                    texture: tex,
+                    texture: None, // TODO
                 });
             }
 

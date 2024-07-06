@@ -22,10 +22,15 @@ impl MaterialLifecycler
 {
 
 }
-impl AssetLifecycler<Material> for MaterialLifecycler
+impl<L: AssetLifecyclers> AssetLifecycler<Material, L> for MaterialLifecycler
+    where for <'l> L: AssetLifecyclerLookup<Texture> + 'l
 {
-    fn create_or_update(&self, request: AssetLoadRequest<Material>)
+    fn create_or_update(&self, mut request: AssetLoadRequest<Material, L>)
     {
-        todo!()
+        let tex = request.load_dependency(&"assets/test.png");
+        request.finish(Material
+        {
+            albedo_map: tex,
+        })
     }
 }

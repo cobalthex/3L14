@@ -11,6 +11,7 @@ pub mod utils;
 pub use utils::*;
 
 pub mod assets;
+pub mod assets2;
 pub mod graphics;
 pub mod input;
 pub mod timing;

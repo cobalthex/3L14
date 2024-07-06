@@ -2,7 +2,8 @@ use std::borrow::Cow;
 use std::io::Read;
 use wgpu::ShaderModule;
 use wgpu::{ShaderModuleDescriptor, ShaderSource};
-use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadError, AssetLoadRequest};
+use crate::engine::assets::{Asset, AssetLifecycler, AssetLifecyclers, AssetLoadError, AssetLoadRequest};
+use crate::engine::graphics::assets::material::Material;
 use crate::engine::graphics::Renderer;
 
 pub struct Shader
@@ -27,9 +28,9 @@ impl<'r> ShaderLifecycler<'r>
         Self { renderer }
     }
 }
-impl<'r> AssetLifecycler<Shader> for ShaderLifecycler<'r>
+impl<'r, L: AssetLifecyclers> AssetLifecycler<Shader, L> for ShaderLifecycler<'r>
 {
-    fn create_or_update(&self, mut request: AssetLoadRequest<Shader>)
+    fn create_or_update(&self, mut request: AssetLoadRequest<Shader, L>)
     {
         let mut source_text = String::new();
         match request.input.read_to_string(&mut source_text)
