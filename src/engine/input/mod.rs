@@ -177,11 +177,16 @@ impl From<&Input> for RawInput
 
         ri.events.push(egui::Event::PointerMoved(mouse_pos));
 
-        ri.events.push(egui::Event::Scroll(egui::Vec2
+        ri.events.push(egui::Event::MouseWheel
         {
-            x: input.mouse.wheel.x as f32,
-            y: input.mouse.wheel.y as f32
-        }));
+            delta: egui::Vec2
+            {
+                x: input.mouse.wheel.x as f32,
+                y: input.mouse.wheel.y as f32
+            },
+            unit: egui::MouseWheelUnit::Point,
+            modifiers: ri.modifiers,
+        });
 
         for i in 0..input.mouse.buttons.len()
         {
@@ -522,7 +527,7 @@ impl MouseState
     pub fn set_capture(&self, state: ToggleState)
     {
         // todo: capture stack?
-        
+
         let new_state = match state
         {
             ToggleState::Off => false,

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arc_swap::ArcSwapOption;
 use egui::epaint::Shadow;
 use egui::{Pos2, Rect, Rounding, Stroke, Visuals};
-use egui_wgpu::ScreenDescriptor;
+use egui_wgpu_backend;
 use parking_lot::{Mutex, RwLock};
 use sdl2::video::Window;
 #[allow(deprecated)]
@@ -27,13 +27,13 @@ pub struct MSAAConfiguration
     pub buffer: TextureView,
 }
 
-pub struct Renderer<'r>
+pub struct Renderer
 {
     device: Device,
     queue: Queue,
 
-    surface: Surface<'r>,
-    
+    surface: Surface<'static>, // super hack
+
     // todo: some of these should probably be spaced apart (cache-line size) to avoid cache line sync serializing
 
     surface_config: RwLock<SurfaceConfiguration>,
@@ -42,14 +42,14 @@ pub struct Renderer<'r>
     msaa_config: ArcSwapOption<MSAAConfiguration>,
 
     debug_gui: egui::Context,
-    debug_gui_renderer: Mutex<egui_wgpu::Renderer>,
+    debug_gui_renderer: Mutex<egui_wgpu_backend::RenderPass>,
 
     // todo: this needs to know when a new frame is available before picking one
     render_frames: RwLock<[RenderFrameData; MAX_CONSECUTIVE_FRAMES]>,
 }
-impl<'r> Renderer<'r>
+impl Renderer
 {
-    pub fn new(window: &Window) -> Self
+    pub fn new(window: &Window) -> Arc<Self>
     {
         #[allow(deprecated)]
         let window_handle = SurfaceTargetUnsafe::RawHandle
@@ -62,7 +62,7 @@ impl<'r> Renderer<'r>
         futures::executor::block_on(Self::new_async(window_handle, window_size))
     }
 
-    async fn new_async(window_handle: SurfaceTargetUnsafe, window_size: (u32, u32)) -> Self
+    async fn new_async(window_handle: SurfaceTargetUnsafe, window_size: (u32, u32)) -> Arc<Self>
     {
         puffin::profile_function!();
 
@@ -111,6 +111,7 @@ impl<'r> Renderer<'r>
                     max_push_constant_size: 256, // doesn't support WebGPU
                     .. Default::default()
                 }.using_resolution(adapter.limits()),
+                memory_hints: MemoryHints::Performance,
             },
             None,
             ).await
@@ -158,7 +159,10 @@ impl<'r> Renderer<'r>
             window_rounding: Rounding::same(4.0),
             .. Visuals::dark()
         });
-        let debug_gui_renderer = egui_wgpu::Renderer::new(&device, surface_config.format, None, 1);
+        let debug_gui_renderer = egui_wgpu_backend::RenderPass::new(
+            &device,
+            surface_config.format,
+            1);
 
         // todo: recreate on resize
         let depth_buffer_desc = TextureDescriptor
@@ -186,7 +190,7 @@ impl<'r> Renderer<'r>
             }
         });
 
-        Renderer
+        Arc::new(Renderer
         {
             device,
             queue,
@@ -197,7 +201,7 @@ impl<'r> Renderer<'r>
             debug_gui,
             debug_gui_renderer: Mutex::new(debug_gui_renderer),
             render_frames: RwLock::new(render_frames),
-        }
+        })
     }
 
     pub fn resize(&self, new_width: u32, new_height: u32)
@@ -279,7 +283,7 @@ impl<'r> Renderer<'r>
 
     pub fn msaa_max_sample_count(&self) -> u32 { self.max_sample_count }
 
-    pub fn frame(&'r self, frame_number: FrameNumber, input: &crate::engine::input::Input) -> RenderFrame
+    pub fn frame(&self, frame_number: FrameNumber, input: &crate::engine::input::Input) -> RenderFrame
     {
         puffin::profile_function!();
 
@@ -336,15 +340,19 @@ impl<'r> Renderer<'r>
         let mut gui_renderer = self.debug_gui_renderer.lock();
 
         let output = self.debug_gui.end_frame();
-        output.textures_delta.set.iter().for_each(|td|
-            gui_renderer.update_texture(&self.device, &self.queue, td.0, &td.1));
-        output.textures_delta.free.iter().for_each(|t|
-            gui_renderer.free_texture(t));
+        // output.textures_delta.set.iter().for_each(|td|
+        //     gui_renderer.update_texture(&self.device, &self.queue, td.0, &td.1));
+        // output.textures_delta.free.iter().for_each(|t|
+        //     gui_renderer.free_texture(t));
+        gui_renderer.add_textures(&self.device, &self.queue, &output.textures_delta).unwrap();
 
-        let desc = ScreenDescriptor
+        let desc = egui_wgpu_backend::ScreenDescriptor
         {
-            size_in_pixels: clip_size,
-            pixels_per_point: output.pixels_per_point
+            physical_width: clip_size[0],
+            physical_height: clip_size[1],
+            //size_in_pixels: clip_size,
+            //pixels_per_point: output.pixels_per_point,
+            scale_factor: output.pixels_per_point,
         };
 
         let primitives = self.debug_gui.tessellate(output.shapes, output.pixels_per_point);
@@ -356,31 +364,32 @@ impl<'r> Renderer<'r>
         gui_renderer.update_buffers(
             &self.device,
             &self.queue,
-            &mut command_encoder,
+            // &mut command_encoder,
             primitives.as_slice(),
             &desc);
 
         {
-            let mut render_pass = command_encoder.begin_render_pass(&RenderPassDescriptor
-            {
-                label: Some("egui render pass"),
-                color_attachments: &[Some(
-                    RenderPassColorAttachment
-                    {
-                        view: target,
-                        resolve_target: None,
-                        ops: Operations
-                        {
-                            load: LoadOp::Load,
-                            store: StoreOp::Store,
-                        },
-                    },
-                )],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            gui_renderer.render(&mut render_pass, &primitives, &desc);
+            // let mut render_pass = command_encoder.begin_render_pass(&RenderPassDescriptor
+            // {
+            //     label: Some("egui render pass"),
+            //     color_attachments: &[Some(
+            //         RenderPassColorAttachment
+            //         {
+            //             view: target,
+            //             resolve_target: None,
+            //             ops: Operations
+            //             {
+            //                 load: LoadOp::Load,
+            //                 store: StoreOp::Store,
+            //             },
+            //         },
+            //     )],
+            //     depth_stencil_attachment: None,
+            //     timestamp_writes: None,
+            //     occlusion_query_set: None,
+            // });
+            // gui_renderer.render(&mut render_pass, &primitives, &desc);
+            gui_renderer.execute(&mut command_encoder, &target, primitives.as_slice(), &desc, None).unwrap();
         }
         command_encoder.finish()
     }

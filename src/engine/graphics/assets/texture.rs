@@ -1,4 +1,5 @@
 use std::io::Read;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use arc_swap::ArcSwap;
 use egui::Ui;
@@ -9,7 +10,7 @@ use crate::engine::alloc_slice::alloc_slice_uninit;
 use crate::engine::graphics::Renderer;
 use crate::format_bytes;
 
-use crate::engine::assets::{Asset, AssetLifecycler, AssetLifecyclers, AssetLoadRequest, AssetPayload};
+use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadRequest, AssetPayload};
 use crate::engine::graphics::debug_gui::DebugGui;
 
 pub struct Texture
@@ -42,18 +43,18 @@ impl Asset for Texture
 
 pub type TexturePayloadArc = ArcSwap<AssetPayload<Texture>>;
 
-pub struct TextureLifecycler<'r>
+pub struct TextureLifecycler
 {
-    renderer: &'r Renderer<'r>,
+    renderer: Arc<Renderer>,
     device_bytes: AtomicI64,
 }
-impl<'r> TextureLifecycler<'r>
+impl TextureLifecycler
 {
-    pub fn new(renderer: &'r Renderer<'r>) -> Self
+    pub fn new(renderer: &Arc<Renderer>) -> Self
     {
         Self
         {
-            renderer,
+            renderer: renderer.clone(),
             device_bytes: AtomicI64::new(0)
         }
     }
@@ -119,9 +120,10 @@ impl<'r> TextureLifecycler<'r>
         Ok(tex)
     }
 }
-impl<'a, L: AssetLifecyclers + 'static> AssetLifecycler<Texture, L> for TextureLifecycler<'a>
+impl AssetLifecycler for TextureLifecycler
 {
-    fn create_or_update(&self, mut request: AssetLoadRequest<Texture, L>)
+    type Asset = Texture;
+    fn load(&self, request: AssetLoadRequest) -> AssetPayload<Self::Asset>
     {
         // TESTING
         let gltf_texture = unsafe
@@ -130,7 +132,8 @@ impl<'a, L: AssetLifecyclers + 'static> AssetLifecycler<Texture, L> for TextureL
             &*raw
         };
         let tex = self.create(gltf_texture.width, gltf_texture.height, gltf_texture.texel_data.as_slice());
-        request.finish(tex);
+
+        AssetPayload::Available(tex)
         // asset system handles lookups
         // match self.try_import_png(request.input.as_mut())
         // {
@@ -157,9 +160,9 @@ impl<'a, L: AssetLifecyclers + 'static> AssetLifecycler<Texture, L> for TextureL
     // }
 }
 
-impl<'r> DebugGui<'r> for TextureLifecycler<'r>
+impl<'a> DebugGui<'a> for TextureLifecycler
 {
-    fn name(&self) -> &'r str { "Textures" }
+    fn name(&self) -> &'a str { "Textures" }
 
     fn debug_gui(&self, ui: &mut Ui)
     {

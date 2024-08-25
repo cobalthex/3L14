@@ -132,3 +132,4 @@ pub const WHITE: Color = Color { r: 255, g: 255, b: 255, a: 255 };
 pub const GRAY: Color = Color { r: 144, g: 144, b: 144, a: 255 };
 pub const CORNFLOWER_BLUE: Color = Color { r: 100, g: 149, b: 237, a: 255 };
 pub const GOOD_PURPLE: Color = Color { r: 64, g: 72, b: 255, a: 255 };
+pub const BAD_RED: Color = Color { r: 102, g: 6, b: 32, a: 255 };

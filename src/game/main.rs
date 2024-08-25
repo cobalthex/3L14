@@ -1,7 +1,6 @@
-mod assets;
-
 use std::io::Read;
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::Duration;
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use game_3l14::engine::{*, timing::*, input::*, windows::*, graphics::*, world::*, assets::*};
@@ -10,9 +9,11 @@ use glam::{Quat, Vec3};
 use wgpu::*;
 use wgpu::util::{DeviceExt, TextureDataOrder};
 use game_3l14::engine::alloc_slice::alloc_slice_uninit;
+use game_3l14::engine::graphics::assets::material::MaterialLifecycler;
+use game_3l14::engine::graphics::assets::shader::ShaderLifecycler;
+use game_3l14::engine::graphics::assets::texture::TextureLifecycler;
 use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
 use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
-use crate::assets::*;
 
 #[derive(Debug)]
 #[repr(i32)]
@@ -123,14 +124,15 @@ fn main() -> ExitReason
 
     let renderer = Renderer::new(windows.main_window());
 
-    let assets = Assets::new(GameAssets
-    {
-        //textures: TextureLifecycler::new(magic_elide_lifetime(&renderer)), // TODO: figure out this lifetime
-        //materials: MaterialLifecycler::default(),
-        //shaders: ShaderLifecycler::new(magic_elide_lifetime(&renderer)),
-    });
-    {
+    // todo: fix lifetimes
+    let assets = Assets::new(AssetLifecyclers::default()
+        .add_lifecycler(SceneLifecycler::new(&renderer))
+        .add_lifecycler(TextureLifecycler::new(&renderer))
+        .add_lifecycler(ShaderLifecycler::new(&renderer))
+        .add_lifecycler(MaterialLifecycler::default())
+        );
 
+    {
         #[cfg(debug_assertions)]
         let mut debug_menu_memory;
         #[cfg(debug_assertions)]
@@ -141,7 +143,7 @@ fn main() -> ExitReason
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        let mut test_scene = Scene::try_from_file("assets/shapes.glb", &assets, &renderer).expect("Couldn't import scene");
+        let mut test_scene = assets.load::<Scene, _>(&"shapes.glb");
         // let test_shader = assets.load::<Shader, _>(&"shaders/test.wgsl");
 
         let mut camera = Camera::new(Some("fp_cam"), renderer.display_aspect_ratio());
@@ -459,12 +461,12 @@ fn main() -> ExitReason
             //     sleep(delta)
             // }
 
-            if kbd.is_down(KeyCode::R)
-            {
-                let rotation_speed = Degrees(45.0 * frame_time.delta_time.as_secs_f32());
-                let rotation = -Quat::from_rotation_y(rotation_speed.to_radians_f32());
-                test_scene.models[0].transform.rotation *= rotation;
-            }
+            // if kbd.is_down(KeyCode::R)
+            // {
+            //     let rotation_speed = Degrees(45.0 * frame_time.delta_time.as_secs_f32());
+            //     let rotation = -Quat::from_rotation_y(rotation_speed.to_radians_f32());
+            //     test_scene.models[0].transform.rotation *= rotation;
+            // }
 
             let cam_uform = CameraUniform::new(&camera, &clock);
             renderer.queue().write_buffer(&cam_uform_buf, 0, unsafe { [cam_uform].as_u8_slice() });
@@ -475,46 +477,66 @@ fn main() -> ExitReason
 
                 let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
                 {
-                    let mut test_pass = render_passes::test(
-                        &render_frame,
-                        &mut encoder,
-                        Some(colors::CORNFLOWER_BLUE));
-
-                    test_pass.set_pipeline(&test_pipeline);
-                    test_pass.set_bind_group(0, &cam_bind_group, &[]);
-                    test_pass.set_bind_group(2, &tex_bind_group, &[]);
-
-                    let mut world_index = 0;
-                    for model in test_scene.models.iter()
+                    match &*test_scene.payload()
                     {
-                        if !model.object.all_dependencies_loaded()
+                        AssetPayload::<Scene>::Pending =>
                         {
-                            continue;
+                            render_passes::test(
+                                &render_frame,
+                                &mut encoder,
+                                Some(colors::GOOD_PURPLE));
                         }
-
-                        // todo: use DrawIndirect?
-                        let world_transform = model.transform.to_world();
-                        worlds_buf[world_index].world = world_transform;
-                        let offset = (world_index * std::mem::size_of::<TransformUniform>()) as u32;
-                        test_pass.set_bind_group(1, &world_bind_group, &[offset]);
-                        world_index += 1;
-
-                        for mesh in model.object.meshes()
+                        AssetPayload::<Scene>::Unavailable(_) =>
                         {
-                            test_pass.set_vertex_buffer(0, mesh.vertices());
-                            test_pass.set_index_buffer(mesh.indices(), mesh.index_format());
-
-
-                            test_pass.draw_indexed(mesh.index_range(), 0, 0..1);
+                            render_passes::test(
+                                &render_frame,
+                                &mut encoder,
+                                Some(colors::BAD_RED));
                         }
-
-                        if world_index >= MAX_ENTRIES_IN_WORLD_BUF
+                        AssetPayload::<Scene>::Available(scene) =>
                         {
-                            world_uform_buf.unmap();
-                            world_index = 0;
-                            break; // testing
+                            let mut test_pass = render_passes::test(
+                                &render_frame,
+                                &mut encoder,
+                                Some(colors::CORNFLOWER_BLUE));
+
+                            test_pass.set_pipeline(&test_pipeline);
+                            test_pass.set_bind_group(0, &cam_bind_group, &[]);
+                            test_pass.set_bind_group(2, &tex_bind_group, &[]);
+
+                            let mut world_index = 0;
+                            for model in scene.models.iter()
+                            {
+                                if !model.object.all_dependencies_loaded()
+                                {
+                                    continue;
+                                }
+
+                                // todo: use DrawIndirect?
+                                let world_transform = model.transform.to_world();
+                                worlds_buf[world_index].world = world_transform;
+                                let offset = (world_index * std::mem::size_of::<TransformUniform>()) as u32;
+                                test_pass.set_bind_group(1, &world_bind_group, &[offset]);
+                                world_index += 1;
+
+                                for mesh in model.object.meshes()
+                                {
+                                    test_pass.set_vertex_buffer(0, mesh.vertices());
+                                    test_pass.set_index_buffer(mesh.indices(), mesh.index_format());
+
+                                    test_pass.draw_indexed(mesh.index_range(), 0, 0..1);
+                                }
+
+                                if world_index >= MAX_ENTRIES_IN_WORLD_BUF
+                                {
+                                    world_uform_buf.unmap();
+                                    world_index = 0;
+                                    break; // testing
+                                }
+                            }
                         }
                     }
+
                 }
                 // todo: only update what was written to
                 renderer.queue().write_buffer(&world_uform_buf, 0, unsafe { worlds_buf.as_u8_slice() });
@@ -537,7 +559,7 @@ fn main() -> ExitReason
                 debug_menu.add(&debug_gui::FrameProfiler);
                 debug_menu.add(&input);
                 debug_menu.add(&camera);
-                // debug_menu.add(&assets);
+                debug_menu.add(&assets);
                 debug_menu.present();
             }
 
@@ -549,9 +571,9 @@ fn main() -> ExitReason
             }
         }
     }
-    std::mem::drop(assets);
     std::mem::drop(renderer);
     std::mem::drop(windows);
+    std::mem::drop(assets);
 
     std::thread::sleep(Duration::from_micros(10)); // allow logs to flush -- TEMP
 

@@ -1,12 +1,13 @@
+use std::io::SeekFrom;
 use std::ops::Range;
-
+use std::sync::Arc;
 use glam::{Quat, Vec2, Vec3};
 use gltf::mesh::util::ReadIndices;
 use wgpu::{BufferSlice, BufferUsages, IndexFormat, vertex_attr_array, VertexBufferLayout};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
 use crate::engine::{AABB, AsU8Slice};
-use crate::engine::assets::{Asset, AssetHandle, AssetLifecyclerLookup, AssetLifecyclers, Assets};
+use crate::engine::assets::{Asset, AssetHandle, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload};
 use crate::engine::graphics::assets::texture::Texture;
 use crate::engine::graphics::Renderer;
 use crate::engine::world::Transform;
@@ -166,6 +167,9 @@ impl Asset for Scene
         self.models.iter().all(|m| m.object.all_dependencies_loaded())
     }
 }
+impl Scene
+{
+}
 
 pub struct GltfTexture
 {
@@ -191,16 +195,77 @@ impl std::io::Read for GltfTexture
         }
     }
 }
-
-impl Scene
+impl std::io::Seek for GltfTexture
 {
-    // todo: make async
-    pub fn try_from_file<A: AssetLifecyclers>(file: &str, assets: &Assets<A>, renderer: &Renderer) -> Result<Self, SceneImportError>
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64>
+    {
+        match pos
+        {
+            SeekFrom::Start(off) => { self.read_offset = off as usize; Ok(off) },
+            SeekFrom::End(off) =>
+            {
+                match self.texel_data.len().checked_add_signed(off as isize)
+                {
+                    None => Err(std::io::Error::from(std::io::ErrorKind::InvalidInput)),
+                    Some(new) => { self.read_offset = new; Ok(new as u64) }
+                }
+            }
+            SeekFrom::Current(off) =>
+            {
+                match self.read_offset.checked_add_signed(off as isize)
+                {
+                    None => Err(std::io::Error::from(std::io::ErrorKind::InvalidInput)),
+                    Some(new) => { self.read_offset = new; Ok(new as u64) }
+                }
+            }
+        }
+    }
+}
+
+pub struct SceneLifecycler
+{
+    renderer: Arc<Renderer>,
+}
+impl AssetLifecycler for SceneLifecycler
+{
+    type Asset = Scene;
+
+    fn load(&self, request: AssetLoadRequest) -> AssetPayload<Self::Asset>
+    {
+        match self.load_internal(request)
+        {
+            Ok(scene) =>
+            {
+                AssetPayload::Available(scene)
+            }
+            Err(err) =>
+            {
+                eprintln!("Error importing scene: {err:?}");
+                AssetPayload::Unavailable(match err
+                {
+                    SceneImportError::GltfError(_) => AssetLoadError::ParseError(0),
+                    _ => AssetLoadError::ParseError(1 /* TODO */)
+                })
+            }
+        }
+    }
+}
+impl SceneLifecycler
+{
+    pub fn new(renderer: &Arc<Renderer>) -> Self
+    {
+        Self { renderer: renderer.clone() }
+    }
+
+    fn load_internal(&self, mut request: AssetLoadRequest) -> Result<Scene, SceneImportError>
     {
         // todo: vertex buffer/index buffer allocator
 
+        let asset_name = "TODO";
+
         //let (document, buffers, _img) = gltf::import(file).map_err(SceneImportError::GltfError)?;
-        let gltf::Gltf { document, blob } = gltf::Gltf::open(file).map_err(SceneImportError::GltfError)?;
+        let gltf::Gltf { document, blob } = gltf::Gltf::from_reader(&mut request.input).map_err(SceneImportError::GltfError)?;
+
         let buffers =  gltf::import_buffers(&document, None, blob).map_err(SceneImportError::GltfError)?;
         let images = gltf::import_images(&document, None, &buffers).map_err(SceneImportError::GltfError)?;
 
@@ -242,16 +307,16 @@ impl Scene
                     });
                 }
 
-                let vbuffer = renderer.device().create_buffer_init(&BufferInitDescriptor
+                let vbuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
                 {
-                    label: Some(format!("{file} vertices").as_str()),
+                    label: Some(format!("{asset_name} vertices").as_str()),
                     contents: unsafe { vertices.as_u8_slice() },
                     usage: BufferUsages::VERTEX,
                 });
 
                 let indices = prim_reader.read_indices().ok_or(SceneImportError::MissingIndices)?;
 
-                let ibuffer_label = format!("{file} indices");
+                let ibuffer_label = format!("{asset_name} indices");
 
                 let index_fmt;
                 let index_count;
@@ -262,7 +327,7 @@ impl Scene
                         let vec = u8s.map(|u| u as u16).collect::<Vec<u16>>();
                         index_fmt = IndexFormat::Uint16;
                         index_count = vec.len();
-                        renderer.device().create_buffer_init(&BufferInitDescriptor
+                        self.renderer.device().create_buffer_init(&BufferInitDescriptor
                         {
                             label: Some(ibuffer_label.as_str()),
                             contents: unsafe { vec.as_u8_slice() },
@@ -274,7 +339,7 @@ impl Scene
                         let vec = u16s.collect::<Vec<u16>>();
                         index_fmt = IndexFormat::Uint16;
                         index_count = vec.len();
-                        renderer.device().create_buffer_init(&BufferInitDescriptor
+                        self.renderer.device().create_buffer_init(&BufferInitDescriptor
                         {
                             label: Some(ibuffer_label.as_str()),
                             contents: unsafe { vec.as_u8_slice() },
@@ -286,7 +351,7 @@ impl Scene
                         let vec = u32s.collect::<Vec<u32>>();
                         index_fmt = IndexFormat::Uint32;
                         index_count = vec.len();
-                        renderer.device().create_buffer_init(&BufferInitDescriptor
+                        self.renderer.device().create_buffer_init(&BufferInitDescriptor
                         {
                             label: Some(ibuffer_label.as_str()),
                             contents: unsafe { vec.as_u8_slice() },
@@ -295,27 +360,27 @@ impl Scene
                     },
                 };
 
-                // let tex = match in_prim.material().pbr_metallic_roughness().base_color_texture()
-                // {
-                //     None => None,
-                //     Some(tex) =>
-                //     {
-                //         let tex_index = tex.texture().source().index();
-                //         let data = &images[tex_index];
-                //         let tex_name = tex.texture().name().map_or_else(|| { format!("{file}:tex{}", tex_index) }, |n| n.to_string());
-                //         let reader = GltfTexture
-                //         {
-                //             name: tex_name.clone(),
-                //             width: data.width,
-                //             height: data.height,
-                //             texel_data: data.pixels.clone(),
-                //             read_offset: 0,
-                //         };
-                //         let tex: AssetHandle<Texture> = assets.load_from(&tex_name, reader, false);
-                //         // todo: this needs to reconcile the image format
-                //         Some(tex)
-                //     }
-                // };
+                let tex = match in_prim.material().pbr_metallic_roughness().base_color_texture()
+                {
+                    None => None,
+                    Some(tex) =>
+                    {
+                        let tex_index = tex.texture().source().index();
+                        let data = &images[tex_index];
+                        let tex_name = tex.texture().name().map_or_else(|| { format!("{asset_name}:tex{}", tex_index) }, |n| n.to_string());
+                        let reader = GltfTexture
+                        {
+                            name: tex_name.clone(),
+                            width: data.width,
+                            height: data.height,
+                            texel_data: data.pixels.clone(),
+                            read_offset: 0,
+                        };
+                        let tex: AssetHandle<Texture> = request.load_dependency_from(&tex_name, reader, true);
+                        // todo: this needs to reconcile the image format
+                        Some(tex)
+                    }
+                };
 
                 meshes.push(Mesh
                 {
@@ -325,7 +390,7 @@ impl Scene
                     indices: ibuffer,
                     index_count: index_count as u32,
                     index_format: index_fmt,
-                    texture: None, // TODO
+                    texture: tex
                 });
             }
 

@@ -9,7 +9,7 @@ pub trait DebugGuiBase<'a>
     fn debug_gui_base(&'a self, is_active: &mut bool, debug_gui: &egui::Context);
 }
 
-pub trait DebugGui<'a>
+pub trait DebugGui<'a> // TODO: get rid of lifetime param
 {
     // This should be a unique name
     fn name(&'a self) -> &'a str;

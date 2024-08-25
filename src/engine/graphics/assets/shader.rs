@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 use std::io::Read;
+use std::sync::Arc;
 use wgpu::ShaderModule;
 use wgpu::{ShaderModuleDescriptor, ShaderSource};
-use crate::engine::assets::{Asset, AssetLifecycler, AssetLifecyclers, AssetLoadError, AssetLoadRequest};
-use crate::engine::graphics::assets::material::Material;
+use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload};
 use crate::engine::graphics::Renderer;
 
 pub struct Shader
@@ -17,20 +17,21 @@ impl Shader
 }
 impl Asset for Shader { }
 
-pub struct ShaderLifecycler<'r>
+pub struct ShaderLifecycler
 {
-    renderer: &'r Renderer<'r>,
+    renderer: Arc<Renderer>,
 }
-impl<'r> ShaderLifecycler<'r>
+impl ShaderLifecycler
 {
-    pub fn new(renderer: &'r Renderer<'r>) -> Self
+    pub fn new(renderer: &Arc<Renderer>) -> Self
     {
-        Self { renderer }
+        Self { renderer: renderer.clone() }
     }
 }
-impl<'r, L: AssetLifecyclers> AssetLifecycler<Shader, L> for ShaderLifecycler<'r>
+impl AssetLifecycler for ShaderLifecycler
 {
-    fn create_or_update(&self, mut request: AssetLoadRequest<Shader, L>)
+    type Asset = Shader;
+    fn load(&self, mut request: AssetLoadRequest) -> AssetPayload<Self::Asset>
     {
         let mut source_text = String::new();
         match request.input.read_to_string(&mut source_text)
@@ -39,8 +40,7 @@ impl<'r, L: AssetLifecyclers> AssetLifecycler<Shader, L> for ShaderLifecycler<'r
             Err(err) =>
             {
                 eprintln!("Failed to load shader: {err}");
-                request.error(AssetLoadError::ParseError);
-                return;
+                return AssetPayload::Unavailable(AssetLoadError::ParseError(err.kind() as u16));
             }
         }
 
@@ -50,10 +50,10 @@ impl<'r, L: AssetLifecyclers> AssetLifecycler<Shader, L> for ShaderLifecycler<'r
             source: ShaderSource::Wgsl(Cow::from(source_text)),
         });
 
-        request.finish(Shader
+        AssetPayload::Available(Shader
         {
             module,
-        });
+        })
     }
 }
 // impl<'a> DebugGui<'a> for ShaderLifecycler

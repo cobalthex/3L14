@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use arc_swap::ArcSwapOption;
 use wgpu::*;
 use crate::engine::assets::AssetHandle;
@@ -70,6 +69,7 @@ impl TestPipeline
                 module: vertex_shader,
                 entry_point: "vs_main",
                 buffers: &[VertexPosNormTexCol::layout()],
+                compilation_options: Default::default(),
             },
             primitive: PrimitiveState
             {
@@ -105,8 +105,10 @@ impl TestPipeline
                     blend: Some(BlendState::REPLACE),
                     write_mask: ColorWrites::ALL,
                 })],
+                compilation_options: Default::default(),
             }),
             multiview: None,
+            cache: None, // TODO
         })
     }
 }

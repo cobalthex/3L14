@@ -1,7 +1,6 @@
 use std::fmt;
 use std::fmt::Formatter;
 use serde::Serializer;
-use crate::engine::assets::{Asset, AssetPayload};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TickCount(pub u64);
@@ -148,8 +147,8 @@ pub enum DataPayload<Payload, Error>
 {
     // unloaded?
     Pending,
-    Available(Payload),
     Unavailable(Error),
+    Available(Payload),
 }
 impl<Payload, Error> DataPayload<Payload, Error>
 {
