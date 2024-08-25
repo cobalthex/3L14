@@ -34,3 +34,11 @@ impl AssetLifecycler for MaterialLifecycler
         })
     }
 }
+
+
+/*
+MaterialSpec
+Defines the layout of the material and other bindgroup properties
+maps named textures to slots
+
+ */

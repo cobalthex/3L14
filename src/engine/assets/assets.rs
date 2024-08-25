@@ -116,6 +116,7 @@ impl AssetsStorage
                     debug_assert_eq!(untyped_handle, entry.untyped_handle);
 
                     // proper typing here is necessary to call the correct destructors
+                    // todo: the lifecycler fetch can be moved above to remove the _NullAsset hack
                     {
                         let lifecycler = self.lifecyclers.get(&entry.asset_type).expect("No lifecycler for this handle");
                         lifecycler.drop_untyped(&untyped_handle);
@@ -450,7 +451,10 @@ impl<'i, 'a: 'i> DebugGui<'a> for Assets
                                 gui.label(format!("{key:#?}")); // right click to copy?
                                 gui.label(format!("{}", handle_unsafe.ref_count()));
 
+                                #[cfg(debug_assertions)]
                                 gui.label(entry.asset_type_name);
+                                #[cfg(not(debug_assertions))]
+                                gui.label("<UNKNOWN>");
 
                                 // TODO: query availability
 
