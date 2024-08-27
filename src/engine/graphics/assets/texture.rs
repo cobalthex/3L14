@@ -37,9 +37,7 @@ impl Texture
         total_size
     }
 }
-impl Asset for Texture
-{
-}
+impl Asset for Texture { }
 
 pub type TexturePayloadArc = ArcSwap<AssetPayload<Texture>>;
 
@@ -50,11 +48,11 @@ pub struct TextureLifecycler
 }
 impl TextureLifecycler
 {
-    pub fn new(renderer: &Arc<Renderer>) -> Self
+    pub fn new(renderer: Arc<Renderer>) -> Self
     {
         Self
         {
-            renderer: renderer.clone(),
+            renderer,
             device_bytes: AtomicI64::new(0)
         }
     }

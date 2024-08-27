@@ -23,9 +23,9 @@ pub struct ShaderLifecycler
 }
 impl ShaderLifecycler
 {
-    pub fn new(renderer: &Arc<Renderer>) -> Self
+    pub fn new(renderer: Arc<Renderer>) -> Self
     {
-        Self { renderer: renderer.clone() }
+        Self { renderer }
     }
 }
 impl AssetLifecycler for ShaderLifecycler

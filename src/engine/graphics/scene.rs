@@ -7,8 +7,9 @@ use wgpu::{BufferSlice, BufferUsages, IndexFormat, vertex_attr_array, VertexBuff
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
 use crate::engine::{AABB, AsU8Slice};
-use crate::engine::assets::{Asset, AssetHandle, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload};
+use crate::engine::assets::{Asset, AssetHandle, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, HasAssetDependencies};
 use crate::engine::graphics::assets::texture::Texture;
+use crate::engine::graphics::material::Material;
 use crate::engine::graphics::Renderer;
 use crate::engine::world::Transform;
 
@@ -70,7 +71,7 @@ pub struct Mesh
     index_format: IndexFormat,
 
     // todo: materials
-    texture: Option<AssetHandle<Texture>>,
+    material: Material,
 }
 impl Mesh
 {
@@ -92,38 +93,8 @@ impl Mesh
         0 .. self.index_count
     }
     pub fn index_format(&self) -> IndexFormat { self.index_format }
-
-    pub fn new<Vertex, Index>(mesh_name: Option<&str>, vertices: &[Vertex], indices: &[Index], device: &mut wgpu::Device) -> Self
-    {
-        let vbuffer = device.create_buffer_init(&BufferInitDescriptor
-        {
-            label: Some(format!("vertices").as_str()), // todo
-            contents: unsafe { vertices.as_u8_slice() },
-            usage: BufferUsages::VERTEX,
-        });
-        let ibuffer = device.create_buffer_init(&BufferInitDescriptor
-        {
-            label: Some(format!("indices").as_str()), // todo
-            contents: unsafe { indices.as_u8_slice() },
-            usage: BufferUsages::INDEX,
-        });
-
-        Self
-        {
-            bounds: Default::default(), // todo
-            vertices: vbuffer,
-            vertex_count: vertices.len() as u32,
-            indices: ibuffer,
-            index_count: indices.len() as u32,
-            index_format: match std::mem::size_of::<Index>()
-            {
-                2 => IndexFormat::Uint16,
-                4 => IndexFormat::Uint32,
-                _ => panic!("Unsupported index format"),
-            },
-            texture: None,
-        }
-    }
+    
+    pub fn material(&self) -> &Material { &self.material }
 }
 
 pub struct Model
@@ -145,7 +116,7 @@ impl Asset for Model
     {
         self.meshes.iter().all(|m|
         {
-            m.texture.as_ref().map_or(true, |t| t.is_loaded_recursive())
+            m.material.asset_dependencies_loaded()
         })
     }
 }
@@ -252,9 +223,9 @@ impl AssetLifecycler for SceneLifecycler
 }
 impl SceneLifecycler
 {
-    pub fn new(renderer: &Arc<Renderer>) -> Self
+    pub fn new(renderer: Arc<Renderer>) -> Self
     {
-        Self { renderer: renderer.clone() }
+        Self { renderer }
     }
 
     fn load_internal(&self, mut request: AssetLoadRequest) -> Result<Scene, SceneImportError>
@@ -360,7 +331,8 @@ impl SceneLifecycler
                     },
                 };
 
-                let tex = match in_prim.material().pbr_metallic_roughness().base_color_texture()
+                let pbr = in_prim.material().pbr_metallic_roughness();
+                let albedo_map = match pbr.base_color_texture()
                 {
                     None => None,
                     Some(tex) =>
@@ -382,6 +354,14 @@ impl SceneLifecycler
                     }
                 };
 
+                let material = Material
+                {
+                    albedo_map,
+                    albedo_color: pbr.base_color_factor().into(),
+                    metallicity: pbr.metallic_factor(),
+                    roughness: pbr.roughness_factor(),
+                };
+
                 meshes.push(Mesh
                 {
                     bounds: mesh_bounds,
@@ -390,7 +370,7 @@ impl SceneLifecycler
                     indices: ibuffer,
                     index_count: index_count as u32,
                     index_format: index_fmt,
-                    texture: tex
+                    material,
                 });
             }
 

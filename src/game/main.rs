@@ -1,19 +1,16 @@
 use std::io::Read;
 use std::process::ExitCode;
-use std::sync::Arc;
 use std::time::Duration;
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use game_3l14::engine::{*, timing::*, input::*, windows::*, graphics::*, world::*, assets::*};
 use clap::Parser;
 use glam::{Quat, Vec3};
 use wgpu::*;
-use wgpu::util::{DeviceExt, TextureDataOrder};
-use game_3l14::engine::alloc_slice::alloc_slice_uninit;
-use game_3l14::engine::graphics::assets::material::MaterialLifecycler;
 use game_3l14::engine::graphics::assets::shader::ShaderLifecycler;
 use game_3l14::engine::graphics::assets::texture::TextureLifecycler;
 use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
 use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
+use game_3l14::engine::graphics::material::MaterialCache;
 
 #[derive(Debug)]
 #[repr(i32)]
@@ -126,10 +123,9 @@ fn main() -> ExitReason
 
     // todo: fix lifetimes
     let assets = Assets::new(AssetLifecyclers::default()
-        .add_lifecycler(SceneLifecycler::new(&renderer))
-        .add_lifecycler(TextureLifecycler::new(&renderer))
-        .add_lifecycler(ShaderLifecycler::new(&renderer))
-        .add_lifecycler(MaterialLifecycler::default())
+        .add_lifecycler(SceneLifecycler::new(renderer.clone()))
+        .add_lifecycler(TextureLifecycler::new(renderer.clone()))
+        .add_lifecycler(ShaderLifecycler::new(renderer.clone()))
         );
 
     {
@@ -235,106 +231,39 @@ fn main() -> ExitReason
             ],
             label: Some("Camera bind group"),
         });
+        //
+        // let tex =
+        // {
+        //     let png_file = std::fs::File::open("assets/test.png").unwrap();
+        //     let png = png::Decoder::new(png_file);
+        //     let mut png_reader = png.read_info().unwrap();
+        //     let mut png_buf = unsafe { alloc_slice_uninit(png_reader.output_buffer_size()).unwrap() };
+        //     let png_info = png_reader.next_frame(&mut png_buf).unwrap();
+        //     renderer.device().create_texture_with_data(renderer.queue(), &TextureDescriptor
+        //     {
+        //         label: Some("assets/test.png"),
+        //         size: Extent3d
+        //         {
+        //             width: png_info.width,
+        //             height: png_info.height,
+        //             depth_or_array_layers: 1,
+        //         },
+        //         mip_level_count: 1,
+        //         sample_count: 1,
+        //         dimension: TextureDimension::D2,
+        //         format: TextureFormat::Rgba8Unorm,
+        //         usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
+        //         view_formats: &[],
+        //     }, TextureDataOrder::LayerMajor, &png_buf[..png_info.buffer_size()])
+        // };
 
-        let tex_bind_group_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
-        {
-            label: Some("texture bind group layout"),
-            entries:
-            &[
-                BindGroupLayoutEntry
-                {
-                    binding: 0,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture
-                    {
-                        sample_type: TextureSampleType::Float { filterable: true },
-                        view_dimension: TextureViewDimension::default(),
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry
-                {
-                    binding: 1,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                    count: None,
-                }
-            ],
-        });
-        let tex =
-            {
-                let png_file = std::fs::File::open("assets/test.png").unwrap();
-                let png = png::Decoder::new(png_file);
-                let mut png_reader = png.read_info().unwrap();
-                let mut png_buf = unsafe { alloc_slice_uninit(png_reader.output_buffer_size()).unwrap() };
-                let png_info = png_reader.next_frame(&mut png_buf).unwrap();
-                renderer.device().create_texture_with_data(renderer.queue(), &TextureDescriptor
-                {
-                    label: Some("assets/test.png"),
-                    size: Extent3d
-                    {
-                        width: png_info.width,
-                        height: png_info.height,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: TextureDimension::D2,
-                    format: TextureFormat::Rgba8Unorm,
-                    usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                }, TextureDataOrder::LayerMajor, &png_buf[..png_info.buffer_size()])
-            };
-        let sampler = renderer.device().create_sampler(&SamplerDescriptor
-        {
-            label: Some("sampler"),
-            address_mode_u: AddressMode::Repeat,
-            address_mode_v: AddressMode::Repeat,
-            address_mode_w: AddressMode::Repeat,
-            mag_filter: FilterMode::Linear,
-            min_filter: FilterMode::Nearest,
-            mipmap_filter: FilterMode::Nearest,
-            lod_min_clamp: 0.0,
-            lod_max_clamp: 0.0,
-            compare: None,
-            anisotropy_clamp: 1,
-            border_color: None,
-        });
-        let tex_bind_group = renderer.device().create_bind_group(&BindGroupDescriptor
-        {
-            label: Some("texture bind group"),
-            layout: &tex_bind_group_layout,
-            entries:
-            &[
-                BindGroupEntry
-                {
-                    binding: 0,
-                    resource: BindingResource::TextureView(&tex.create_view(&TextureViewDescriptor
-                    {
-                        label: None,
-                        format: None,
-                        dimension: None,
-                        aspect: Default::default(),
-                        base_mip_level: 0,
-                        mip_level_count: None,
-                        base_array_layer: 0,
-                        array_layer_count: None,
-                    })),
-                },
-                BindGroupEntry
-                {
-                    binding: 1,
-                    resource: BindingResource::Sampler(&sampler),
-                }
-            ],
-        });
+        let material_cache = MaterialCache::new(&renderer);
 
         let test_pipeline = test_render_pipeline::new(
             &renderer,
             &cam_bind_group_layout,
             &world_bind_group_layout,
-            &tex_bind_group_layout);
+            &material_cache.bind_group_layouts);
 
         let mut worlds_buf: [TransformUniform; MAX_ENTRIES_IN_WORLD_BUF] = array_init::array_init(|_| TransformUniform::default());
 
@@ -456,18 +385,6 @@ fn main() -> ExitReason
                 }
             }
 
-            // if let Some(delta) = min_frame_time.checked_sub(frame_start_time.delta_time)
-            // {
-            //     sleep(delta)
-            // }
-
-            // if kbd.is_down(KeyCode::R)
-            // {
-            //     let rotation_speed = Degrees(45.0 * frame_time.delta_time.as_secs_f32());
-            //     let rotation = -Quat::from_rotation_y(rotation_speed.to_radians_f32());
-            //     test_scene.models[0].transform.rotation *= rotation;
-            // }
-
             let cam_uform = CameraUniform::new(&camera, &clock);
             renderer.queue().write_buffer(&cam_uform_buf, 0, unsafe { [cam_uform].as_u8_slice() });
 
@@ -502,7 +419,6 @@ fn main() -> ExitReason
 
                             test_pass.set_pipeline(&test_pipeline);
                             test_pass.set_bind_group(0, &cam_bind_group, &[]);
-                            test_pass.set_bind_group(2, &tex_bind_group, &[]);
 
                             let mut world_index = 0;
                             for model in scene.models.iter()
@@ -523,6 +439,10 @@ fn main() -> ExitReason
                                 {
                                     test_pass.set_vertex_buffer(0, mesh.vertices());
                                     test_pass.set_index_buffer(mesh.indices(), mesh.index_format());
+
+                                    let Some(mtl_bind_group) = material_cache.get_or_create_bind_group(mesh.material(), &renderer)
+                                        else { continue; };
+                                    test_pass.set_bind_group(2, &mtl_bind_group, &[]);
 
                                     test_pass.draw_indexed(mesh.index_range(), 0, 0..1);
                                 }

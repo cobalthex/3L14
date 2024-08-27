@@ -9,7 +9,10 @@ pub trait Asset: Sync + Send + 'static
     // Have all dependencies of this asset been loaded? (always true if no dependencies)
     fn all_dependencies_loaded(&self) -> bool { true }
 }
-
+pub trait HasAssetDependencies
+{
+    fn asset_dependencies_loaded(&self) -> bool;
+}
 
 pub trait AssetPath: AsRef<str> + Hash + Display + Debug { }
 impl<T> AssetPath for T where T: AsRef<str> + Hash + Display + Debug { }

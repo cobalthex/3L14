@@ -451,6 +451,7 @@ impl<'i, 'a: 'i> DebugGui<'a> for Assets
                                 gui.label(format!("{key:#?}")); // right click to copy?
                                 gui.label(format!("{}", handle_unsafe.ref_count()));
 
+                                // TODO: this cleaner
                                 #[cfg(debug_assertions)]
                                 gui.label(entry.asset_type_name);
                                 #[cfg(not(debug_assertions))]

@@ -94,6 +94,8 @@ impl<A: Asset> AssetHandleInner<A>
             waker.wake();
         }
     }
+    
+    // TODO: waker for asset dependencies?
 
     #[inline]
     fn map_payload(payload: &Option<Arc<AssetPayload<A>>>) -> &AssetPayload<A>

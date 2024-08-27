@@ -11,11 +11,11 @@ impl Windows
     {
         #[cfg(debug_assertions)]
         let window_title = format!(
-            "{}  -  v{}  PID:{}  Elevated:{}",
+            "{}  -  v{}  PID:{}  {}",
             app_info.app_name,
             app_info.version_str,
             app_info.pid,
-            app_info.is_elevated);
+            if app_info.is_elevated { "🛡️" } else { "" });
         #[cfg(not(debug_assertions))]
         let window_title = String::from(app_info.app_name); // todo: make this not allocate
 
