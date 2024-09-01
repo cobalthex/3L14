@@ -47,11 +47,10 @@ puffin_http = "0.16.1"
 indexmap = "2.3.0"
 arc-swap = { version = "1.7.1", features = ["weak"] }
 log = "0.4.22"
-
 #getrandom = { features = ["js"] }
 notify = "6.1.1"
-notify-debouncer-mini = "0.4.1"
 type-map = "0.5.0"
+notify-debouncer-full = "0.3.1"
 
 [dev-dependencies]
 criterion = { version = "0.5.1" }

@@ -5,12 +5,14 @@ use std::marker::PhantomData;
 use std::mem::swap;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 use std::task::{Context, Poll, Waker};
 use arc_swap::access::Access;
 use arc_swap::ArcSwapOption;
 use crossbeam::channel::Sender;
 use parking_lot::Mutex;
+use sdl2::sys::False;
+use unicase::UniCase;
 use crate::engine::{DataPayload, ShortTypeName};
 
 use super::*;
@@ -67,13 +69,17 @@ pub type PayloadGuard<A> = arc_swap::access::MapGuard<
 
 pub(super) struct AssetHandleInner<A: Asset>
 {
-    pub ref_count: AtomicIsize, // TODO: isize?
+    pub ref_count: AtomicIsize,
 
+    pub path: UniCase<String>,
     pub key: AssetKey,
     pub dropper: Sender<AssetLifecycleRequest>,
 
     // test only?
     pub ready_waker: Mutex<Option<Waker>>,
+
+    pub generation: AtomicU32, // updated <after> storing a payload
+    pub is_reloading: AtomicBool, // cleared before payload is set
 
     pub payload: ArcSwapOption<AssetPayload<A>>, // will be None while pending -- could this be stored directly, and the implementers are required to handle swapping? (e.g. textures have an internal pointer) -- if this changes from an arc, internal allocations in AssetStorage may need to change
 }
@@ -87,6 +93,9 @@ impl<A: Asset> AssetHandleInner<A>
             DataPayload::Pending => self.payload.store(None),
             _ => self.payload.store(Some(Arc::new(payload))),
         }
+        self.is_reloading.store(false, Ordering::Release); // could this just be is_loading() ?
+
+        self.generation.fetch_add(1, Ordering::AcqRel); // TODO: verify ordering
 
         let mut locked = self.ready_waker.lock();
         if let Some(waker) = locked.take()
@@ -94,8 +103,6 @@ impl<A: Asset> AssetHandleInner<A>
             waker.wake();
         }
     }
-    
-    // TODO: waker for asset dependencies?
 
     #[inline]
     fn map_payload(payload: &Option<Arc<AssetPayload<A>>>) -> &AssetPayload<A>
@@ -118,6 +125,9 @@ impl<A: Asset> AssetHandleInner<A>
     {
         self.ref_count.load(Ordering::Acquire)
     }
+
+    #[inline]
+    pub fn generation(&self) -> u32 { self.generation.load(Ordering::Acquire) }
 }
 
 pub struct AssetHandle<A: Asset>
@@ -133,6 +143,12 @@ impl<A: Asset> AssetHandle<A>
     pub(super) fn inner(&self) -> &AssetHandleInner<A>
     {
         unsafe { &*self.inner }
+    }
+
+    #[inline]
+    pub fn path(&self) -> &UniCase<String>
+    {
+        &self.inner().path
     }
 
     // The key uniquely identifying this asset
@@ -155,6 +171,9 @@ impl<A: Asset> AssetHandle<A>
     {
         self.inner().ref_count()
     }
+
+    #[inline]
+    pub fn generation(&self) -> u32 { self.inner().generation() }
 
     // Is this asset + all dependencies loaded
     #[inline]
@@ -267,6 +286,14 @@ impl<A: Asset> Future for &AssetHandle<A> // non-reffing requires being able to 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output>
     {
         let inner = self.inner();
+
+        if inner.is_reloading.load(Ordering::Acquire)
+        {
+            let mut locked = inner.ready_waker.lock();
+            swap(&mut *locked, &mut Some(cx.waker().clone()));
+            return Poll::Pending;
+        }
+
         match *self.payload()
         {
             AssetPayload::Pending =>

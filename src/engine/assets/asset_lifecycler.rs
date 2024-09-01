@@ -2,6 +2,7 @@ use super::*;
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::io::{Read, Seek};
+use std::path::PathBuf;
 use std::sync::Arc;
 use unicase::UniCase;
 
@@ -22,7 +23,7 @@ impl AssetLoadRequest
     {
         // pattern matches Assets::load()
         self.storage.enqueue_load(asset_path, false,
-                                  || AssetLifecycleRequestKind::LoadFileBacked(UniCase::new(asset_path.to_string())))
+                                  || AssetLifecycleRequestKind::LoadFileBacked)
     }
 
     #[must_use]
@@ -116,7 +117,7 @@ pub(super) enum AssetLifecycleRequestKind
 {
     StopWorkers,
     Drop,
-    LoadFileBacked(UniCase<String>),
+    LoadFileBacked, // loads the file pointed by the asset path
     LoadFromMemory(Box<dyn AssetReader>),
 }
 

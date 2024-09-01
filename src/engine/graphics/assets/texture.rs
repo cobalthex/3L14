@@ -39,8 +39,6 @@ impl Texture
 }
 impl Asset for Texture { }
 
-pub type TexturePayloadArc = ArcSwap<AssetPayload<Texture>>;
-
 pub struct TextureLifecycler
 {
     renderer: Arc<Renderer>,

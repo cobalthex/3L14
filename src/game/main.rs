@@ -121,12 +121,15 @@ fn main() -> ExitReason
 
     let renderer = Renderer::new(windows.main_window());
 
-    // todo: fix lifetimes
+    let assets_config = AssetsConfig
+    {
+        enable_fs_watcher: cfg!(debug_assertions)
+    };
     let assets = Assets::new(AssetLifecyclers::default()
-        .add_lifecycler(SceneLifecycler::new(renderer.clone()))
-        .add_lifecycler(TextureLifecycler::new(renderer.clone()))
-        .add_lifecycler(ShaderLifecycler::new(renderer.clone()))
-        );
+            .add_lifecycler(SceneLifecycler::new(renderer.clone()))
+            .add_lifecycler(TextureLifecycler::new(renderer.clone()))
+            .add_lifecycler(ShaderLifecycler::new(renderer.clone()))
+        , assets_config);
 
     {
         #[cfg(debug_assertions)]
@@ -497,6 +500,6 @@ fn main() -> ExitReason
 
     std::thread::sleep(Duration::from_micros(10)); // allow logs to flush -- TEMP
 
-    println!("Ended 3L14 (PID {}) at {} with reason {:?}", app_run.pid, chrono::Local::now(), exit_reason);
+    eprintln!("Ended 3L14 (PID {}) at {} with reason {:?}", app_run.pid, chrono::Local::now(), exit_reason);
     exit_reason
 }

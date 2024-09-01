@@ -18,26 +18,26 @@ pub trait AssetPath: AsRef<str> + Hash + Display + Debug { }
 impl<T> AssetPath for T where T: AsRef<str> + Hash + Display + Debug { }
 
 #[derive(Debug, Hash, Clone)]
-pub struct AssetKeyDesc<S: AssetPath>
+pub struct AssetKeyDesc<'a>
 {
-    pub path: UniCase<S>,
+    pub path: &'a UniCase<String>,
     pub type_id: TypeId,
 }
 
 #[derive(Hash, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub struct AssetKey(u64);
-impl<S: AssetPath> From<&AssetKeyDesc<S>> for AssetKey
+impl<'a> From<&AssetKeyDesc<'a>> for AssetKey
 {
-    fn from(desc: &AssetKeyDesc<S>) -> Self
+    fn from(desc: &AssetKeyDesc<'a>) -> Self
     {
         let mut hasher = DefaultHasher::default();
         desc.hash(&mut hasher);
         Self(hasher.finish())
     }
 }
-impl<S: AssetPath> From<AssetKeyDesc<S>> for AssetKey
+impl<'a> From<AssetKeyDesc<'a>> for AssetKey
 {
-    fn from(desc: AssetKeyDesc<S>) -> Self { Self::from(&desc) }
+    fn from(desc: AssetKeyDesc<'a>) -> Self { Self::from(&desc) }
 }
 impl Debug for AssetKey
 {
