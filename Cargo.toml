@@ -6,6 +6,10 @@ autobins = false
 build = "build/main.rs"
 
 [[bin]]
+name = "asset_builder"
+path = "src/asset_builder/main.rs"
+
+[[bin]]
 name = "3L14"
 path = "src/game/main.rs"
 

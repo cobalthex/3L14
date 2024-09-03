@@ -2,13 +2,11 @@ use super::*;
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::io::{Read, Seek};
-use std::path::PathBuf;
 use std::sync::Arc;
-use unicase::UniCase;
 
 pub struct AssetLoadRequest
 {
-    pub input: Box<dyn AssetReader>,
+    pub input: Box<dyn AssetRead>,
     storage: Arc<AssetsStorage>,
 
     // timer?
@@ -22,21 +20,18 @@ impl AssetLoadRequest
     pub fn load_dependency<D: Asset, S: AssetPath>(&self, asset_path: &S) -> AssetHandle<D>
     {
         // pattern matches Assets::load()
-        self.storage.enqueue_load(asset_path, false,
-                                  || AssetLifecycleRequestKind::LoadFileBacked)
+        self.storage.enqueue_load(asset_path, || AssetLifecycleRequestKind::LoadFileBacked)
     }
 
     #[must_use]
-    pub fn load_dependency_from<D: Asset, S: AssetPath, R: AssetReader + 'static>(
+    pub fn load_dependency_from<D: Asset, S: AssetPath, R: AssetRead + 'static>(
         &self,
         asset_path: &S,
-        input_data: R, // take box?,
-        update_if_exists: bool,
+        input_data: R // take box?
     ) -> AssetHandle<D>
     {
         // pattern matches Assets::load_from()
-        self.storage.enqueue_load(asset_path, update_if_exists,
-                                  || AssetLifecycleRequestKind::LoadFromMemory(Box::new(input_data)))
+        self.storage.enqueue_load(asset_path, || AssetLifecycleRequestKind::LoadFromMemory(Box::new(input_data)))
     }
 }
 
@@ -53,7 +48,7 @@ pub trait AssetLifecycler: Sync + Send
 pub(super) trait UntypedAssetLifecycler: Sync + Send
 {
     // takes ownership of the untyped handle
-    fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedHandleInner, input: Box<dyn AssetReader>);
+    fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedHandleInner, input: Box<dyn AssetRead>);
 
     // takes ownership of the untyped handle
     fn error_untyped(&self, untyped_handle: UntypedHandleInner, error: AssetLoadError);
@@ -63,7 +58,7 @@ pub(super) trait UntypedAssetLifecycler: Sync + Send
 }
 impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
 {
-    fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedHandleInner, input: Box<dyn AssetReader>)
+    fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedHandleInner, input: Box<dyn AssetRead>)
     {
         let result = self.load(AssetLoadRequest
         {
@@ -107,9 +102,10 @@ impl AssetLifecyclers
     }
 }
 
-pub trait AssetReader: Read + Seek + Send { }
-impl<T: Read + Seek + Send> AssetReader for T { }
+pub trait AssetRead: Read + Seek + Send { }
+impl<T: Read + Seek + Send> AssetRead for T { }
 
+// A hacky asset for manipulating type-erased asset handles
 pub(super) struct _NullAsset;
 impl Asset for _NullAsset { }
 
@@ -118,7 +114,7 @@ pub(super) enum AssetLifecycleRequestKind
     StopWorkers,
     Drop,
     LoadFileBacked, // loads the file pointed by the asset path
-    LoadFromMemory(Box<dyn AssetReader>),
+    LoadFromMemory(Box<dyn AssetRead>),
 }
 
 pub(super) struct AssetLifecycleRequest

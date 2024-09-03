@@ -11,12 +11,15 @@ use arc_swap::ArcSwapOption;
 use crossbeam::channel::{Sender, Receiver, unbounded};
 use egui::Ui;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::event::ModifyKind;
 use notify_debouncer_full::{Debouncer, FileIdMap};
 use parking_lot::Mutex;
 use unicase::UniCase;
 use crate::engine::graphics::debug_gui::DebugGui;
 use crate::engine::ShortTypeName;
 use super::*;
+
+// TODO: probably don't pass around UniCase publicly
 
 struct AssetHandleEntry
 {
@@ -38,7 +41,7 @@ pub(super) struct AssetsStorage
     lifecycle_channel: Sender<AssetLifecycleRequest>,
 
     // asset paths to assets map
-    asset_paths_to_keys: Mutex<HashMap<UniCase<String>, AssetKey>>,
+    asset_paths_to_keys: Mutex<HashMap<UniCase<String>, AssetKey>>, // TODO: use pre-hashed paths
 
     assets_root: PathBuf, // should be absolute
 }
@@ -162,22 +165,9 @@ impl AssetsStorage
     pub fn enqueue_load<A: Asset, S: AssetPath, F: FnOnce() -> AssetLifecycleRequestKind>(
         self: &Arc<Self>,
         asset_path: &S,
-        update_if_exists: bool,
         input_fn: F) -> AssetHandle<A>
     {
-        let (pre_existed, asset_handle) = self.create_or_update_handle(asset_path);
-        if pre_existed
-        {
-            match update_if_exists
-            {
-                true =>
-                {
-                    eprintln!("Reloading asset <{}> '{}'", type_name::<A>(), asset_path); // return entry which has name?
-                    asset_handle.inner().is_reloading.store(true, Ordering::Release); // correct ordering?
-                },
-                false => { return asset_handle; }
-            }
-        }
+        let (_pre_existed, asset_handle) = self.create_or_update_handle(asset_path);
 
         if self.lifecyclers.contains_key(&TypeId::of::<A>())
         {
@@ -201,15 +191,51 @@ impl AssetsStorage
         asset_handle
     }
 
+    // Reload an asset from it's known asset path - this will set an error if the new data is bad
+    pub fn try_reload_path<S: AssetPath>(self: &Arc<Self>, asset_path: &S) -> bool /* returns false if unable to enqueue a reload */
+    {
+        let owned_path = UniCase::<String>::new(asset_path.to_string());
+        let Some(&asset_key) = self.asset_paths_to_keys.lock().get(&owned_path) else { return false; };
+
+        let handle_bank = self.handles.lock();
+        let Some(entry) = handle_bank.get(&asset_key) else { return false; };
+        if !self.lifecyclers.contains_key(&entry.asset_type) { return false; }
+
+        let asset_handle = unsafe { AssetHandle::<_NullAsset>::clone_from_untyped(&entry.untyped_handle) };
+        asset_handle.inner().is_reloading.store(true, Ordering::Release); // correct ordering?
+
+        let request = AssetLifecycleRequest
+        {
+            asset_type: entry.asset_type,
+            untyped_handle: unsafe { asset_handle.clone().into_untyped() },
+            kind: AssetLifecycleRequestKind::LoadFileBacked,
+        };
+
+        if self.lifecycle_channel.send(request).is_err()
+        {
+            asset_handle.store_payload(AssetPayload::Unavailable(AssetLoadError::Shutdown));
+            return false;
+        }
+
+        true
+    }
+
     #[inline]
-    pub fn translate_asset_path<S: AssetPath>(&self, asset_path: S) -> std::io::Result<PathBuf>
+    pub fn asset_path_to_file_path<S: AssetPath>(&self, asset_path: S) -> std::io::Result<PathBuf>
     {
         let path = self.assets_root.as_path().join(Path::new(asset_path.as_ref())).canonicalize()?;
         if path.starts_with(&self.assets_root) { Ok(path) } else { Err(std::io::Error::from(ErrorKind::InvalidInput)) }
     }
 
     #[inline]
-    fn open_asset_from_file(file_path: PathBuf) -> Result<impl AssetReader, std::io::Error>
+    pub fn file_path_to_asset_path<S: AsRef<Path>>(&self, file_path: &S) -> Option<String>
+    {
+        // paths may need to be canonicalized
+        file_path.as_ref().strip_prefix(&self.assets_root).map_or(None, |p| Some(p.to_string_lossy().to_string()))
+    }
+
+    #[inline]
+    fn open_asset_from_file(file_path: PathBuf) -> Result<impl AssetRead, std::io::Error>
     {
         std::fs::File::open(file_path)
     }
@@ -275,7 +301,7 @@ impl AssetsStorage
                                     .expect("Unsupported asset type!"); // this should fail in load()
 
                                 let asset_path = unsafe { &request.untyped_handle.as_unchecked::<_NullAsset>().path };
-                                let asset_file_path = match self.translate_asset_path(asset_path)
+                                let asset_file_path = match self.asset_path_to_file_path(asset_path)
                                 {
                                     Err(err) =>
                                     {
@@ -402,11 +428,12 @@ impl Assets
 
     fn try_fs_watch(assets_storage: Arc<AssetsStorage>) -> notify::Result<Debouncer<RecommendedWatcher, FileIdMap>>
     {
+        let assets_storage_clone = assets_storage.clone();
         // batching?
         let mut fs_watcher = notify_debouncer_full::new_debouncer(
             Duration::from_secs(1),
             None,
-            |evt: notify_debouncer_full::DebounceEventResult|
+            move |evt: notify_debouncer_full::DebounceEventResult|
             {
                 match evt
                 {
@@ -414,11 +441,17 @@ impl Assets
                     {
                         for event in events
                         {
-                            if let EventKind::Modify(m) = event.kind
-                            {
-                                eprintln!("Mod: {m:?}");
-                            }
-                            // TODO: delete events?
+                            let EventKind::Modify(m) = event.kind else { continue; };
+                            let ModifyKind::Data(_) = m else { continue; };
+
+                            if event.paths.is_empty() { continue; }
+                            let asset_file_path = &event.paths[0];
+                            let Some(asset_path) = assets_storage_clone.file_path_to_asset_path(asset_file_path) else { continue; };
+
+                            // todo: convert file path to asset path
+                            assets_storage_clone.try_reload_path(&asset_path);
+
+                            // track renames?
                         }
                     },
                     Err(e) => println!("FS watch error: {:?}", e),
@@ -433,20 +466,17 @@ impl Assets
     #[must_use]
     pub fn load<A: Asset, S: AssetPath>(&self, asset_path: &S) -> AssetHandle<A>
     {
-        self.storage.enqueue_load(asset_path, false,
-                                   || AssetLifecycleRequestKind::LoadFileBacked)
+        self.storage.enqueue_load(asset_path, || AssetLifecycleRequestKind::LoadFileBacked)
     }
 
     #[must_use]
-    pub fn load_from<A: Asset, S: AssetPath, R: AssetReader + 'static /* static not ideal here */>(
+    pub fn load_from<A: Asset, S: AssetPath, R: AssetRead + 'static /* static not ideal here */>(
         &self,
         asset_path: &S,
-        input_data: R, // take box?,
-        update_if_exists: bool,
+        input_data: R // take box?,
     ) -> AssetHandle<A>
     {
-        self.storage.enqueue_load(asset_path, update_if_exists,
-                                   || AssetLifecycleRequestKind::LoadFromMemory(Box::new(input_data)))
+        self.storage.enqueue_load(asset_path, || AssetLifecycleRequestKind::LoadFromMemory(Box::new(input_data)))
     }
 
     pub fn num_active_assets(&self) -> usize
@@ -789,7 +819,7 @@ mod tests
             }));
 
             let input_bytes = Cursor::new(loaded_asset_name.as_bytes());
-            let req = assets.load_from::<TestAsset, _, _>(&"test_asset_file", input_bytes, false);
+            let req = assets.load_from::<TestAsset, _, _>(&"test_asset_file", input_bytes);
             match &*await_asset(req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.name, loaded_asset_name),
@@ -817,16 +847,7 @@ mod tests
             }));
 
             let mut input_bytes = Cursor::new(first_asset_name.as_bytes());
-            let mut req = assets.load_from::<TestAsset, _, _>(&"test_asset_file", input_bytes, false);
-            match &*await_asset(req)
-            {
-                AssetPayload::Available(a) => assert_eq!(a.name, first_asset_name),
-                _ => panic!("Asset not available"),
-            }
-
-            // check that it doesn't reload when update_if_exists is false
-            input_bytes = Cursor::new(second_asset_name.as_bytes());
-            req = assets.load_from(&"test_asset_file", input_bytes, false);
+            let mut req = assets.load_from::<TestAsset, _, _>(&"test_asset_file", input_bytes);
             match &*await_asset(req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.name, first_asset_name),
@@ -834,7 +855,7 @@ mod tests
             }
 
             input_bytes = Cursor::new(second_asset_name.as_bytes());
-            req = assets.load_from(&"test_asset_file", input_bytes, true);
+            req = assets.load_from(&"test_asset_file", input_bytes);
             match &*await_asset(req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.name, second_asset_name),

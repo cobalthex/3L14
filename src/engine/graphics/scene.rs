@@ -348,7 +348,7 @@ impl SceneLifecycler
                             texel_data: data.pixels.clone(),
                             read_offset: 0,
                         };
-                        let tex: AssetHandle<Texture> = request.load_dependency_from(&tex_name, reader, true);
+                        let tex: AssetHandle<Texture> = request.load_dependency_from(&tex_name, reader);
                         // todo: this needs to reconcile the image format
                         Some(tex)
                     }
