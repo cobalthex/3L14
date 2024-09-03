@@ -378,12 +378,15 @@ fn main() -> ExitReason
             }
             camera.update_view();
 
+            #[cfg(debug_assertions)]
             if kbd.is_press(KeyCode::F1)
             {
                 if kbd.has_keymod(KeyMods::ALT)
                 {
                     debug_menu_memory.toggle_active(&debug_gui::FrameProfiler);
-                } else {
+                }
+                else
+                {
                     debug_menu_memory.is_active ^= true;
                 }
             }
@@ -466,17 +469,18 @@ fn main() -> ExitReason
                 renderer.queue().submit([encoder.finish()]);
             }
 
-            let app_stats = debug_gui::AppStats
+            // TODO: basic app stats can be displayed in release
+            #[cfg(debug_assertions)]
             {
-                fps: frame_time.fps(),
-                frame_number,
-                app_runtime: clock.total_runtime().as_secs_f64(),
-                main_window_size: windows.main_window().size(),
-                viewport_size: renderer.display_size().into(),
-            };
+                let app_stats = debug_gui::AppStats
+                {
+                    fps: frame_time.fps(),
+                    frame_number,
+                    app_runtime: clock.total_runtime().as_secs_f64(),
+                    main_window_size: windows.main_window().size(),
+                    viewport_size: renderer.display_size().into(),
+                };
 
-            if cfg!(debug_assertions)
-            {
                 let mut debug_menu = DebugMenu::new(&mut debug_menu_memory, &render_frame.debug_gui);
                 debug_menu.add(&app_stats);
                 debug_menu.add(&debug_gui::FrameProfiler);
