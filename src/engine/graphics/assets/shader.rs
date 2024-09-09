@@ -3,7 +3,7 @@ use std::io::Read;
 use std::sync::Arc;
 use wgpu::ShaderModule;
 use wgpu::{ShaderModuleDescriptor, ShaderSource};
-use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload};
+use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId};
 use crate::engine::graphics::Renderer;
 
 pub struct Shader
@@ -15,7 +15,10 @@ pub struct Shader
 impl Shader
 {
 }
-impl Asset for Shader { }
+impl Asset for Shader
+{
+    fn asset_type() -> AssetTypeId { AssetTypeId::Shader }
+}
 
 pub struct ShaderLifecycler
 {

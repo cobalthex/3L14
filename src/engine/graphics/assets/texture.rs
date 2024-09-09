@@ -4,20 +4,55 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use arc_swap::ArcSwap;
 use egui::Ui;
 use png::DecodingError;
+use serde::{Deserialize, Serialize};
 use wgpu::{Extent3d, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor};
 use wgpu::util::{DeviceExt, TextureDataOrder};
 use crate::engine::alloc_slice::alloc_slice_uninit;
 use crate::engine::graphics::Renderer;
 use crate::format_bytes;
 
-use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadRequest, AssetPayload};
+use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadRequest, AssetPayload, AssetTypeId};
 use crate::engine::graphics::debug_gui::DebugGui;
+
+const MAX_MIP_COUNT: usize = 16;
+
+#[repr(u8)]
+#[derive(Serialize, Deserialize)]
+enum TextureFilePixelFormat
+{
+    // Uncompressed formats
+    Rgba8 = 1,
+    Rgba8Srgb = 2,
+    R8 = 3,
+    Rg8 = 4,
+
+    // special case for PNG files
+    Png
+
+    // TODO: compressed formats (bc#)
+
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TextureFile
+{
+    width: u32,
+    height: u32,
+    depth: u32,
+    mip_count: u8, // always <= MAX_MIP_COUNT
+    mip_offsets: [usize; MAX_MIP_COUNT], // offsets into the payload (0 being the beginning of the smallest mip)
+    pixel_format: TextureFilePixelFormat,
+
+    // mips are organized from smallest (lowest quality) to largest (highest quality)
+
+    // all mips are stored contiguously w/out gaps
+}
 
 pub struct Texture
 {
     gpu_tex: wgpu::Texture,
     gpu_view: wgpu::TextureView,
-    desc: wgpu::TextureDescriptor<'static>,
+    desc: wgpu::TextureDescriptor<'static>, // TODO: might be able to get this from the gpu_tex directly
 }  
 impl Texture
 {
@@ -37,7 +72,10 @@ impl Texture
         total_size
     }
 }
-impl Asset for Texture { }
+impl Asset for Texture
+{
+    fn asset_type() -> AssetTypeId { AssetTypeId::Texture }
+}
 
 pub struct TextureLifecycler
 {
@@ -103,17 +141,6 @@ impl TextureLifecycler
         self.device_bytes.fetch_add(bytes, Ordering::Relaxed); // relaxed ok here?
 
         payload
-    }
-
-    fn try_import_png(&self, input: &mut dyn Read) -> Result<Texture, DecodingError>
-    {
-        let png = png::Decoder::new(input);
-        let mut png_reader = png.read_info()?;
-        let mut png_buf = unsafe { alloc_slice_uninit(png_reader.output_buffer_size()).unwrap() }; // catch error?
-        let png_info = png_reader.next_frame(&mut png_buf)?;
-
-        let tex = self.create(png_info.width, png_info.height, &png_buf[..png_info.buffer_size()]);
-        Ok(tex)
     }
 }
 impl AssetLifecycler for TextureLifecycler

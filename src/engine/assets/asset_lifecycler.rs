@@ -1,12 +1,13 @@
-use super::*;
 use std::any::TypeId;
+use super::*;
 use std::collections::HashMap;
 use std::io::{Read, Seek};
 use std::sync::Arc;
+use crate::engine::ShortTypeName;
 
 pub struct AssetLoadRequest
 {
-    pub input: Box<dyn AssetRead>,
+    pub input: Box<dyn AssetRead>, // TODO: memory mapped buffer?
     storage: Arc<AssetsStorage>,
 
     // timer?
@@ -17,21 +18,21 @@ impl AssetLoadRequest
     // Assets/lifecyclers are responsible for tracking/maintaining references
 
     #[must_use]
-    pub fn load_dependency<D: Asset, S: AssetPath>(&self, asset_path: &S) -> AssetHandle<D>
+    pub fn load_dependency<D: Asset>(&self, asset_key: AssetKey) -> AssetHandle<D>
     {
         // pattern matches Assets::load()
-        self.storage.enqueue_load(asset_path, || AssetLifecycleRequestKind::LoadFileBacked)
+        self.storage.enqueue_load(asset_key, |h| AssetLifecycleRequest::LoadFileBacked(h))
     }
 
     #[must_use]
-    pub fn load_dependency_from<D: Asset, S: AssetPath, R: AssetRead + 'static>(
+    pub fn load_dependency_from<D: Asset, R: AssetRead + 'static>(
         &self,
-        asset_path: &S,
+        asset_key: AssetKey,
         input_data: R // take box?
     ) -> AssetHandle<D>
     {
         // pattern matches Assets::load_from()
-        self.storage.enqueue_load(asset_path, || AssetLifecycleRequestKind::LoadFromMemory(Box::new(input_data)))
+        self.storage.enqueue_load(asset_key, |h| AssetLifecycleRequest::LoadFromMemory(h, Box::new(input_data)))
     }
 }
 
@@ -48,17 +49,14 @@ pub trait AssetLifecycler: Sync + Send
 pub(super) trait UntypedAssetLifecycler: Sync + Send
 {
     // takes ownership of the untyped handle
-    fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedHandleInner, input: Box<dyn AssetRead>);
+    fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedAssetHandle, input: Box<dyn AssetRead>);
 
     // takes ownership of the untyped handle
-    fn error_untyped(&self, untyped_handle: UntypedHandleInner, error: AssetLoadError);
-
-    // call an asset's destructor, be very sure that you're at a 0 refcount
-    fn drop_untyped(&self, untyped_handle: &UntypedHandleInner);
+    fn error_untyped(&self, untyped_handle: UntypedAssetHandle, error: AssetLoadError);
 }
 impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
 {
-    fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedHandleInner, input: Box<dyn AssetRead>)
+    fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedAssetHandle, input: Box<dyn AssetRead>)
     {
         let result = self.load(AssetLoadRequest
         {
@@ -66,23 +64,28 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
             storage,
         });
 
-        let handle = unsafe { AssetHandle::<A>::attach_from_untyped(untyped_handle) };
-        handle.store_payload(result);
+        untyped_handle.as_ref().store_payload::<A>(result);
     }
 
     // this doesn't really make sense here
     // todo: can probably have an untyped 'asset handle' similar to the untyped lifecycler
-    fn error_untyped(&self, untyped_handle: UntypedHandleInner, error: AssetLoadError)
+    fn error_untyped(&self, untyped_handle: UntypedAssetHandle, error: AssetLoadError)
     {
-        let handle = unsafe { AssetHandle::<A>::attach_from_untyped(untyped_handle) };
-        handle.store_payload(AssetPayload::Unavailable(error));
+        untyped_handle.as_ref().store_payload::<A>(AssetPayload::Unavailable(error));
     }
+}
 
-    fn drop_untyped(&self, untyped_handle: &UntypedHandleInner)
+pub(super) struct RegisteredAssetType
+{
+    pub type_id: TypeId,
+    pub type_name: &'static str,
+    pub dealloc_fn: fn(UntypedAssetHandle),
+}
+impl RegisteredAssetType
+{
+    fn drop_fn_impl<A: Asset>(untyped_handle: UntypedAssetHandle)
     {
-        let handle = unsafe { untyped_handle.as_unchecked::<A>() };
-        debug_assert_eq!(handle.ref_count(), 0);
-        handle.payload.swap(None);
+        unsafe { untyped_handle.dealloc::<A>(); }
     }
 }
 
@@ -90,14 +93,21 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
 #[derive(Default)]
 pub struct AssetLifecyclers
 {
-    pub(super) lifecyclers: HashMap<TypeId, Box<dyn UntypedAssetLifecycler>>,
+    pub(super) lifecyclers: HashMap<AssetTypeId, Box<dyn UntypedAssetLifecycler>>,
+    pub(super) registered_asset_types: HashMap<AssetTypeId, RegisteredAssetType>,
 }
 impl AssetLifecyclers
 {
     pub fn add_lifecycler<A: Asset, L: AssetLifecycler<Asset=A> + UntypedAssetLifecycler + 'static>(mut self, lifecycler: L) -> Self
     {
         // warn/fail on duplicates?
-        self.lifecyclers.insert(TypeId::of::<A>(), Box::new(lifecycler));
+        self.lifecyclers.insert(A::asset_type(), Box::new(lifecycler));
+        self.registered_asset_types.insert(A::asset_type(), RegisteredAssetType
+        {
+            type_id: TypeId::of::<A>(),
+            type_name: A::short_type_name(),
+            dealloc_fn: |h| unsafe { h.dealloc::<A>() },
+        });
         self
     }
 }
@@ -105,21 +115,10 @@ impl AssetLifecyclers
 pub trait AssetRead: Read + Seek + Send { }
 impl<T: Read + Seek + Send> AssetRead for T { }
 
-// A hacky asset for manipulating type-erased asset handles
-pub(super) struct _NullAsset;
-impl Asset for _NullAsset { }
-
-pub(super) enum AssetLifecycleRequestKind
+pub(super) enum AssetLifecycleRequest
 {
     StopWorkers,
-    Drop,
-    LoadFileBacked, // loads the file pointed by the asset path
-    LoadFromMemory(Box<dyn AssetRead>),
-}
-
-pub(super) struct AssetLifecycleRequest
-{
-    pub asset_type: TypeId,
-    pub kind: AssetLifecycleRequestKind,
-    pub untyped_handle: UntypedHandleInner, // must be a strong ref, must be cloned to use externally
+    Drop(UntypedAssetHandle),
+    LoadFileBacked(UntypedAssetHandle), // loads the file pointed by the asset path
+    LoadFromMemory(UntypedAssetHandle, Box<dyn AssetRead>),
 }

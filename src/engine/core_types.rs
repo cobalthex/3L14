@@ -2,15 +2,11 @@ use std::fmt;
 use std::fmt::Formatter;
 use serde::Serializer;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TickCount(pub u64);
 impl TickCount
 {
     pub fn system_ticks() -> Self { Self(12345) } // todo
-}
-impl Default for TickCount
-{
-    fn default() -> Self { Self(0) }
 }
 impl std::ops::Add for TickCount
 {

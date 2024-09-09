@@ -1,5 +1,4 @@
 use std::fmt::{Debug, Formatter, Write};
-use std::intrinsics::transmute;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Sub, SubAssign};
 use std::slice::Iter;
 use std::time::Instant;
@@ -69,7 +68,7 @@ impl Input
                         self.keyboard.pressed_keys.push(KeyState
                         {
                             key_code: key,
-                            scan_code: scancode.unwrap_or(unsafe { transmute(0) }),
+                            scan_code: scancode.unwrap_or(unsafe { std::mem::transmute(0) }),
                             state: ButtonState::JustOn,
                             set_time: time,
                         });

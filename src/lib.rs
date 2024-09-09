@@ -4,6 +4,7 @@ extern crate proc_macros_3l14;
 
 use std::env::Args;
 
+#[macro_export]
 macro_rules! iif_debug {
     ($a:expr, $b:expr) =>
     {
@@ -13,6 +14,15 @@ macro_rules! iif_debug {
             false => $b,
         }
     };
+}
+
+#[macro_export]
+macro_rules! const_assert
+{
+    ($($tt:tt)*) =>
+    {
+        const _: () = assert!($($tt)*);
+    }
 }
 
 pub const TEST_VAL: u32 = iif_debug!(10, 0);

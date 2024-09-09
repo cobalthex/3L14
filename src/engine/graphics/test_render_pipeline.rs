@@ -12,7 +12,7 @@ pub fn new(
     tex_bind_group: &BindGroupLayout) -> RenderPipeline
 {
     let test_shader = renderer.device().create_shader_module(
-        include_wgsl!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/shaders/test.wgsl")));
+        include_wgsl!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/src/shaders/test.wgsl")));
 
     TestPipeline::create_pipeline(renderer, &test_shader, &test_shader, camera_bind_group, transform_bind_group, tex_bind_group)
 }

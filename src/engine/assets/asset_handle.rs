@@ -1,5 +1,6 @@
-use std::any::TypeId;
-use std::fmt::{Debug, Display, Formatter, Write};
+use std::alloc::Layout;
+use std::any::{Any, TypeId};
+use std::fmt::{Debug, Formatter};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::mem::swap;
@@ -8,34 +9,20 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 use std::task::{Context, Poll, Waker};
 use arc_swap::access::Access;
-use arc_swap::ArcSwapOption;
+use arc_swap::{ArcSwap, ArcSwapAny, ArcSwapOption};
 use crossbeam::channel::Sender;
 use parking_lot::Mutex;
-use sdl2::sys::False;
-use unicase::UniCase;
 use crate::engine::{DataPayload, ShortTypeName};
 
 use super::*;
 
-// this should always be converted to an AssetHandle<A> for any refcount ops
-// note: be very careful when using these, there are no lifetime guarantees
-#[derive(PartialEq, Debug)]
-pub(super) struct UntypedHandleInner(usize);
-impl UntypedHandleInner
-{
-    pub const NULL: UntypedHandleInner = UntypedHandleInner(0usize);
-
-    pub fn new<A: Asset>(inner: *const AssetHandleInner<A>) -> Self { Self(inner as usize) }
-    pub fn is_null(&self) -> bool { self.0 == 0usize }
-
-    pub unsafe fn as_unchecked<A: Asset>(&self) -> &AssetHandleInner<A> { &*(self.0 as *const AssetHandleInner<A>) }
-    pub unsafe fn into_ptr(self) -> *mut u8 { self.0 as *mut u8 }
-}
+// tbh, after change, this could probably just be stored as an Arc
 
 #[derive(Debug, Clone, Copy)]
 pub enum AssetLoadError
 {
     Shutdown, // The asset system has been shutdown and no new assets can be loaded
+    MismatchedAssetType, // asset key does not match handle type
     LifecyclerNotRegistered,
     InvalidFormat,
     IOError(std::io::ErrorKind),
@@ -60,64 +47,77 @@ impl<A: Asset> AssetPayload<A>
     }
 }
 
-type _PayloadProjectionFn<A> = fn(&Option<Arc<AssetPayload<A>>>) -> &AssetPayload<A>;
-pub type PayloadGuard<A> = arc_swap::access::MapGuard<
-    arc_swap::Guard<Option<Arc<AssetPayload<A>>>, arc_swap::DefaultStrategy>,
-    _PayloadProjectionFn<A>,
-    Option<Arc<AssetPayload<A>>>,
-    AssetPayload<A>>; // holy shit this is ugly; this *should* be safe;
+type _PayloadProjectionFn<A: Asset> = fn(&Option<Arc<()>>) -> &AssetPayload<A>;
+// type PayloadGuard<A> = arc_swap::access::MapGuard<
+//     arc_swap::Guard<Option<Arc<AssetPayload<A>>>, arc_swap::DefaultStrategy>,
+//     _PayloadProjectionFn<A>,
+//     Option<Arc<AssetPayload<A>>>,
+//     AssetPayload<A>>; // holy shit this is ugly; this *should* be safe;
+type PayloadGuard<'a, A> = &'a AssetPayload<A>; // TODO
 
-pub(super) struct AssetHandleInner<A: Asset>
+// The inner pointer to each asset handle. This should generally not be used by itself b/c it does not have any RAII for ref-counting
+pub(super) struct AssetHandleInner
 {
-    pub ref_count: AtomicIsize,
+    ref_count: AtomicIsize,
 
-    pub path: UniCase<String>,
-    pub key: AssetKey,
-    pub dropper: Sender<AssetLifecycleRequest>,
+    key: AssetKey,
+    dropper: Sender<AssetLifecycleRequest>,
 
     // test only?
-    pub ready_waker: Mutex<Option<Waker>>,
+    ready_waker: Mutex<Option<Waker>>,
 
-    pub generation: AtomicU32, // updated <after> storing a payload
-    pub is_reloading: AtomicBool, // cleared before payload is set
+    generation: AtomicU32, // updated <after> storing a payload
+    is_reloading: AtomicBool, // cleared before payload is set
 
-    pub payload: ArcSwapOption<AssetPayload<A>>, // will be None while pending -- could this be stored directly, and the implementers are required to handle swapping? (e.g. textures have an internal pointer) -- if this changes from an arc, internal allocations in AssetStorage may need to change
+    payload: *const (), // Will be null while the handle is pending, the typed value is a raw inner to an Arc<A: Asset>
 }
-impl<A: Asset> AssetHandleInner<A>
+impl AssetHandleInner
 {
     // Store a new payload and signal. Note: storing ::Pending will clear the pointer
-    pub fn store_payload(&self, payload: AssetPayload<A>)
+    pub fn store_payload<A: Asset>(&self, payload: AssetPayload<A>)
     {
-        match payload
-        {
-            DataPayload::Pending => self.payload.store(None),
-            _ => self.payload.store(Some(Arc::new(payload))),
-        }
-        self.is_reloading.store(false, Ordering::Release); // could this just be is_loading() ?
+        debug_assert_eq!(A::asset_type(), self.key.asset_type());
 
-        self.generation.fetch_add(1, Ordering::AcqRel); // TODO: verify ordering
-
-        let mut locked = self.ready_waker.lock();
-        if let Some(waker) = locked.take()
-        {
-            waker.wake();
-        }
+        todo!()
+        // match payload
+        // {
+        //     DataPayload::Pending => self.payload.store(None),
+        //     _ =>
+        //     {
+        //         let arc = Arc::into_raw(Arc::new(payload));
+        //         self.payload.store(Some(unsafe { Arc::from_raw(arc as *const ()) }))
+        //     },
+        // }
+        // self.is_reloading.store(false, Ordering::Release); // could this just be is_loading() ?
+        //
+        // self.generation.fetch_add(1, Ordering::AcqRel); // TODO: verify ordering
+        //
+        // let mut locked = self.ready_waker.lock();
+        // if let Some(waker) = locked.take()
+        // {
+        //     waker.wake();
+        // }
+    }
+    
+    #[inline]
+    pub fn key(&self) -> AssetKey
+    {
+        self.key
+    }
+    
+    #[inline]
+    pub fn asset_type(&self) -> AssetTypeId
+    {
+        self.key.asset_type()
     }
 
     #[inline]
-    fn map_payload(payload: &Option<Arc<AssetPayload<A>>>) -> &AssetPayload<A>
+    pub fn payload<A: Asset>(&self) -> &Arc<AssetPayload<A>>
     {
-        match payload
-        {
-            None => &AssetPayload::Pending,
-            Some(s) => s.as_ref()
-        }
-    }
+        if self.payload.is_null() { todo!() }
 
-    #[inline]
-    pub fn payload(&self) -> PayloadGuard<A>
-    {
-        self.payload.map(Self::map_payload as _PayloadProjectionFn<A>).load()
+        let arc = unsafe { Arc::from_raw(self.payload as *const AssetPayload<A>) };
+        todo!()
     }
 
     #[inline]
@@ -130,25 +130,90 @@ impl<A: Asset> AssetHandleInner<A>
     pub fn generation(&self) -> u32 { self.generation.load(Ordering::Acquire) }
 }
 
+#[derive(PartialEq, Eq)]
+pub(super) struct UntypedAssetHandle(*const AssetHandleInner); // Internal only (does no ref-counting, use AssetHandle<A> - must never be null
+impl UntypedAssetHandle
+{
+    pub fn alloc<A: Asset>(key: AssetKey, dropper: Sender<AssetLifecycleRequest>) -> Self
+    {
+        let inner = AssetHandleInner
+        {
+            ref_count: AtomicIsize::new(0), // this must be incremented by the caller
+            key,
+            dropper,
+            ready_waker: Mutex::new(None),
+            generation: AtomicU32::new(0),
+            is_reloading: AtomicBool::new(false),
+            payload: std::ptr::null(), // pending
+        };
+        let layout = Layout::for_value(&inner);
+        Self(unsafe
+        {
+            let alloc: *mut AssetHandleInner = std::alloc::alloc(layout).cast();
+            std::ptr::write(alloc, inner);
+            alloc as *const AssetHandleInner
+        })
+    }
+
+    pub unsafe fn dealloc<A: Asset>(self)
+    {
+        debug_assert!(!self.0.is_null());
+        debug_assert_eq!(A::asset_type(), (&*self.0).key.asset_type());
+
+        (&*self.0).store_payload::<A>(AssetPayload::Pending); // clears the stored payload
+
+        let layout = Layout::for_value(&*self.0);
+        std::alloc::dealloc(self.0 as *mut u8, layout);
+    }
+}
+impl AsRef<AssetHandleInner> for UntypedAssetHandle
+{
+    fn as_ref(&self) -> &AssetHandleInner
+    {
+        unsafe { &*self.0 }
+    }
+}
+unsafe impl Sync for UntypedAssetHandle { }
+unsafe impl Send for UntypedAssetHandle { }
+
 pub struct AssetHandle<A: Asset>
 {
-    pub(super) inner: *const AssetHandleInner<A>, // store v-table? (use box), would *maybe* allow calls to virtual methods (test?)
-    pub(super) phantom: PhantomData<AssetHandleInner<A>>,
+    pub(super) inner: *const AssetHandleInner, // store v-table? (use box), would *maybe* allow calls to virtual methods (test?)
+    pub(super) phantom: PhantomData<A>,
 }
 impl<A: Asset> AssetHandle<A>
 {
-    // creation managed by <Assets>
-
-    #[inline]
-    pub(super) fn inner(&self) -> &AssetHandleInner<A>
+    pub(super) unsafe fn into_inner(self) -> UntypedAssetHandle
     {
-        unsafe { &*self.inner }
+        let untyped = UntypedAssetHandle(self.inner);
+        std::mem::forget(self);
+        untyped
+    }
+
+    pub(super) unsafe fn clone_from(untyped_handle: &UntypedAssetHandle) -> Self
+    {
+        let handle = Self
+        {
+            inner: untyped_handle.0,
+            phantom: PhantomData::default(),
+        };
+        handle.debug_assert_type();
+        handle.add_ref();
+        handle
     }
 
     #[inline]
-    pub fn path(&self) -> &UniCase<String>
+    fn debug_assert_type(&self)
     {
-        &self.inner().path
+        debug_assert_eq!(A::asset_type(), self.key().asset_type());
+    }
+
+    // creation managed by <Assets>
+
+    #[inline]
+    pub(super) fn inner(&self) -> &AssetHandleInner
+    {
+        unsafe { &*self.inner }
     }
 
     // The key uniquely identifying this asset
@@ -162,7 +227,8 @@ impl<A: Asset> AssetHandle<A>
     #[inline]
     pub fn payload(&self) -> PayloadGuard<A>
     {
-        self.inner().payload()
+        todo!()
+        // self.inner().payload()
     }
 
     // The number of references to this asset
@@ -174,42 +240,13 @@ impl<A: Asset> AssetHandle<A>
 
     #[inline]
     pub fn generation(&self) -> u32 { self.inner().generation() }
-
-    // Is this asset + all dependencies loaded
+    //
+    // // Is this asset + all dependencies loaded
     #[inline]
     pub fn is_loaded_recursive(&self) -> bool
     {
-        self.payload().is_loaded_recursive()
-    }
-
-    #[inline]
-    pub(super) unsafe fn clone_from_untyped(untyped: &UntypedHandleInner) -> Self
-    {
-        let cloned = Self
-        {
-            inner: untyped.0 as *const AssetHandleInner<A>,
-            phantom: Default::default(),
-        };
-        cloned.add_ref();
-        cloned
-    }
-
-    #[inline]
-    pub(super) unsafe fn attach_from_untyped(untyped: UntypedHandleInner) -> Self
-    {
-        Self
-        {
-            inner: untyped.0 as *const AssetHandleInner<A>,
-            phantom: Default::default(),
-        }
-    }
-
-    #[inline]
-    pub(super) unsafe fn into_untyped(self) -> UntypedHandleInner
-    {
-        let untyped = UntypedHandleInner(self.inner as usize);
-        std::mem::forget(self);
-        untyped
+        todo!()
+        // self.payload().is_loaded_recursive()
     }
 
     #[inline]
@@ -262,20 +299,7 @@ impl<A: Asset> Drop for AssetHandle<A>
             return;
         }
 
-        // move ownership into the request
-        let inner_untyped =
-        {
-            let mut fill = std::ptr::null(); // reset to null for help w/ detecting bugs
-            swap(&mut self.inner, &mut fill);
-            fill
-        };
-
-        inner.dropper.send(AssetLifecycleRequest
-        {
-            asset_type: TypeId::of::<A>(),
-            untyped_handle: UntypedHandleInner(inner_untyped as usize),
-            kind: AssetLifecycleRequestKind::Drop,
-        }).expect("Failed to drop asset as the drop channel already closed"); // todo: error handling
+        inner.dropper.send(AssetLifecycleRequest::Drop(UntypedAssetHandle(self.inner))).expect("Failed to drop asset as the drop channel already closed"); // todo: error handling (can just drop it here?)
     }
 }
 impl<A: Asset> Future for &AssetHandle<A> // non-reffing requires being able to consume an Arc
@@ -294,16 +318,17 @@ impl<A: Asset> Future for &AssetHandle<A> // non-reffing requires being able to 
             return Poll::Pending;
         }
 
-        match *self.payload()
-        {
-            AssetPayload::Pending =>
-            {
-                let mut locked = inner.ready_waker.lock();
-                swap(&mut *locked, &mut Some(cx.waker().clone()));
-                Poll::Pending
-            },
-            AssetPayload::Available(_) | AssetPayload::Unavailable(_) => Poll::Ready(inner.payload.load_full().unwrap()),
-        }
+        todo!()
+        // match *self.payload()
+        // {
+        //     AssetPayload::Pending =>
+        //     {
+        //         let mut locked = inner.ready_waker.lock();
+        //         swap(&mut *locked, &mut Some(cx.waker().clone()));
+        //         Poll::Pending
+        //     },
+        //     AssetPayload::Available(_) | AssetPayload::Unavailable(_) => Poll::Ready(inner.payload.load_full().unwrap()),
+        // }
     }
 }
 impl<A: Asset> PartialEq for AssetHandle<A>

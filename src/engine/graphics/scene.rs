@@ -7,7 +7,7 @@ use wgpu::{BufferSlice, BufferUsages, IndexFormat, vertex_attr_array, VertexBuff
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
 use crate::engine::{AABB, AsU8Slice};
-use crate::engine::assets::{Asset, AssetHandle, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, HasAssetDependencies};
+use crate::engine::assets::{Asset, AssetHandle, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId, HasAssetDependencies};
 use crate::engine::graphics::assets::texture::Texture;
 use crate::engine::graphics::material::Material;
 use crate::engine::graphics::Renderer;
@@ -112,6 +112,8 @@ impl Model
 }
 impl Asset for Model
 {
+    fn asset_type() -> AssetTypeId { AssetTypeId::Model }
+    
     fn all_dependencies_loaded(&self) -> bool
     {
         self.meshes.iter().all(|m|
@@ -133,6 +135,8 @@ pub struct Scene
 }
 impl Asset for Scene
 {
+    fn asset_type() -> AssetTypeId { AssetTypeId::Scene }
+
     fn all_dependencies_loaded(&self) -> bool
     {
         self.models.iter().all(|m| m.object.all_dependencies_loaded())
@@ -348,9 +352,10 @@ impl SceneLifecycler
                             texel_data: data.pixels.clone(),
                             read_offset: 0,
                         };
-                        let tex: AssetHandle<Texture> = request.load_dependency_from(&tex_name, reader);
-                        // todo: this needs to reconcile the image format
-                        Some(tex)
+                        // let tex: AssetHandle<Texture> = request.load_dependency_from(&tex_name, reader);
+                        // // todo: this needs to reconcile the image format
+                        // Some(tex)
+                        None
                     }
                 };
 
