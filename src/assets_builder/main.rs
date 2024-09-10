@@ -1,17 +1,9 @@
-use std::path::Path;
-use clap::Parser;
-use futures::future::err;
-use crate::asset_builder::{AssetBuilder, SourceInputRead};
-use crate::assets_builder::{AssetsBuilder, AssetsBuilderConfig};
-
+mod core;
 mod builders;
 
-mod asset_builder;
-
-mod assets_builder;
-
-
-// TODO: use asset types, make an AssetTypeId ?
+use clap::Parser;
+use std::path::Path;
+use crate::core::{AssetsBuilder, AssetsBuilderConfig};
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -30,8 +22,9 @@ fn main()
     let mut builder_cfg = AssetsBuilderConfig::new(&src_assets_root, &built_assets_root);
     builder_cfg.add_builder(builders::TextureBuilder);
     builder_cfg.add_builder(builders::ModelBuilder);
+    
+    eprintln!("Starting assets builder");
 
-    eprintln!("Assets Builder :: version:{:x}", builder_cfg.builders_version_hash());
     let builder = AssetsBuilder::new(builder_cfg);
 
     let cli_args = CliArgs::parse();
@@ -42,9 +35,9 @@ fn main()
 
         match builder.build_assets(src_path)
         {
-            Ok(_) =>
+            Ok(results) =>
             {
-                eprintln!("Successfully built {src_path:?}");
+                eprintln!("Successfully built {src_path:?} into {results:?}");
             }
             Err(err) =>
             {

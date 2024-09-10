@@ -56,7 +56,12 @@ impl AssetKey
 
     pub fn as_file_name(&self) -> PathBuf
     {
-        PathBuf::from(format!("{:02x}{:02x}{:012x}.booga", self.asset_type() as u16, self.derived_id(), self.base_id()))
+        PathBuf::from(format!("{:02x}{:02x}{:012x}.ass", self.asset_type() as u16, self.derived_id(), self.base_id()))
+    }
+
+    pub fn as_meta_file_name(&self) -> PathBuf
+    {
+        PathBuf::from(format!("{:02x}{:02x}{:012x}.mass", self.asset_type() as u16, self.derived_id(), self.base_id()))
     }
 }
 impl PartialEq for AssetKey
@@ -68,7 +73,7 @@ impl PartialEq for AssetKey
 }
 impl Hash for AssetKey
 {
-    fn hash<H: Hasher>(&self, state: &mut H) 
+    fn hash<H: Hasher>(&self, state: &mut H)
     {
         state.write_u128((*self).into())
     }
@@ -82,17 +87,26 @@ impl Debug for AssetKey
         let ty = self.asset_type;
         let did = self.derived_id;
 
-        f.write_fmt(format_args!("⟨{:?}|{:012x}+{:02x}⟩",
-                    ty,
+        match f.alternate()
+        {
+            true =>
+                f.write_fmt(format_args!("{:02x}{:02x}{:012x}",
+                    ty as u16,
                     self.base_id(),
-                    did))
+                    did)),
+            false =>
+                f.write_fmt(format_args!("⟨{:?}|{:012x}+{:02x}⟩",
+                     ty,
+                     self.base_id(),
+                     did)),
+        }
     }
 }
-impl Into<u128> for AssetKey
+impl From<AssetKey> for u128
 {
-    fn into(self) -> u128
+    fn from(value: AssetKey) -> Self
     {
-        unsafe { <u128>::from_le_bytes(std::mem::transmute::<_, [u8; 16]>(self)) }
+        unsafe { <u128>::from_le_bytes(std::mem::transmute::<AssetKey, [u8; 16]>(value)) }
     }
 }
 impl From<u128> for AssetKey

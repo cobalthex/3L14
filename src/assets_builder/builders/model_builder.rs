@@ -1,6 +1,4 @@
-use std::io::Write;
-use game_3l14::engine::assets::AssetTypeId;
-use crate::asset_builder::{AssetBuilder, BuildError, BuildOutput, SourceInput, VersionStrings};
+use crate::core::{AssetBuilder, BuildError, BuildOutputs, SourceInput};
 
 pub struct ModelBuilder;
 impl AssetBuilder for ModelBuilder
@@ -10,24 +8,10 @@ impl AssetBuilder for ModelBuilder
         &["glb", "gltf"]
     }
 
-    fn builder_version(&self) -> VersionStrings
-    {
-        &[
-            b"Initial"
-        ]
-    }
 
-    fn format_version(&self) -> VersionStrings
+    fn build_assets(&self, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), BuildError>
     {
-        &[
-            b"Initial"
-        ]
-    }
-
-    fn build_assets(&self, input: SourceInput) -> Result<Iterator<BuildOutput>, BuildError>
-    {
-        Ok(Vec::new())
-
+        Ok(())
         /* TODO
 
         - how to ID multi-output assets

@@ -14,11 +14,11 @@ use crate::format_bytes;
 use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadRequest, AssetPayload, AssetTypeId};
 use crate::engine::graphics::debug_gui::DebugGui;
 
-const MAX_MIP_COUNT: usize = 16;
+pub const MAX_MIP_COUNT: usize = 16;
 
 #[repr(u8)]
 #[derive(Serialize, Deserialize)]
-enum TextureFilePixelFormat
+pub enum TextureFilePixelFormat
 {
     // Uncompressed formats
     Rgba8 = 1,
@@ -26,8 +26,7 @@ enum TextureFilePixelFormat
     R8 = 3,
     Rg8 = 4,
 
-    // special case for PNG files
-    Png
+    // import raw PNG ?
 
     // TODO: compressed formats (bc#)
 
@@ -36,12 +35,12 @@ enum TextureFilePixelFormat
 #[derive(Serialize, Deserialize)]
 pub struct TextureFile
 {
-    width: u32,
-    height: u32,
-    depth: u32,
-    mip_count: u8, // always <= MAX_MIP_COUNT
-    mip_offsets: [usize; MAX_MIP_COUNT], // offsets into the payload (0 being the beginning of the smallest mip)
-    pixel_format: TextureFilePixelFormat,
+    pub width: u32,
+    pub height: u32,
+    pub depth: u32,
+    pub mip_count: u8, // always <= MAX_MIP_COUNT
+    pub mip_offsets: [usize; MAX_MIP_COUNT], // offsets into the payload (0 being the beginning of the smallest mip)
+    pub pixel_format: TextureFilePixelFormat,
 
     // mips are organized from smallest (lowest quality) to largest (highest quality)
 
