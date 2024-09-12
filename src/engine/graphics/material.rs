@@ -1,6 +1,6 @@
 use crate::engine::assets::{AssetHandle, AssetPayload, HasAssetDependencies};
 use crate::engine::graphics::assets::Texture;
-use crate::engine::graphics::colors::Color;
+use crate::engine::graphics::colors::Rgba;
 use crate::engine::graphics::{colors, Renderer};
 use wgpu::{AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, FilterMode, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, TextureAspect, TextureSampleType, TextureViewDescriptor, TextureViewDimension};
 // todo: in the future these should be data driven (maybe parametric?)
@@ -115,7 +115,7 @@ impl MaterialCache
 pub struct Material
 {
     pub albedo_map: Option<AssetHandle<Texture>>,
-    pub albedo_color: Color,
+    pub albedo_color: Rgba,
     pub metallicity: f32,
     pub roughness: f32,
 }

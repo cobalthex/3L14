@@ -29,10 +29,10 @@ impl AssetBuilder for TextureBuilder
             let png = png::Decoder::new(&mut input);
             let mut png_reader = png.read_info().map_err(png_error)?;
             let mut png_buf = unsafe { alloc_slice_uninit(png_reader.output_buffer_size()).unwrap() }; // catch error?
-
+            
             // atlas frames?
             let png_info = png_reader.next_frame(&mut png_buf).map_err(png_error)?;
-
+            
             let tex_file = TextureFile
             {
                 width: png_info.width,
@@ -52,17 +52,7 @@ impl AssetBuilder for TextureBuilder
             };
 
             output.serialize(&tex_file).map_err(BuildError::OutputSerializeError)?;
-            // TODO
-            // match png_info.bit_depth
-            // {
-            //     BitDepth::One => {}
-            //     BitDepth::Two => {}
-            //     BitDepth::Four => {}
-            //     BitDepth::Eight => {}
-            //     BitDepth::Sixteen => {}
-            // }
-
-            output.write(&png_buf).map_err(BuildError::OutputIOError)?;
+            std::io::copy(&mut input, &mut output).map_err(BuildError::OutputIOError)?;
         }
 
         output.finish()?;

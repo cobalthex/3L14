@@ -13,7 +13,7 @@ use crate::engine::graphics::material::Material;
 use crate::engine::graphics::Renderer;
 use crate::engine::world::Transform;
 
-use super::colors::Color;
+use super::colors::Rgba;
 
 pub trait WgpuVertexDecl
 {
@@ -29,7 +29,7 @@ pub struct VertexPosNormTexCol
     pub position: Vec3,
     pub normal: Vec3,
     pub tex_coord: Vec2,
-    pub color: Color,
+    pub color: Rgba,
 }
 impl VertexPosNormTexCol
 {
@@ -270,7 +270,7 @@ impl SceneLifecycler
                     let c = match &mut colors
                     {
                         Some(c) => c.next().ok_or(SceneImportError::MismatchedVertexAttributeLengths)?.into(),
-                        None => Color::from(in_prim.index() as u32 * 10000 + 20000),
+                        None => Rgba::from(in_prim.index() as u32 * 10000 + 20000),
                     };
 
                     vertices.push(VertexPosNormTexCol

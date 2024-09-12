@@ -5,7 +5,7 @@ use super::colors;
 pub fn test<'f>(
     render_frame: &'f RenderFrame,
     encoder: &'f mut CommandEncoder,
-    clear_color: Option<colors::Color>) -> RenderPass<'f>
+    clear_color: Option<colors::Rgba>) -> RenderPass<'f>
 {
     let (view, resolve_target) = match &render_frame.msaa_config
     {

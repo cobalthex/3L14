@@ -26,8 +26,6 @@ pub enum TextureFilePixelFormat
     R8 = 3,
     Rg8 = 4,
 
-    // import raw PNG ?
-
     // TODO: compressed formats (bc#)
 
 }
@@ -41,9 +39,7 @@ pub struct TextureFile
     pub mip_count: u8, // always <= MAX_MIP_COUNT
     pub mip_offsets: [usize; MAX_MIP_COUNT], // offsets into the payload (0 being the beginning of the smallest mip)
     pub pixel_format: TextureFilePixelFormat,
-
     // mips are organized from smallest (lowest quality) to largest (highest quality)
-
     // all mips are stored contiguously w/out gaps
 }
 

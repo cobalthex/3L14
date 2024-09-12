@@ -199,7 +199,7 @@ impl<W: BuildOutputWrite> BuildOutput<W>
         self.dependencies.push(dependent_asset);
     }
 
-    pub fn finish(mut self) -> Result<(), BuildError>
+    pub fn finish(mut self) -> Result<AssetKey, BuildError>
     {
         self.writer.flush().map_err(BuildError::OutputIOError)?;
 
@@ -219,7 +219,7 @@ impl<W: BuildOutputWrite> BuildOutput<W>
 
         // todo: signal back to BuildOutputs on failure automatically?
 
-        Ok(())
+        Ok(self.asset_key)
     }
 }
 
@@ -240,6 +240,7 @@ impl<'a> BuildOutputs<'a>
 {
     // TODO: outputs should be atomic
 
+    // Build one or more outputs from a source. Note: generated asset keys are dependent on call order
     pub fn add_output(&mut self, asset_type: AssetTypeId) -> Result<BuildOutput<impl BuildOutputWrite>, BuildError>
     {
         let derived_id: AssetKeyDerivedId =
@@ -266,7 +267,7 @@ impl<'a> BuildOutputs<'a>
         };
 
         self.results.push(asset_key); // TODO: only do if successful?
-        
+
         Ok(output)
     }
 }
