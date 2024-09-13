@@ -1,10 +1,11 @@
+use std::error::Error;
 use std::io::Write;
 use png::{BitDepth, ColorType};
 use unicase::UniCase;
 use game_3l14::engine::alloc_slice::alloc_slice_uninit;
 use game_3l14::engine::assets::AssetTypeId;
 use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat, MAX_MIP_COUNT};
-use crate::core::{AssetBuilder, BuildError, BuildOutputs, SourceInput};
+use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionStrings};
 
 pub struct TextureBuilder;
 impl AssetBuilder for TextureBuilder
@@ -14,25 +15,33 @@ impl AssetBuilder for TextureBuilder
         &["dds", "png"]
     }
 
-    fn build_assets(&self, mut input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), BuildError>
+    fn builder_version(&self) -> VersionStrings
+    {
+        &[
+            b"Initial"
+        ]
+    }
+
+    fn format_version(&self) -> VersionStrings
+    {
+        &[
+            b"Initial"
+        ]
+    }
+
+    fn build_assets(&self, mut input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         let mut output = outputs.add_output(AssetTypeId::Texture)?;
 
         if input.file_extension() == &UniCase::new("png")
         {
-            fn png_error(err: png::DecodingError) -> BuildError
-            {
-                eprintln!("Error reading PNG file: {err}");
-                BuildError::InvalidInputData
-            }
-
             let png = png::Decoder::new(&mut input);
-            let mut png_reader = png.read_info().map_err(png_error)?;
+            let mut png_reader = png.read_info()?;
             let mut png_buf = unsafe { alloc_slice_uninit(png_reader.output_buffer_size()).unwrap() }; // catch error?
-            
+
             // atlas frames?
-            let png_info = png_reader.next_frame(&mut png_buf).map_err(png_error)?;
-            
+            let png_info = png_reader.next_frame(&mut png_buf)?;
+
             let tex_file = TextureFile
             {
                 width: png_info.width,
@@ -51,8 +60,8 @@ impl AssetBuilder for TextureBuilder
                 },
             };
 
-            output.serialize(&tex_file).map_err(BuildError::OutputSerializeError)?;
-            std::io::copy(&mut input, &mut output).map_err(BuildError::OutputIOError)?;
+            output.serialize(&tex_file)?;
+            std::io::copy(&mut input, &mut output)?;
         }
 
         output.finish()?;

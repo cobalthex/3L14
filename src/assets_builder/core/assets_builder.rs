@@ -1,12 +1,15 @@
-use game_3l14::engine::assets::{AssetKey, AssetKeyBaseId, AssetKeyDerivedId, AssetMetadata, AssetTypeId};
+use game_3l14::engine::assets::{AssetKey, AssetKeyBaseId, AssetKeyDerivedId, AssetMetadata, AssetTypeId, BuilderHash};
 use game_3l14::engine::ShortTypeName;
 use rand::RngCore;
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
+use std::hash::Hasher;
+use std::io;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use serde::{ser, Serialize, Serializer};
+use metrohash::MetroHash64;
+use serde::{Serialize, Serializer};
 use unicase::UniCase;
 
 use super::*;
@@ -15,13 +18,15 @@ struct AssetBuilderEntry
 {
     name: &'static str,
     builder: Box<dyn AssetBuilder>,
+    builder_hash: BuilderHash,
+    format_hash: BuilderHash,
 }
 
 pub struct AssetsBuilderConfig
 {
     pub source_files_root: PathBuf,
     pub built_files_root: PathBuf,
-
+    builders_version_hash: u64,
     asset_builders: Vec<AssetBuilderEntry>,
     file_ext_to_builder: HashMap<UniCase<&'static str>, usize>,
 }
@@ -35,9 +40,21 @@ impl AssetsBuilderConfig
         {
             source_files_root: PathBuf::from(source_files_root.as_ref()),
             built_files_root: PathBuf::from(built_files_root.as_ref()),
+            builders_version_hash: Self::hash_bstrings(0,&[
+                b"Initial"
+            ]),
             asset_builders: Vec::new(),
             file_ext_to_builder: HashMap::new(),
         }
+    }
+
+    pub fn builders_version_hash(&self) -> u64 { self.builders_version_hash }
+
+    fn hash_bstrings(seed: u64, bstrings: &[&[u8]]) -> u64
+    {
+        let mut hasher = MetroHash64::with_seed(seed);
+        bstrings.iter().for_each(|s| { hasher.write(s); });
+        hasher.finish()
     }
 
     // Register a builder for it's registered extensions. Will panic if a particular extension was already registered
@@ -47,6 +64,8 @@ impl AssetsBuilderConfig
         self.asset_builders.push(AssetBuilderEntry
         {
             name: B::short_type_name(),
+            builder_hash: Self::hash_bstrings(self.builders_version_hash, builder.builder_version()),
+            format_hash: Self::hash_bstrings(0, builder.format_version()),
             builder: Box::new(builder),
         });
 
@@ -82,6 +101,15 @@ impl AssetsBuilder
         {
             config
         }
+    }
+
+    pub fn builders_version_hash(&self) -> u64 { self.config.builders_version_hash }
+
+    fn hash_bstrings(seed: u64, bstrings: &[&[u8]]) -> u64
+    {
+        let mut hasher = MetroHash64::with_seed(seed);
+        bstrings.iter().for_each(|s| { hasher.write(s); });
+        hasher.finish()
     }
 
     // transform a source file into one or more built assets, returns the built count
@@ -155,17 +183,40 @@ impl AssetsBuilder
             timestamp: chrono::Utc::now().timestamp_millis() as u64,
             rel_source_path: rel_path,
             abs_output_dir: self.config.built_files_root.as_path(),
-
+            builder_hash: builder.builder_hash,
+            format_hash: builder.format_hash,
             derived_ids: HashMap::new(),
             results: Vec::new(),
         };
 
-        builder.builder.build_assets(input, &mut outputs)?;
-        Ok(outputs.results)
+        match builder.builder.build_assets(input, &mut outputs)
+        {
+            Ok(_) => Ok(outputs.results),
+            Err(err) => Err(BuildError::BuilderError(err)),
+        }
     }
 
     // rebuild_asset(ext, base_id, file_bytes() ?
 }
+
+#[derive(Debug)]
+pub enum BuildError
+{
+    InvalidSourcePath, // lies outside the sources root
+    NoBuilderForSource,
+    SourceIOError(io::Error),
+    SourceMetaIOError(io::Error),
+    SourceMetaSerializeError(ron::Error),
+    TooManyDerivedIDs,
+    BuilderError(Box<dyn std::error::Error>),
+    OutputIOError(std::io::Error),
+    OutputSerializeError(postcard::Error),
+}
+impl Display for BuildError
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { std::fmt::Debug::fmt(&self, f) }
+}
+impl std::error::Error for BuildError { }
 
 pub type BuildResults = Vec<AssetKey>;
 
@@ -173,6 +224,8 @@ pub struct BuildOutput<W: BuildOutputWrite>
 {
     writer: W,
     meta_writer: W,
+    builder_hash: BuilderHash,
+    format_hash: BuilderHash,
     asset_key: AssetKey,
     source_path: PathBuf,
     dependencies: Vec<AssetKey>,
@@ -212,6 +265,8 @@ impl<W: BuildOutputWrite> BuildOutput<W>
             key: self.asset_key,
             build_timestamp: chrono::Utc::now().timestamp_millis() as u64,
             source_path: self.source_path,
+            builder_hash: self.builder_hash,
+            format_hash: self.format_hash,
             dependencies: self.dependencies.into_boxed_slice(),
         };
         // TODO: read old file and compare asset key
@@ -231,6 +286,9 @@ pub struct BuildOutputs<'a>
     rel_source_path: &'a Path,
     abs_output_dir: &'a Path,
 
+    builder_hash: BuilderHash,
+    format_hash: BuilderHash,
+
     derived_ids: HashMap<AssetTypeId, AssetKeyDerivedId>,
 
     results: BuildResults,
@@ -246,7 +304,8 @@ impl<'a> BuildOutputs<'a>
         let derived_id: AssetKeyDerivedId =
         {
             let entry = self.derived_ids.entry(asset_type).or_insert(0);
-            entry.checked_add(1).ok_or(BuildError::TooManyDerivedIDs)? - 1
+            *entry = entry.checked_add(1).ok_or(BuildError::TooManyDerivedIDs)?;
+            *entry - 1
         };
 
         let asset_key = AssetKey::new(asset_type, derived_id, self.base_id);
@@ -261,6 +320,8 @@ impl<'a> BuildOutputs<'a>
         {
             writer: output_writer,
             meta_writer: output_meta_writer,
+            builder_hash: self.builder_hash,
+            format_hash: self.format_hash,
             asset_key,
             source_path: self.rel_source_path.to_path_buf(),
             dependencies: Vec::new(),

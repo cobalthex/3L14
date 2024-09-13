@@ -1,3 +1,5 @@
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 // todo: HDR support?
 #[repr(packed)]
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
@@ -124,7 +126,20 @@ impl From<Rgba> for wgpu::Color
         }
     }
 }
-
+impl Serialize for Rgba
+{
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    {
+        serializer.serialize_u32((*self).into())
+    }
+}
+impl<'de> Deserialize<'de> for Rgba
+{
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error>
+    {
+        u32::deserialize(deserializer).map(|o| o.into())
+    }
+}
 
 pub const TRANSPARENT_BLACK: Rgba = Rgba { r: 0, g: 0, b: 0, a: 0 };
 pub const BLACK: Rgba = Rgba { r: 0, g: 0, b: 0, a: 255 };

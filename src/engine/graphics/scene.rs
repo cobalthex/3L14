@@ -3,6 +3,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use glam::{Quat, Vec2, Vec3};
 use gltf::mesh::util::ReadIndices;
+use serde::{Deserialize, Serialize};
 use wgpu::{BufferSlice, BufferUsages, IndexFormat, vertex_attr_array, VertexBufferLayout};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
@@ -23,7 +24,7 @@ pub trait WgpuVertexDecl
 // todo: parametric vertex support
 #[repr(packed)]
 #[allow(dead_code)]
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct VertexPosNormTexCol
 {
     pub position: Vec3,
