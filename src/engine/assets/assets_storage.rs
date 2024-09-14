@@ -1,19 +1,19 @@
+use super::*;
+use crate::engine::graphics::debug_gui::DebugGui;
+use crossbeam::channel::{unbounded, Receiver, Sender};
+use egui::Ui;
+use notify::event::ModifyKind;
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify_debouncer_full::{Debouncer, FileIdMap};
+use parking_lot::Mutex;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use std::thread::{Builder, JoinHandle};
 use std::time::Duration;
-use crossbeam::channel::{Sender, Receiver, unbounded};
-use egui::Ui;
-use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use notify::event::ModifyKind;
-use notify_debouncer_full::{Debouncer, FileIdMap};
-use parking_lot::Mutex;
-use crate::engine::graphics::debug_gui::DebugGui;
-use super::*;
 
 // TODO: probably don't pass around UniCase publicly
 

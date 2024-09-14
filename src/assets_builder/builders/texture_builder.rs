@@ -1,11 +1,10 @@
-use std::error::Error;
-use std::io::Write;
-use png::{BitDepth, ColorType};
-use unicase::UniCase;
+use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionStrings};
 use game_3l14::engine::alloc_slice::alloc_slice_uninit;
 use game_3l14::engine::assets::AssetTypeId;
 use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat, MAX_MIP_COUNT};
-use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionStrings};
+use png::ColorType;
+use std::error::Error;
+use unicase::UniCase;
 
 pub struct TextureBuilder;
 impl AssetBuilder for TextureBuilder
