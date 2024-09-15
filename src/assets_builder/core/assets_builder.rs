@@ -2,6 +2,7 @@ use game_3l14::engine::assets::{AssetKey, AssetKeyBaseId, AssetKeyDerivedId, Ass
 use game_3l14::engine::ShortTypeName;
 use rand::RngCore;
 use std::collections::HashMap;
+use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hasher;
@@ -9,7 +10,7 @@ use std::io;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use metrohash::MetroHash64;
-use serde::{Serialize, Serializer};
+use rkyv::{Archive, Serialize};
 use unicase::UniCase;
 
 use super::*;
@@ -211,6 +212,7 @@ pub enum BuildError
     BuilderError(Box<dyn std::error::Error>),
     OutputIOError(std::io::Error),
     OutputSerializeError(postcard::Error),
+    OutputMetaSerializeError(ron::Error),
 }
 impl Display for BuildError
 {
@@ -242,9 +244,10 @@ impl<W: BuildOutputWrite> Seek for BuildOutput<W>
 impl<W: BuildOutputWrite> BuildOutput<W>
 {
     // Serialize some data to the stream using the default serializer
-    pub fn serialize<T: Serialize>(&mut self, value: &T) -> Result<(), postcard::Error>
+    pub fn serialize<T>(&mut self, value: &T) -> Result<usize, impl Error>
     {
-        postcard::to_io(&value, &mut self.writer).map(|_| ())
+        let val = rkyv::to_bytes(value)?;
+        self.writer.write(val.as_slice())
     }
 
     pub fn add_dependency(&mut self, dependent_asset: AssetKey)
@@ -270,7 +273,8 @@ impl<W: BuildOutputWrite> BuildOutput<W>
             dependencies: self.dependencies.into_boxed_slice(),
         };
         // TODO: read old file and compare asset key
-        postcard::to_io(&asset_meta, self.meta_writer).map_err(BuildError::OutputSerializeError)?;
+
+        ron::ser::to_writer(&asset_meta, self.meta_writer).map_err(BuildError::OutputMetaSerializeError)?;
 
         // todo: signal back to BuildOutputs on failure automatically?
 

@@ -1,6 +1,7 @@
 use glam::Vec3;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct AABB
 {
     pub min: Vec3,

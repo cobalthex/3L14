@@ -1,7 +1,7 @@
 pub mod render_passes;
 pub mod test_render_pipeline;
-pub mod scene;
-pub use scene::*;
+pub mod model;
+pub use model::*;
 
 pub mod colors;
 pub use colors::Rgba;

@@ -29,7 +29,6 @@ parking_lot = "0.12.3"
 sdl2 = { version = "0.37.0", features = ["ttf", "raw-window-handle"] }
 wgpu = { version = "22.1.0", features = ["naga-ir"] }
 paste = "1.0.15"
-serde = { version = "1.0.210", features = ["derive"] }
 jobsys = "0.2.0"
 futures = { version = "0.3.30", features = ["thread-pool"] }
 # egui-wgpu = "0.28.1"
@@ -59,6 +58,8 @@ metrohash = "1.0.6"
 postcard = { version = "1.0.10", features = ["use-std"] }
 ddsfile = "0.5.2"
 ron = { version = "0.8.1", features = ["integer128"] }
+rkyv = "0.7.45"
+serde = { version = "1.0.210", features = ["derive"] }
 
 [dev-dependencies]
 criterion = { version = "0.5.1" }

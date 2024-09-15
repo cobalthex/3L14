@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use unicase::UniCase;
 use game_3l14::engine::AABB;
 use game_3l14::engine::assets::AssetTypeId;
-use game_3l14::engine::graphics::{Rgba, VertexPosNormTexCol};
+use game_3l14::engine::graphics::{ModelFile, ModelFileMesh, ModelFileMeshIndices, Rgba, VertexPosNormTexCol};
 use game_3l14::engine::graphics::material::Material;
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionStrings};
 
@@ -71,26 +71,6 @@ impl AssetBuilder for ModelBuilder
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub enum ModelFileMeshIndices
-{
-    U16(Box<[u16]>),
-    U32(Box<[u32]>),
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ModelFileMesh
-{
-    pub vertices: Box<[VertexPosNormTexCol]>,
-    pub indices: ModelFileMeshIndices,
-    // TODO: materials
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ModelFile
-{
-    pub meshes: Box<[ModelFileMesh]>,
-}
 
 fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &Vec<gltf::image::Data>) -> Result<ModelFile, ModelImportError>
 {
@@ -180,6 +160,7 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
         {
             vertices: vertices.into_boxed_slice(),
             indices,
+            bounds: AABB::new(bb.min.into(), bb.max.into()),
         });
     }
 

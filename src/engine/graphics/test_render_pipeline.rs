@@ -3,7 +3,7 @@ use wgpu::*;
 use crate::engine::assets::AssetHandle;
 use crate::engine::graphics::assets::shader::Shader;
 use crate::engine::graphics::Renderer;
-use super::scene::{VertexPosNormTexCol, WgpuVertexDecl};
+use super::model::{VertexPosNormTexCol, WgpuVertexDecl};
 
 pub fn new(
     renderer: &Renderer,

@@ -1,8 +1,11 @@
 use std::any::TypeId;
 use super::*;
 use std::collections::HashMap;
+use std::error::Error;
 use std::io::{Read, Seek};
+use std::mem::MaybeUninit;
 use std::sync::Arc;
+use rkyv::Deserialize;
 use crate::engine::ShortTypeName;
 
 pub struct AssetLoadRequest
@@ -15,8 +18,17 @@ pub struct AssetLoadRequest
 }
 impl AssetLoadRequest
 {
-    // Assets/lifecyclers are responsible for tracking/maintaining references
+    pub fn deserialize<'de, T: Deserialize>(&'de mut self) -> Result<T, impl Error>
+    {
+        let mut des: MaybeUninit<T> = MaybeUninit::uninit();
+        postcard::from_io::<'de, T, _>((&mut self.input, unsafe { std::slice::from_raw_parts_mut(&mut des, std::mem::size_of_val(&des)) })).map(|v|
+        unsafe {
+            des.assume_init()
+        })
+    }
 
+    // Load a dependency
+    // Assets/lifecyclers are responsible for tracking/maintaining dependency references
     #[must_use]
     pub fn load_dependency<D: Asset>(&self, asset_key: AssetKey) -> AssetHandle<D>
     {
@@ -24,6 +36,8 @@ impl AssetLoadRequest
         self.storage.enqueue_load(asset_key, |h| AssetLifecycleRequest::LoadFileBacked(h))
     }
 
+    // Load a dependency from a specified source
+    // Assets/lifecyclers are responsible for tracking/maintaining dependency references
     #[must_use]
     pub fn load_dependency_from<D: Asset, R: AssetRead + 'static>(
         &self,
