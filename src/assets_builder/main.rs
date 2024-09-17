@@ -22,7 +22,7 @@ fn main()
     let mut builder_cfg = AssetsBuilderConfig::new(&src_assets_root, &built_assets_root);
     builder_cfg.add_builder(builders::TextureBuilder);
     builder_cfg.add_builder(builders::ModelBuilder);
-    
+
     eprintln!("Starting assets builder");
 
     let builder = AssetsBuilder::new(builder_cfg);

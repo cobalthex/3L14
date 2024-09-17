@@ -55,11 +55,10 @@ type-map = "0.5.0"
 notify-debouncer-full = "0.3.1"
 rand = "0.8.5"
 metrohash = "1.0.6"
-postcard = { version = "1.0.10", features = ["use-std"] }
 ddsfile = "0.5.2"
 ron = { version = "0.8.1", features = ["integer128"] }
-rkyv = "0.7.45"
 serde = { version = "1.0.210", features = ["derive"] }
+bitcode = { version = "0.6.3", features = ["glam", "std"] }
 
 [dev-dependencies]
 criterion = { version = "0.5.1" }

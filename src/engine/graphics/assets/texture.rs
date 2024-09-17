@@ -1,23 +1,19 @@
-use std::io::Read;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, Ordering};
-use arc_swap::ArcSwap;
-use egui::Ui;
-use png::DecodingError;
-use serde::{Deserialize, Serialize};
-use wgpu::{Extent3d, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor};
-use wgpu::util::{DeviceExt, TextureDataOrder};
-use crate::engine::alloc_slice::alloc_slice_uninit;
 use crate::engine::graphics::Renderer;
 use crate::format_bytes;
+use bitcode::{Decode, Encode};
+use egui::Ui;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
+use wgpu::util::{DeviceExt, TextureDataOrder};
+use wgpu::{Extent3d, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor};
 
-use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadRequest, AssetPayload, AssetTypeId};
+use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId};
 use crate::engine::graphics::debug_gui::DebugGui;
 
 pub const MAX_MIP_COUNT: usize = 16;
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize)]
+#[derive(Encode, Decode)]
 pub enum TextureFilePixelFormat
 {
     // Uncompressed formats
@@ -30,7 +26,7 @@ pub enum TextureFilePixelFormat
 
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Encode, Decode)]
 pub struct TextureFile
 {
     pub width: u32,
@@ -143,39 +139,9 @@ impl AssetLifecycler for TextureLifecycler
     type Asset = Texture;
     fn load(&self, request: AssetLoadRequest) -> AssetPayload<Self::Asset>
     {
-        // TESTING
-        let gltf_texture = unsafe
-        {
-            let raw: *mut crate::engine::graphics::GltfTexture = &*request.input as *const _ as *mut _;
-            &*raw
-        };
-        let tex = self.create(gltf_texture.width, gltf_texture.height, gltf_texture.texel_data.as_slice());
-
-        AssetPayload::Available(tex)
-        // asset system handles lookups
-        // match self.try_import_png(request.input.as_mut())
-        // {
-        //     Ok(tex) =>
-        //     {
-        //         request.finish(tex);
-        //     }
-        //     Err(e) =>
-        //     {
-        //         eprintln!("Failed to create texture: {e}");
-        //         request.error(AssetLoadError::ParseError);
-        //     }
-        // }
+        // TODO
+        AssetPayload::Unavailable(AssetLoadError::ParseError(0))
     }
-    //
-    // fn before_drop(&self, payload: AssetPayload<Texture<'a>>)
-    // {
-    //     if let AssetPayload::Available(tex) = payload
-    //     {
-    //         let bytes = tex.total_device_bytes();
-    //         let old_val = self.device_bytes.fetch_sub(bytes, Ordering::AcqRel);
-    //         debug_assert!((old_val - bytes) >= 0);
-    //     }
-    // }
 }
 
 impl<'a> DebugGui<'a> for TextureLifecycler

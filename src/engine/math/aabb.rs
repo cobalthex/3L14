@@ -1,7 +1,7 @@
+use bitcode::{Decode, Encode};
 use glam::Vec3;
-use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Encode, Decode)]
 pub struct AABB
 {
     pub min: Vec3,

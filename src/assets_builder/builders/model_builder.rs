@@ -1,13 +1,12 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::io::Write;
 use glam::Vec3;
 use gltf::mesh::util::ReadIndices;
-use serde::{Deserialize, Serialize};
 use unicase::UniCase;
 use game_3l14::engine::AABB;
 use game_3l14::engine::assets::AssetTypeId;
 use game_3l14::engine::graphics::{ModelFile, ModelFileMesh, ModelFileMeshIndices, Rgba, VertexPosNormTexCol};
-use game_3l14::engine::graphics::material::Material;
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionStrings};
 
 #[derive(Debug)]
@@ -52,7 +51,7 @@ impl AssetBuilder for ModelBuilder
         if input.file_extension() == &UniCase::new("glb") ||
             input.file_extension() == &UniCase::new("gltf")
         {
-            //let (document, buffers, _img) = gltf::import(file)?;
+        //let (document, buffers, _img) = gltf::import(file)?;
             let gltf::Gltf { document, blob } = gltf::Gltf::from_reader(input)?;
 
             let buffers =  gltf::import_buffers(&document, None, blob)?;
@@ -62,6 +61,7 @@ impl AssetBuilder for ModelBuilder
             {
                 let model = parse_gltf(mesh, &buffers, &images)?;
                 let mut output = outputs.add_output(AssetTypeId::Model)?;
+
                 output.serialize(&model)?;
                 output.finish()?;
             }

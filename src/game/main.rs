@@ -142,7 +142,7 @@ fn main() -> ExitReason
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        let mut test_scene = assets.load::<Scene, _>(&"shapes.glb");
+        let mut test_model = assets.load::<Model>(0x0700635a14c55b927bab26027c81u128.into());
         // let test_shader = assets.load::<Shader, _>(&"shaders/test.wgsl");
 
         let mut camera = Camera::new(Some("fp_cam"), renderer.display_aspect_ratio());

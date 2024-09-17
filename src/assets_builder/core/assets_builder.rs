@@ -9,8 +9,8 @@ use std::hash::Hasher;
 use std::io;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use bitcode::Encode;
 use metrohash::MetroHash64;
-use rkyv::{Archive, Serialize};
 use unicase::UniCase;
 
 use super::*;
@@ -211,7 +211,6 @@ pub enum BuildError
     TooManyDerivedIDs,
     BuilderError(Box<dyn std::error::Error>),
     OutputIOError(std::io::Error),
-    OutputSerializeError(postcard::Error),
     OutputMetaSerializeError(ron::Error),
 }
 impl Display for BuildError
@@ -243,14 +242,21 @@ impl<W: BuildOutputWrite> Seek for BuildOutput<W>
 }
 impl<W: BuildOutputWrite> BuildOutput<W>
 {
+    /* TODO: use savefile for serialization?
+    - versioned, can do migrations more easily
+        migrations would take the form of loading the old asset, applying any transforms, and re-baking
+    - useful?
+    - type hashing (type_hash)?
+     */
+
     // Serialize some data to the stream using the default serializer
-    pub fn serialize<T>(&mut self, value: &T) -> Result<usize, impl Error>
+    pub fn serialize<T: Encode>(&mut self, value: &T) -> Result<usize, impl Error>
     {
-        let val = rkyv::to_bytes(value)?;
+        let val = bitcode::encode(value);
         self.writer.write(val.as_slice())
     }
 
-    pub fn add_dependency(&mut self, dependent_asset: AssetKey)
+    pub fn depends_on(&mut self, dependent_asset: AssetKey)
     {
         self.dependencies.push(dependent_asset);
     }
@@ -274,7 +280,7 @@ impl<W: BuildOutputWrite> BuildOutput<W>
         };
         // TODO: read old file and compare asset key
 
-        ron::ser::to_writer(&asset_meta, self.meta_writer).map_err(BuildError::OutputMetaSerializeError)?;
+        ron::ser::to_writer(self.meta_writer, &asset_meta).map_err(BuildError::OutputMetaSerializeError)?;
 
         // todo: signal back to BuildOutputs on failure automatically?
 

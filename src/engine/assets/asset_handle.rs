@@ -1,6 +1,7 @@
 use std::alloc::Layout;
 use std::any::{Any, TypeId};
-use std::fmt::{Debug, Formatter};
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::mem::swap;
@@ -31,6 +32,11 @@ pub enum AssetLoadError
     #[cfg(test)]
     Test(u16),
 }
+impl Display for AssetLoadError
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { Debug::fmt(self, f) }
+}
+impl Error for AssetLoadError { }
 
 pub type AssetPayload<Asset> = DataPayload<Asset, AssetLoadError>;
 impl<A: Asset> AssetPayload<A>

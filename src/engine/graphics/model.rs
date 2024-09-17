@@ -1,6 +1,7 @@
 use glam::{Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
+use bitcode::{Decode, Encode};
 use wgpu::{vertex_attr_array, BufferSlice, IndexFormat, VertexBufferLayout};
 
 use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadRequest, AssetPayload, AssetTypeId, HasAssetDependencies};
@@ -15,9 +16,9 @@ pub trait WgpuVertexDecl
 }
 
 // todo: parametric vertex support
-#[repr(packed)]
+#[repr(align(4))]
 #[allow(dead_code)]
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Encode, Decode)]
 pub struct VertexPosNormTexCol
 {
     pub position: Vec3,
@@ -78,18 +79,18 @@ impl Mesh
         0 .. self.index_count
     }
     pub fn index_format(&self) -> IndexFormat { self.index_format }
-    
+
     pub fn material(&self) -> &Material { &self.material }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Encode, Decode)]
 pub enum ModelFileMeshIndices
 {
     U16(Box<[u16]>),
     U32(Box<[u32]>),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Encode, Decode)]
 pub struct ModelFileMesh
 {
     pub vertices: Box<[VertexPosNormTexCol]>,
@@ -98,7 +99,7 @@ pub struct ModelFileMesh
     // TODO: materials
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Encode, Decode)]
 pub struct ModelFile
 {
     pub meshes: Box<[ModelFileMesh]>,
@@ -120,7 +121,7 @@ impl Model
 impl Asset for Model
 {
     fn asset_type() -> AssetTypeId { AssetTypeId::Model }
-    
+
     fn all_dependencies_loaded(&self) -> bool
     {
         self.meshes.iter().all(|m|
@@ -140,7 +141,7 @@ impl AssetLifecycler for ModelLifecycler
 
     fn load(&self, request: AssetLoadRequest) -> AssetPayload<Self::Asset>
     {
-        
+
 
         todo!()
     }

@@ -1,8 +1,8 @@
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use bitcode::{Decode, Encode};
 
 // todo: HDR support?
 #[repr(packed)]
-#[derive(Debug, Default, Copy, Clone, PartialEq)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Encode, Decode)]
 pub struct Rgba
 {
     pub r: u8,
@@ -124,20 +124,6 @@ impl From<Rgba> for wgpu::Color
             b: (color.b as f64) / 255.0,
             a: (color.a as f64) / 255.0,
         }
-    }
-}
-impl Serialize for Rgba
-{
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    {
-        serializer.serialize_u32((*self).into())
-    }
-}
-impl<'de> Deserialize<'de> for Rgba
-{
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error>
-    {
-        u32::deserialize(deserializer).map(|o| o.into())
     }
 }
 
