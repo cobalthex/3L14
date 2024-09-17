@@ -57,6 +57,7 @@ jobs:
         # add-to-environment: # optional, default is false
         # A GitHub API token.
         # token: # optional, default is ${{ github.token }}
+        install-linux-dependencies: true
     
     - name: Build
       run: cargo build --verbose --release

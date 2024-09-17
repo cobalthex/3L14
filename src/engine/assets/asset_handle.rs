@@ -4,13 +4,12 @@ use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::future::Future;
 use std::marker::PhantomData;
-use std::mem::swap;
+use std::mem::{swap, ManuallyDrop};
+use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicUsize, Ordering};
 use std::task::{Context, Poll, Waker};
-use arc_swap::access::Access;
-use arc_swap::{ArcSwap, ArcSwapAny, ArcSwapOption};
 use crossbeam::channel::Sender;
 use parking_lot::Mutex;
 use crate::engine::{DataPayload, ShortTypeName};
@@ -53,14 +52,6 @@ impl<A: Asset> AssetPayload<A>
     }
 }
 
-type _PayloadProjectionFn<A: Asset> = fn(&Option<Arc<()>>) -> &AssetPayload<A>;
-// type PayloadGuard<A> = arc_swap::access::MapGuard<
-//     arc_swap::Guard<Option<Arc<AssetPayload<A>>>, arc_swap::DefaultStrategy>,
-//     _PayloadProjectionFn<A>,
-//     Option<Arc<AssetPayload<A>>>,
-//     AssetPayload<A>>; // holy shit this is ugly; this *should* be safe;
-type PayloadGuard<'a, A> = &'a AssetPayload<A>; // TODO
-
 // The inner pointer to each asset handle. This should generally not be used by itself b/c it does not have any RAII for ref-counting
 pub(super) struct AssetHandleInner
 {
@@ -75,42 +66,91 @@ pub(super) struct AssetHandleInner
     generation: AtomicU32, // updated <after> storing a payload
     is_reloading: AtomicBool, // cleared before payload is set
 
-    payload: *const (), // Will be null while the handle is pending, the typed value is a raw inner to an Arc<A: Asset>
+    payload: AtomicUsize, // null when pending
 }
+
+pub struct PayloadGuard<'a, A: Asset>
+{
+    inner: ManuallyDrop<Option<Arc<AssetPayload<A>>>>,
+    _phantom: PhantomData<&'a A>,
+}
+impl<'a, A: Asset> PayloadGuard<'a, A>
+{
+    fn new(ptr: usize) -> Self
+    {
+        match ptr
+        {
+            0 => Self { inner: ManuallyDrop::new(None), _phantom: PhantomData::default() },
+            nz => Self
+            {
+                inner: ManuallyDrop::new(Some(unsafe { Arc::from_raw(nz as *const AssetPayload<A>) })),
+                _phantom: PhantomData::default(),
+            }
+        }
+    }
+
+    pub fn clone(&self) -> Option<Arc<AssetPayload<A>>>
+    {
+        self.inner.as_ref().map(|a| a.clone())
+    }
+}
+impl<'a, A: Asset> Deref for PayloadGuard<'a, A>
+{
+    type Target = AssetPayload<A>;
+
+    fn deref(&self) -> &Self::Target
+    {
+        match self.inner.deref()
+        {
+            None => &AssetPayload::Pending,
+            Some(arc) => arc
+        }
+    }
+}
+
 impl AssetHandleInner
 {
-    // Store a new payload and signal. Note: storing ::Pending will clear the pointer
     pub fn store_payload<A: Asset>(&self, payload: AssetPayload<A>)
     {
         debug_assert_eq!(A::asset_type(), self.key.asset_type());
+        // (debug) store a TypeId to verify templates match?
 
-        todo!()
-        // match payload
-        // {
-        //     DataPayload::Pending => self.payload.store(None),
-        //     _ =>
-        //     {
-        //         let arc = Arc::into_raw(Arc::new(payload));
-        //         self.payload.store(Some(unsafe { Arc::from_raw(arc as *const ()) }))
-        //     },
-        // }
-        // self.is_reloading.store(false, Ordering::Release); // could this just be is_loading() ?
-        //
-        // self.generation.fetch_add(1, Ordering::AcqRel); // TODO: verify ordering
-        //
-        // let mut locked = self.ready_waker.lock();
-        // if let Some(waker) = locked.take()
-        // {
-        //     waker.wake();
-        // }
+        match self.payload.load(Ordering::Acquire) // todo: verify ordering?
+        {
+            0 => {},
+            n =>
+            unsafe {
+                let _old_arc = Arc::from_raw(n as *const AssetPayload<A>);
+            }
+        }
+
+        match payload
+        {
+            DataPayload::Pending => self.payload.store(0, Ordering::Release),
+            _ =>
+            {
+                let arc = Arc::into_raw(Arc::new(payload));
+                self.payload.store(arc as usize, Ordering::Release); // todo: verify ordering
+            },
+        }
+
+        // ideally this entire function should be atomic (RwLock the whole thing?)
+        self.is_reloading.store(false, Ordering::Release); // could this just be is_loading() ?
+        self.generation.fetch_add(1, Ordering::AcqRel); // TODO: verify ordering
+
+        let mut locked = self.ready_waker.lock();
+        if let Some(waker) = locked.take()
+        {
+            waker.wake();
+        }
     }
-    
+
     #[inline]
     pub fn key(&self) -> AssetKey
     {
         self.key
     }
-    
+
     #[inline]
     pub fn asset_type(&self) -> AssetTypeId
     {
@@ -118,12 +158,10 @@ impl AssetHandleInner
     }
 
     #[inline]
-    pub fn payload<A: Asset>(&self) -> &Arc<AssetPayload<A>>
+    pub fn payload<'a, A: Asset>(&'a self) -> PayloadGuard<'a, A>
     {
-        if self.payload.is_null() { todo!() }
-
-        let arc = unsafe { Arc::from_raw(self.payload as *const AssetPayload<A>) };
-        todo!()
+        let payload = self.payload.load(Ordering::Relaxed); // relaxed ok?
+        PayloadGuard::new(payload)
     }
 
     #[inline]
@@ -150,7 +188,7 @@ impl UntypedAssetHandle
             ready_waker: Mutex::new(None),
             generation: AtomicU32::new(0),
             is_reloading: AtomicBool::new(false),
-            payload: std::ptr::null(), // pending
+            payload: AtomicUsize::new(0), // pending
         };
         let layout = Layout::for_value(&inner);
         Self(unsafe

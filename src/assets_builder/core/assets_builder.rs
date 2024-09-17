@@ -302,7 +302,6 @@ pub struct BuildOutputs<'a>
     derived_ids: HashMap<AssetTypeId, AssetKeyDerivedId>,
 
     results: BuildResults,
-
 }
 impl<'a> BuildOutputs<'a>
 {
