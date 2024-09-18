@@ -81,6 +81,8 @@ impl MaterialCache
         let bind_group_layout = &self.bind_group_layouts;
         let sampler = &self.samplers;
 
+        // todo: create a bind group layout for missing texture?
+
         Some(renderer.device().create_bind_group(&BindGroupDescriptor
         {
             label: Some("material bind group"),

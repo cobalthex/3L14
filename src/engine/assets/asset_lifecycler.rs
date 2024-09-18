@@ -7,6 +7,7 @@ use crate::engine::ShortTypeName;
 
 pub struct AssetLoadRequest
 {
+    pub asset_key: AssetKey,
     pub input: Box<dyn AssetRead>, // TODO: memory mapped buffer?
     storage: Arc<AssetsStorage>,
 
@@ -62,6 +63,7 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
     {
         let result = self.load(AssetLoadRequest
         {
+            asset_key: untyped_handle.as_ref().key(),
             input,
             storage,
         });

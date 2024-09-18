@@ -1,14 +1,13 @@
 use std::io::Read;
 use glam::{Vec2, Vec3};
-use serde::{Deserialize, Serialize};
 use std::ops::Range;
 use std::sync::Arc;
-use bitcode::{Decode, Encode, Error};
-use wgpu::{vertex_attr_array, BufferSlice, IndexFormat, VertexBufferLayout};
-
+use bitcode::{Decode, Encode};
+use wgpu::{vertex_attr_array, BufferSlice, BufferUsages, IndexFormat, VertexBufferLayout};
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId, HasAssetDependencies};
 use crate::engine::graphics::material::Material;
-use crate::engine::AABB;
+use crate::engine::{AsU8Slice, AABB};
 use crate::engine::assets::AssetLoadError::ParseError;
 use crate::engine::graphics::Renderer;
 use super::colors::Rgba;
@@ -49,7 +48,7 @@ impl WgpuVertexDecl for VertexPosNormTexCol
     fn layout() -> VertexBufferLayout<'static> { Self::LAYOUT }
 }
 
-pub struct Mesh
+pub struct ModelMesh
 {
     bounds: AABB, // note; these are untransformed
     vertices: wgpu::Buffer,
@@ -62,7 +61,7 @@ pub struct Mesh
     // todo: materials
     material: Material,
 }
-impl Mesh
+impl ModelMesh
 {
     pub fn vertices(&self) -> BufferSlice
     {
@@ -105,6 +104,7 @@ pub struct ModelFileMesh
 #[derive(Encode, Decode)]
 pub struct ModelFile
 {
+    pub bounds: AABB,
     pub meshes: Box<[ModelFileMesh]>,
 }
 
@@ -112,11 +112,11 @@ pub struct Model
 {
     name: Option<String>, //debug only?
     bounds: AABB, // note; these are untransformed
-    meshes: Box<[Mesh]>,
+    meshes: Box<[ModelMesh]>,
 }
 impl Model
 {
-    pub fn meshes(&self) -> &[Mesh]
+    pub fn meshes(&self) -> &[ModelMesh]
     {
         self.meshes.as_ref()
     }
@@ -167,13 +167,56 @@ impl AssetLifecycler for ModelLifecycler
             Ok(mf) =>
             {
                 // combine buffers?
-                for mesh in mf.meshes
+                let meshes =
+                mf.meshes.iter().map(|mesh|
                 {
+                    let vbuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
+                    {
+                        label: Some(format!("{:?} vertices", request.asset_key).as_str()),
+                        contents: unsafe { mesh.vertices.as_u8_slice() },
+                        usage: BufferUsages::VERTEX,
+                    });
 
-                }
+                    let index_count;
+                    let ibuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
+                    {
+                        label: Some(format!("{:?} indices", request.asset_key).as_str()),
+                        contents: match &mesh.indices
+                        {
+                            ModelFileMeshIndices::U16(u16s) => unsafe { index_count = u16s.len(); u16s.as_u8_slice() }
+                            ModelFileMeshIndices::U32(u32s) => unsafe { index_count = u32s.len(); u32s.as_u8_slice() }
+                        },
+                        usage: BufferUsages::INDEX,
+                    });
 
-                todo!()
-                // AssetPayload::Available(model)
+                    ModelMesh
+                    {
+                        bounds: mesh.bounds,
+                        vertices: vbuffer,
+                        vertex_count: mesh.vertices.len() as u32,
+                        indices: ibuffer,
+                        index_count: index_count as u32,
+                        index_format: match mesh.indices
+                        {
+                            ModelFileMeshIndices::U16(_) => IndexFormat::Uint16,
+                            ModelFileMeshIndices::U32(_) => IndexFormat::Uint32,
+                        },
+                        material: Material
+                        {
+                            albedo_map: Some(request.load_dependency(0x00400000d8355d3edc9b042bc8f71a39u128.into())),
+                            .. Default::default()
+                        },
+                    }
+                });
+
+                let model = Model
+                {
+                    bounds: mf.bounds,
+                    name: Some(format!("{:?}", request.asset_key)), // debug name?
+                    meshes: meshes.collect(),
+                };
+
+                AssetPayload::Available(model)
             },
             Err(err) =>
             {

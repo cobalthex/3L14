@@ -77,6 +77,9 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
     let mut model_bounds = AABB { min: Vec3::MAX, max: Vec3::MIN };
     let mut meshes: Vec<ModelFileMesh> = Vec::new();
 
+    let mut model_bounds = AABB::zero();
+
+    // todo: iter.map() ?
     for in_prim in in_mesh.primitives()
     {
         let bb = in_prim.bounding_box();
@@ -156,16 +159,21 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
         //     roughness: pbr.roughness_factor(),
         // };
 
+        let mesh_bounds =AABB::new(bb.min.into(), bb.max.into());
+        model_bounds.union_with(mesh_bounds);
+
+        // TODO: assert vertex/index count < 2^32
         meshes.push(ModelFileMesh
         {
             vertices: vertices.into_boxed_slice(),
             indices,
-            bounds: AABB::new(bb.min.into(), bb.max.into()),
+            bounds: mesh_bounds,
         });
     }
 
     Ok(ModelFile
     {
+        bounds: model_bounds,
         meshes: meshes.into_boxed_slice(),
     })
 }

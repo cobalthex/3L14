@@ -423,6 +423,7 @@ fn main() -> ExitReason
 
                                 let Some(mtl_bind_group) = material_cache.get_or_create_bind_group(mesh.material(), &renderer)
                                     else { continue; };
+                                
                                 test_pass.set_bind_group(2, &mtl_bind_group, &[]);
 
                                 test_pass.draw_indexed(mesh.index_range(), 0, 0..1);

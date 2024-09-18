@@ -1,8 +1,9 @@
 use bitcode::{Decode, Encode};
+use crate::engine::graphics::colors;
 
 // todo: HDR support?
 #[repr(packed)]
-#[derive(Debug, Default, Copy, Clone, PartialEq, Encode, Decode)]
+#[derive(Debug, Copy, Clone, PartialEq, Encode, Decode)]
 pub struct Rgba
 {
     pub r: u8,
@@ -31,6 +32,10 @@ impl Rgba
 
         Rgba { r: f(self.r), g: f(self.g), b: f(self.b), a: self.a }
     }
+}
+impl Default for Rgba
+{
+    fn default() -> Self { colors::WHITE } 
 }
 impl From<u32> for Rgba
 {

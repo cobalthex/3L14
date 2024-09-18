@@ -288,8 +288,7 @@ impl<A: Asset> AssetHandle<A>
     #[inline]
     pub fn is_loaded_recursive(&self) -> bool
     {
-        todo!()
-        // self.payload().is_loaded_recursive()
+        self.payload().is_loaded_recursive()
     }
 
     #[inline]
