@@ -23,7 +23,7 @@ fn main()
         Ok(meta) if meta.is_symlink() => {},
     Ok(_) => panic!("! out-dir assets file existed but was not a symlink"),
         Err(err) if err.kind() != ErrorKind::NotFound => panic!("! out-dir assets file '{assets_symlink:?}' was unreadable: {err:?}"),
-        _ => symlink::symlink_dir("assets/", assets_symlink).expect("! Failed to symlink asset directory"),
+        _ => symlink::symlink_dir("assets/build", assets_symlink).expect("! Failed to symlink asset directory"),
     }
 
     if let Some(bin_name) = env::var_os("CARGO_BIN_NAME")

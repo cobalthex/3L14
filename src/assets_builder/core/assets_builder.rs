@@ -148,8 +148,7 @@ impl AssetsBuilder
             {
                 // TODO: assert that thread_rng impls CryptoRng
                 // loop while base ID is zero?
-                let mut base_id: AssetKeyBaseId = Default::default();
-                rand::thread_rng().fill_bytes(&mut base_id);
+                let base_id= AssetKey::generate_base_id();
 
                 let new_meta = SourceMetadata
                 {
@@ -317,7 +316,7 @@ impl<'a> BuildOutputs<'a>
             *entry - 1
         };
 
-        let asset_key = AssetKey::new(asset_type, derived_id, self.base_id);
+        let asset_key = AssetKey::new(asset_type, false, derived_id, self.base_id);
 
         let output_path = self.abs_output_dir.join(asset_key.as_file_name());
         let output_writer = std::fs::File::create(&output_path).map_err(BuildError::OutputIOError)?;

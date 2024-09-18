@@ -220,8 +220,8 @@ impl AssetsStorage
                                     Ok(read) => read,
                                     Err(err) =>
                                     {
-                                        eprintln!("Failed to read asset file: {err}");
-                                        lifecycler.error_untyped(untyped_handle, AssetLoadError::IOError(err.kind()));
+                                        eprintln!("Failed to read asset file {:?}: {err}", self.asset_key_to_file_path(inner.key()));
+                                        lifecycler.error_untyped(untyped_handle, AssetLoadError::IOError(err));
                                         return;
                                     }
                                 };
@@ -276,7 +276,7 @@ impl Assets
 {
     pub fn new(asset_lifecyclers: AssetLifecyclers, config: AssetsConfig) -> Self
     {
-        let assets_root = Path::new("assets/").canonicalize().expect("Failed to parse assets_root path");
+        let assets_root = Path::new("assets/build").canonicalize().expect("Failed to parse assets_root path");
 
         let (send, recv) = unbounded::<AssetLifecycleRequest>();
         let storage = Arc::new(AssetsStorage

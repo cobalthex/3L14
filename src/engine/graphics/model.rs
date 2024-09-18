@@ -1,12 +1,15 @@
+use std::io::Read;
 use glam::{Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
-use bitcode::{Decode, Encode};
+use std::sync::Arc;
+use bitcode::{Decode, Encode, Error};
 use wgpu::{vertex_attr_array, BufferSlice, IndexFormat, VertexBufferLayout};
 
-use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadRequest, AssetPayload, AssetTypeId, HasAssetDependencies};
+use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId, HasAssetDependencies};
 use crate::engine::graphics::material::Material;
 use crate::engine::AABB;
+use crate::engine::assets::AssetLoadError::ParseError;
 use crate::engine::graphics::Renderer;
 use super::colors::Rgba;
 
@@ -133,16 +136,50 @@ impl Asset for Model
 
 pub struct ModelLifecycler
 {
-    pub renderer: Renderer,
+    pub renderer: Arc<Renderer>,
+}
+impl ModelLifecycler
+{
+    pub fn new(renderer: Arc<Renderer>) -> Self
+    {
+        Self { renderer }
+    }
 }
 impl AssetLifecycler for ModelLifecycler
 {
     type Asset = Model;
 
-    fn load(&self, request: AssetLoadRequest) -> AssetPayload<Self::Asset>
+    fn load(&self, mut request: AssetLoadRequest) -> AssetPayload<Self::Asset>
     {
+        let mut bytes = Vec::new();
+        match request.input.read_to_end(&mut bytes)
+        {
+            Ok(_) => {}
+            Err(err) =>
+            {
+                eprintln!("Failed to read asset bytes: {err}");
+                return AssetPayload::Unavailable(AssetLoadError::IOError(err));
+            }
+        }
 
+        match bitcode::decode::<ModelFile>(bytes.as_slice())
+        {
+            Ok(mf) =>
+            {
+                // combine buffers?
+                for mesh in mf.meshes
+                {
 
-        todo!()
+                }
+
+                todo!()
+                // AssetPayload::Available(model)
+            },
+            Err(err) =>
+            {
+                eprintln!("Error parsing model file: {err}");
+                AssetPayload::Unavailable(ParseError(1))
+            }
+        }
     }
 }

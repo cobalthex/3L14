@@ -4,7 +4,7 @@ use std::time::Duration;
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use game_3l14::engine::{*, timing::*, input::*, windows::*, graphics::*, world::*, assets::*};
 use clap::Parser;
-use glam::{Quat, Vec3};
+use glam::{Mat4, Quat, Vec3};
 use wgpu::*;
 use game_3l14::engine::graphics::assets::shader::ShaderLifecycler;
 use game_3l14::engine::graphics::assets::texture::TextureLifecycler;
@@ -126,7 +126,7 @@ fn main() -> ExitReason
         enable_fs_watcher: cfg!(debug_assertions)
     };
     let assets = Assets::new(AssetLifecyclers::default()
-            .add_lifecycler(SceneLifecycler::new(renderer.clone()))
+            .add_lifecycler(ModelLifecycler::new(renderer.clone()))
             .add_lifecycler(TextureLifecycler::new(renderer.clone()))
             .add_lifecycler(ShaderLifecycler::new(renderer.clone()))
         , assets_config);
@@ -142,7 +142,8 @@ fn main() -> ExitReason
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        let mut test_model = assets.load::<Model>(0x0700635a14c55b927bab26027c81u128.into());
+        let model_key: AssetKey = 0x00700000cc7bc1421648535151d91992u128.into();
+        let mut test_model = assets.load::<Model>(model_key);
         // let test_shader = assets.load::<Shader, _>(&"shaders/test.wgsl");
 
         let mut camera = Camera::new(Some("fp_cam"), renderer.display_aspect_ratio());
@@ -234,31 +235,6 @@ fn main() -> ExitReason
             ],
             label: Some("Camera bind group"),
         });
-        //
-        // let tex =
-        // {
-        //     let png_file = std::fs::File::open("assets/test.png").unwrap();
-        //     let png = png::Decoder::new(png_file);
-        //     let mut png_reader = png.read_info().unwrap();
-        //     let mut png_buf = unsafe { alloc_slice_uninit(png_reader.output_buffer_size()).unwrap() };
-        //     let png_info = png_reader.next_frame(&mut png_buf).unwrap();
-        //     renderer.device().create_texture_with_data(renderer.queue(), &TextureDescriptor
-        //     {
-        //         label: Some("assets/test.png"),
-        //         size: Extent3d
-        //         {
-        //             width: png_info.width,
-        //             height: png_info.height,
-        //             depth_or_array_layers: 1,
-        //         },
-        //         mip_level_count: 1,
-        //         sample_count: 1,
-        //         dimension: TextureDimension::D2,
-        //         format: TextureFormat::Rgba8Unorm,
-        //         usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
-        //         view_formats: &[],
-        //     }, TextureDataOrder::LayerMajor, &png_buf[..png_info.buffer_size()])
-        // };
 
         let material_cache = MaterialCache::new(&renderer);
 
@@ -400,23 +376,23 @@ fn main() -> ExitReason
 
                 let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
                 {
-                    match &*test_scene.payload()
+                    match &*test_model.payload()
                     {
-                        AssetPayload::<Scene>::Pending =>
+                        AssetPayload::<Model>::Pending =>
                         {
                             render_passes::test(
                                 &render_frame,
                                 &mut encoder,
                                 Some(colors::GOOD_PURPLE));
                         }
-                        AssetPayload::<Scene>::Unavailable(_) =>
+                        AssetPayload::<Model>::Unavailable(_) =>
                         {
                             render_passes::test(
                                 &render_frame,
                                 &mut encoder,
                                 Some(colors::BAD_RED));
                         }
-                        AssetPayload::<Scene>::Available(scene) =>
+                        AssetPayload::<Model>::Available(model) =>
                         {
                             let mut test_pass = render_passes::test(
                                 &render_frame,
@@ -427,38 +403,36 @@ fn main() -> ExitReason
                             test_pass.set_bind_group(0, &cam_bind_group, &[]);
 
                             let mut world_index = 0;
-                            for model in scene.models.iter()
+
+                            if !model.all_dependencies_loaded()
                             {
-                                if !model.object.all_dependencies_loaded()
-                                {
-                                    continue;
-                                }
+                                continue;
+                            }
 
-                                // todo: use DrawIndirect?
-                                let world_transform = model.transform.to_world();
-                                worlds_buf[world_index].world = world_transform;
-                                let offset = (world_index * std::mem::size_of::<TransformUniform>()) as u32;
-                                test_pass.set_bind_group(1, &world_bind_group, &[offset]);
-                                world_index += 1;
+                            // todo: use DrawIndirect?
+                            let world_transform = Mat4::IDENTITY; // model.transform.to_world();
+                            worlds_buf[world_index].world = world_transform;
+                            let offset = (world_index * std::mem::size_of::<TransformUniform>()) as u32;
+                            test_pass.set_bind_group(1, &world_bind_group, &[offset]);
+                            world_index += 1;
 
-                                for mesh in model.object.meshes()
-                                {
-                                    test_pass.set_vertex_buffer(0, mesh.vertices());
-                                    test_pass.set_index_buffer(mesh.indices(), mesh.index_format());
+                            for mesh in model.meshes()
+                            {
+                                test_pass.set_vertex_buffer(0, mesh.vertices());
+                                test_pass.set_index_buffer(mesh.indices(), mesh.index_format());
 
-                                    let Some(mtl_bind_group) = material_cache.get_or_create_bind_group(mesh.material(), &renderer)
-                                        else { continue; };
-                                    test_pass.set_bind_group(2, &mtl_bind_group, &[]);
+                                let Some(mtl_bind_group) = material_cache.get_or_create_bind_group(mesh.material(), &renderer)
+                                    else { continue; };
+                                test_pass.set_bind_group(2, &mtl_bind_group, &[]);
 
-                                    test_pass.draw_indexed(mesh.index_range(), 0, 0..1);
-                                }
+                                test_pass.draw_indexed(mesh.index_range(), 0, 0..1);
+                            }
 
-                                if world_index >= MAX_ENTRIES_IN_WORLD_BUF
-                                {
-                                    world_uform_buf.unmap();
-                                    world_index = 0;
-                                    break; // testing
-                                }
+                            if world_index >= MAX_ENTRIES_IN_WORLD_BUF
+                            {
+                                world_uform_buf.unmap();
+                                world_index = 0;
+                                break; // testing
                             }
                         }
                     }

@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use rand::RngCore;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::const_assert;
 use crate::engine::assets::AssetTypeId;
@@ -20,62 +21,82 @@ pub trait HasAssetDependencies
 pub trait AssetPath: AsRef<str> + Hash + Display + Debug { }
 impl<T> AssetPath for T where T: AsRef<str> + Hash + Display + Debug { }
 
-pub type AssetKeyDerivedId = u16;
-pub type AssetKeyBaseId = [u8; 12]; // newtype?
+pub type AssetKeyDerivedId = u16; // only 15 bits are used
+pub type AssetKeyBaseId = u128; // only 100 bits are used
 
-#[repr(packed)]
-#[derive(Clone, Copy, PartialOrd, Eq, Ord)]
-pub struct AssetKey
-{
-    asset_type: AssetTypeId, // 2 B
-    derived_id: AssetKeyDerivedId, // an asset builder can output multiple assets for a single source, each source must have a unique derived_id
-    base_id: AssetKeyBaseId, // a unique ID generated from a single source file
-}
+// TODO: revisit endianness?
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct AssetKey(u128);
 impl AssetKey
 {
-    pub fn new(asset_type: AssetTypeId, derived_id: AssetKeyDerivedId, base_id: AssetKeyBaseId) -> Self
+    // ordered low-high
+    const BASE_KEY_BITS: u8 = 100;
+    const DERIVED_KEY_BITS: u8 = 15;
+    const TEMP_FLAG_BITS: u8 = 1;
+    const TYPE_ID_BITS: u8 = 12;
+
+    const BASE_KEY_MAX: u128 = (1 << Self::BASE_KEY_BITS) - 1;
+    const DERIVED_KEY_MAX: u16 = (1 << Self::DERIVED_KEY_BITS) - 1;
+    const TEMP_FLAG_MAX: u8 = 1;
+    const TYPE_ID_MAX: u16 = (1 << Self::TYPE_ID_BITS) - 1;
+
+    const BASE_KEY_SHIFT: u8 = 0;
+    const DERIVED_KEY_SHIFT: u8 = Self::BASE_KEY_SHIFT + Self::BASE_KEY_BITS;
+    const TEMP_FLAG_SHIFT: u8 = Self::DERIVED_KEY_SHIFT + Self::DERIVED_KEY_BITS;
+    const TYPE_ID_SHIFT: u8 = Self::TEMP_FLAG_SHIFT + Self::TEMP_FLAG_BITS;
+
+    pub fn new(asset_type: AssetTypeId, is_temporary: bool, derived_id: AssetKeyDerivedId, base_id: AssetKeyBaseId) -> Self
     {
+        const_assert!(
+            (AssetKey::BASE_KEY_BITS + AssetKey::DERIVED_KEY_BITS + AssetKey::TEMP_FLAG_BITS + AssetKey::TYPE_ID_BITS) / 8
+            == (size_of::<AssetKey>() as u8)
+        );
         const_assert!(size_of::<AssetKey>() == 16);
 
-        Self
-        {
-            asset_type,
-            derived_id,
-            base_id,
-        }
+        debug_assert!((asset_type as u16) < Self::TYPE_ID_MAX);
+        debug_assert!((derived_id) < Self::DERIVED_KEY_MAX);
+        debug_assert!((base_id) < Self::BASE_KEY_MAX);
+
+        let mut u: u128 = (base_id & Self::BASE_KEY_MAX) << Self::BASE_KEY_SHIFT;
+        u |= ((derived_id & Self::DERIVED_KEY_MAX) as u128) << Self::DERIVED_KEY_SHIFT;
+        u |= (((is_temporary as u8) & Self::TEMP_FLAG_MAX) as u128) << Self::DERIVED_KEY_SHIFT;
+        u |= (((asset_type as u16) & Self::TYPE_ID_MAX) as u128) << Self::TYPE_ID_SHIFT;
+        Self(u)
     }
 
-    pub fn asset_type(&self) -> AssetTypeId { self.asset_type }
-    pub fn derived_id(&self) -> u16 { self.derived_id }
-    pub fn base_id(&self) -> u128
+    pub fn generate_base_id() -> AssetKeyBaseId
     {
-        let mut bid = [0u8; 16];
-        bid[..12].copy_from_slice(&self.base_id);
-        u128::from_le_bytes(bid)
+        let mut bytes = [0u8; size_of::<Self>()];
+        rand::thread_rng().fill_bytes(&mut bytes[0..((Self::BASE_KEY_BITS / 8) as usize)]);
+        unsafe { std::mem::transmute(bytes) }
+    }
+
+    pub fn asset_type(&self) -> AssetTypeId
+    {
+        unsafe { std::mem::transmute((self.0 >> Self::TYPE_ID_SHIFT) as u16 & Self::TYPE_ID_MAX) }
+    }
+    pub fn derived_id(&self) -> AssetKeyDerivedId
+    {
+        (self.0 >> Self::DERIVED_KEY_SHIFT) as u16 & Self::DERIVED_KEY_MAX
+    }
+    pub fn base_id(&self) -> AssetKeyBaseId
+    {
+        (self.0 >> Self::BASE_KEY_SHIFT) & Self::BASE_KEY_MAX
+    }
+    pub fn is_temporary(&self) -> bool
+    {
+        ((self.0 >> Self::TEMP_FLAG_SHIFT) as u8 & Self::TEMP_FLAG_MAX) == 1
     }
 
     pub fn as_file_name(&self) -> PathBuf
     {
-        PathBuf::from(format!("{:02x}{:02x}{:012x}.ass", self.asset_type() as u16, self.derived_id(), self.base_id()))
+        PathBuf::from(format!("{:032x}.ass", self.0))
     }
 
     pub fn as_meta_file_name(&self) -> PathBuf
     {
-        PathBuf::from(format!("{:02x}{:02x}{:012x}.mass", self.asset_type() as u16, self.derived_id(), self.base_id()))
-    }
-}
-impl PartialEq for AssetKey
-{
-    fn eq(&self, other: &Self) -> bool
-    {
-        Into::<u128>::into(*self) == Into::<u128>::into(*other)
-    }
-}
-impl Hash for AssetKey
-{
-    fn hash<H: Hasher>(&self, state: &mut H)
-    {
-        state.write_u128((*self).into())
+        PathBuf::from(format!("{:032x}.mass", self.0))
     }
 }
 
@@ -84,21 +105,15 @@ impl Debug for AssetKey
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
-        let ty = self.asset_type;
-        let did = self.derived_id;
-
         match f.alternate()
         {
             true =>
-                f.write_fmt(format_args!("{:02x}{:02x}{:012x}",
-                    ty as u16,
-                    self.base_id(),
-                    did)),
+                f.write_fmt(format_args!("{:032x}", self.0)),
             false =>
-                f.write_fmt(format_args!("⟨{:?}|{:012x}+{:02x}⟩",
-                     ty,
+                f.write_fmt(format_args!("⟨{:?}|{:024x}+{:04x}⟩",
+                     self.asset_type(),
                      self.base_id(),
-                     did)),
+                     self.derived_id())),
         }
     }
 }
@@ -106,31 +121,12 @@ impl From<AssetKey> for u128
 {
     fn from(value: AssetKey) -> Self
     {
-        unsafe { <u128>::from_le_bytes(std::mem::transmute::<AssetKey, [u8; 16]>(value)) }
+        value.0
     }
 }
 impl From<u128> for AssetKey
 {
-    fn from(u: u128) -> Self
-    {
-        unsafe { std::mem::transmute::<_, Self>(<u128>::to_le_bytes(u)) }
-    }
-}
-impl Serialize for AssetKey
-{
-    // ideally this should assert little endian
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    {
-        serializer.serialize_u128((*self).into())
-    }
-}
-impl<'de> Deserialize<'de> for AssetKey
-{
-    // ideally this should assert little endian
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error>
-    {
-        u128::deserialize(deserializer).map(|d| d.into())
-    }
+    fn from(u: u128) -> Self { Self(u) }
 }
 
 #[cfg(test)]
@@ -143,12 +139,14 @@ mod asset_key_tests
     {
         let k1 = AssetKey::new(
             AssetTypeId::Test1,
+            false,
             0,
-            [1,1,1,1,1,1,1,1,1,1,1,1]);
+            0x111111111111111111111111);
         let k2 = AssetKey::new(
             AssetTypeId::Test1,
+            false,
             0,
-            [1,1,1,1,1,1,1,1,1,1,1,1]);
+            0x111111111111111111111111);
 
         assert_eq!(k1, k2);
     }
@@ -158,12 +156,14 @@ mod asset_key_tests
     {
         let k1 = AssetKey::new(
             AssetTypeId::Test1,
+            false,
             0,
-            [1,1,1,1,1,1,1,1,1,1,1,1]);
+            0x111111111111111111111111);
         let k2 = AssetKey::new(
             AssetTypeId::Test2,
+            false,
             0,
-            [1,1,1,1,1,1,1,1,1,1,1,1]);
+            0x111111111111111111111111);
 
         assert_ne!(k1, k2);
     }
@@ -173,12 +173,14 @@ mod asset_key_tests
     {
         let k1 = AssetKey::new(
             AssetTypeId::Test1,
+            false,
             0,
-            [1,1,1,1,1,1,1,1,1,1,1,1]);
+            0x111111111111111111111111);
         let k2 = AssetKey::new(
             AssetTypeId::Test1,
+            false,
             1,
-            [1,1,1,1,1,1,1,1,1,1,1,1]);
+            0x111111111111111111111111);
 
         assert_ne!(k1, k2);
     }
@@ -188,12 +190,14 @@ mod asset_key_tests
     {
         let k1 = AssetKey::new(
             AssetTypeId::Test1,
+            false,
             0,
-            [1,1,1,1,1,1,1,1,1,1,1,1]);
+            0x111111111111111111111111);
         let k2 = AssetKey::new(
             AssetTypeId::Test1,
+            false,
             0,
-            [2,2,2,2,2,2,2,2,2,2,2,2]);
+            0x222222222222222222222222);
 
         assert_ne!(k1, k2);
     }

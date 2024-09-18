@@ -18,14 +18,14 @@ use super::*;
 
 // tbh, after change, this could probably just be stored as an Arc
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub enum AssetLoadError
 {
     Shutdown, // The asset system has been shutdown and no new assets can be loaded
     MismatchedAssetType, // asset key does not match handle type
     LifecyclerNotRegistered,
     InvalidFormat,
-    IOError(std::io::ErrorKind),
+    IOError(std::io::Error),
     ParseError(u16), // The parse error is specific to each lifecycler -- TODO: strings in debug, ints in release?
 
     #[cfg(test)]
@@ -158,7 +158,7 @@ impl AssetHandleInner
     }
 
     #[inline]
-    pub fn payload<'a, A: Asset>(&'a self) -> PayloadGuard<'a, A>
+    pub fn payload<A: Asset>(&self) -> PayloadGuard<A>
     {
         let payload = self.payload.load(Ordering::Relaxed); // relaxed ok?
         PayloadGuard::new(payload)
@@ -204,7 +204,7 @@ impl UntypedAssetHandle
         debug_assert!(!self.0.is_null());
         debug_assert_eq!(A::asset_type(), (&*self.0).key.asset_type());
 
-        (&*self.0).store_payload::<A>(AssetPayload::Pending); // clears the stored payload
+        (*self.0).store_payload::<A>(AssetPayload::Pending); // clears the stored payload
 
         let layout = Layout::for_value(&*self.0);
         std::alloc::dealloc(self.0 as *mut u8, layout);
@@ -271,8 +271,7 @@ impl<A: Asset> AssetHandle<A>
     #[inline]
     pub fn payload(&self) -> PayloadGuard<A>
     {
-        todo!()
-        // self.inner().payload()
+        self.inner().payload()
     }
 
     // The number of references to this asset
