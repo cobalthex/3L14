@@ -2,8 +2,9 @@ use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionStrings};
 use game_3l14::engine::alloc_slice::alloc_slice_uninit;
 use game_3l14::engine::assets::AssetTypeId;
 use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat, MAX_MIP_COUNT};
-use png::ColorType;
+use image::{ColorType, EncodableLayout, GenericImageView};
 use std::error::Error;
+use std::io::{BufReader, Write};
 use unicase::UniCase;
 
 pub struct TextureBuilder;
@@ -34,33 +35,41 @@ impl AssetBuilder for TextureBuilder
 
         if input.file_extension() == &UniCase::new("png")
         {
-            let png = png::Decoder::new(&mut input);
-            let mut png_reader = png.read_info()?;
-            let mut png_buf = unsafe { alloc_slice_uninit(png_reader.output_buffer_size()).unwrap() }; // catch error?
+            let img = image::ImageReader::new(BufReader::new(input)).with_guessed_format()?.decode()?;
 
-            // atlas frames?
-            let png_info = png_reader.next_frame(&mut png_buf)?;
-
+            // TODO: mipmaps
             let tex_file = TextureFile
             {
-                width: png_info.width,
-                height: png_info.height,
+                width: img.width(),
+                height: img.height(),
                 depth: 1,
-                mip_count: 1, // mipmap gen?
+                mip_count: 1,
                 mip_offsets: [0; MAX_MIP_COUNT],
-                pixel_format: match png_info.color_type
+                pixel_format: match img.color()
                 {
-                    ColorType::Grayscale => TextureFilePixelFormat::R8,
-                    _ => TextureFilePixelFormat::Rgba8,
-                    // ColorType::Rgb => {}
-                    // ColorType::Indexed => {}
-                    // ColorType::GrayscaleAlpha => {}
-                    // ColorType::Rgba => TextureFilePixelFormat::Rgba8,
+                    ColorType::L8 => TextureFilePixelFormat::R8,
+                    ColorType::La8 => TextureFilePixelFormat::Rg8,
+                    ColorType::Rgb8 => TextureFilePixelFormat::Rgb8,
+                    ColorType::Rgba8 => TextureFilePixelFormat::Rgba8,
+                    ColorType::L16 => TextureFilePixelFormat::R8,
+                    ColorType::La16 => TextureFilePixelFormat::Rg8,
+                    ColorType::Rgb16 => TextureFilePixelFormat::Rgb8,
+                    ColorType::Rgba16 => TextureFilePixelFormat::Rgba8,
+                    ColorType::Rgb32F => TextureFilePixelFormat::Rgb8,
+                    ColorType::Rgba32F => TextureFilePixelFormat::Rgba8,
+                    _ => { todo!("Unknown pixel format") } // todo: non fatal error
                 },
             };
-
             output.serialize(&tex_file)?;
-            std::io::copy(&mut input, &mut output)?;
+
+            match tex_file.pixel_format
+            {
+                TextureFilePixelFormat::R8 => output.write_all(img.into_luma8().as_bytes())?,
+                TextureFilePixelFormat::Rg8 => output.write_all(img.into_luma_alpha8().as_bytes())?,
+                TextureFilePixelFormat::Rgb8 => output.write_all(img.into_rgb8().as_bytes())?,
+                TextureFilePixelFormat::Rgba8 => output.write_all(img.into_rgba8().as_bytes())?,
+                TextureFilePixelFormat::Rgba8Srgb => output.write_all(img.into_rgba8().as_bytes())?, // TODO
+            }
         }
 
         output.finish()?;

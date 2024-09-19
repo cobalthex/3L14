@@ -17,10 +17,11 @@ pub const MAX_MIP_COUNT: usize = 16;
 pub enum TextureFilePixelFormat
 {
     // Uncompressed formats
-    Rgba8 = 1,
-    Rgba8Srgb = 2,
-    R8 = 3,
-    Rg8 = 4,
+    R8 = 1,
+    Rg8 = 2,
+    Rgb8 = 3,
+    Rgba8 = 4,
+    Rgba8Srgb = 5,
 
     // TODO: compressed formats (bc#)
 
@@ -44,7 +45,7 @@ pub struct Texture
     gpu_tex: wgpu::Texture,
     gpu_view: wgpu::TextureView,
     desc: wgpu::TextureDescriptor<'static>, // TODO: might be able to get this from the gpu_tex directly
-}  
+}
 impl Texture
 {
     pub fn gpu_handle(&self) -> &wgpu::Texture { &self.gpu_tex }
@@ -137,10 +138,22 @@ impl TextureLifecycler
 impl AssetLifecycler for TextureLifecycler
 {
     type Asset = Texture;
-    fn load(&self, request: AssetLoadRequest) -> AssetPayload<Self::Asset>
+    fn load(&self, mut request: AssetLoadRequest) -> AssetPayload<Self::Asset>
     {
-        // TODO
-        AssetPayload::Unavailable(AssetLoadError::ParseError(0))
+        let mut bytes = Vec::new();
+        match request.input.read_to_end(&mut bytes)
+        {
+            Ok(b) => b,
+            Err(err) => { return AssetPayload::Unavailable(AssetLoadError::IOError(err)); },
+        };
+        let texture_file = match bitcode::decode(&bytes)
+        {
+            Ok(tex_file) => tex_file,
+            Err(_) => todo!(),
+        };
+        // todo: need to figure out encoded size
+
+        todo!()
     }
 }
 
