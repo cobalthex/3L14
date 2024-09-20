@@ -54,13 +54,6 @@ fn shitty_join<I>(separator: &str, iter: I) -> String
     out
 }
 
-fn magic_elide_lifetime<'from, 'to, T>(t: &'from T) -> &'to T // stupid bullshit
-{
-    unsafe { &*(t as *const T) }
-}
-
-// TODO: macro-ize this
-
 fn main() -> ExitReason
 {
     let app_run = game_3l14::AppRun::default();

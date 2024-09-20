@@ -149,7 +149,11 @@ impl AssetLifecycler for TextureLifecycler
         let texture_file = match bitcode::decode(&bytes)
         {
             Ok(tex_file) => tex_file,
-            Err(_) => todo!(),
+            Err(err) =>
+            {
+                eprintln!("Error deserializing texture metadata: {err}");
+                return AssetPayload::Unavailable(AssetLoadError::ParseError(0))
+            },
         };
         // todo: need to figure out encoded size
 

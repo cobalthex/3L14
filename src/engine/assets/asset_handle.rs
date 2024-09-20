@@ -344,9 +344,9 @@ impl<A: Asset> Drop for AssetHandle<A>
         inner.dropper.send(AssetLifecycleRequest::Drop(UntypedAssetHandle(self.inner))).expect("Failed to drop asset as the drop channel already closed"); // todo: error handling (can just drop it here?)
     }
 }
-impl<A: Asset> Future for &AssetHandle<A> // non-reffing requires being able to consume an Arc
+impl<'a, A: Asset> Future for &'a AssetHandle<A> // non-reffing requires being able to consume an Arc
 {
-    type Output = Arc<AssetPayload<A>>;
+    type Output = PayloadGuard<'a, A>;
 
     // TODO: re-evaluate
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output>
@@ -360,17 +360,16 @@ impl<A: Asset> Future for &AssetHandle<A> // non-reffing requires being able to 
             return Poll::Pending;
         }
 
-        todo!()
-        // match *self.payload()
-        // {
-        //     AssetPayload::Pending =>
-        //     {
-        //         let mut locked = inner.ready_waker.lock();
-        //         swap(&mut *locked, &mut Some(cx.waker().clone()));
-        //         Poll::Pending
-        //     },
-        //     AssetPayload::Available(_) | AssetPayload::Unavailable(_) => Poll::Ready(inner.payload.load_full().unwrap()),
-        // }
+        match *self.payload()
+        {
+            AssetPayload::Pending =>
+            {
+                let mut locked = inner.ready_waker.lock();
+                swap(&mut *locked, &mut Some(cx.waker().clone()));
+                Poll::Pending
+            },
+            AssetPayload::Available(_) | AssetPayload::Unavailable(_) => Poll::Ready(inner.payload()),
+        }
     }
 }
 impl<A: Asset> PartialEq for AssetHandle<A>
