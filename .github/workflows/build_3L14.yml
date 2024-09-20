@@ -1,0 +1,35 @@
+name: Build 3L14
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup SDL
+      id: setup_sdl
+      run: |
+        sudo apt-get update -y -qq
+        sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev
+
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        save-if: "${{ github.ref == 'refs/heads/main' }}"
+
+    - name: Build 3L14
+      id: build_3l14
+      run: |
+        cargo build --verbose --release
