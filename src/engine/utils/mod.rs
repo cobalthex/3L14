@@ -5,6 +5,7 @@ pub use common_traits::*;
 
 pub mod async_completion;
 pub mod alloc_slice;
+pub mod varint;
 
 pub struct FormatBytes
 {
