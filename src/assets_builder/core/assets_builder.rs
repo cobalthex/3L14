@@ -1,5 +1,5 @@
 use game_3l14::engine::assets::{AssetKey, AssetKeyBaseId, AssetKeyDerivedId, AssetMetadata, AssetTypeId, BuilderHash};
-use game_3l14::engine::ShortTypeName;
+use game_3l14::engine::{varint, ShortTypeName};
 use rand::RngCore;
 use std::collections::HashMap;
 use std::error::Error;
@@ -8,6 +8,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hasher;
 use std::io;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
+use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use bitcode::Encode;
 use metrohash::MetroHash64;
@@ -252,6 +253,7 @@ impl<W: BuildOutputWrite> BuildOutput<W>
     pub fn serialize<T: Encode>(&mut self, value: &T) -> Result<usize, impl Error>
     {
         let val = bitcode::encode(value);
+        varint::encode_into(val.len() as u64, &mut self.writer)?;
         self.writer.write(val.as_slice())
     }
 

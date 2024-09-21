@@ -151,18 +151,7 @@ impl AssetLifecycler for ModelLifecycler
 
     fn load(&self, mut request: AssetLoadRequest) -> AssetPayload<Self::Asset>
     {
-        let mut bytes = Vec::new();
-        match request.input.read_to_end(&mut bytes)
-        {
-            Ok(_) => {}
-            Err(err) =>
-            {
-                eprintln!("Failed to read asset bytes: {err}");
-                return AssetPayload::Unavailable(AssetLoadError::IOError(err));
-            }
-        }
-
-        match bitcode::decode::<ModelFile>(bytes.as_slice())
+        match request.deserialize::<ModelFile>()
         {
             Ok(mf) =>
             {

@@ -1,9 +1,24 @@
 use std::any::TypeId;
 use super::*;
 use std::collections::HashMap;
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter};
 use std::io::{Read, Seek};
+use std::mem::MaybeUninit;
 use std::sync::Arc;
-use crate::engine::ShortTypeName;
+use bitcode::{Decode, DecodeOwned};
+use crate::engine::{varint, ShortTypeName};
+use crate::engine::alloc_slice::alloc_slice_uninit;
+
+#[derive(Debug)]
+struct Eror;
+impl Error for Eror { }
+impl Display for Eror
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
 
 pub struct AssetLoadRequest
 {
@@ -16,6 +31,15 @@ pub struct AssetLoadRequest
 }
 impl AssetLoadRequest
 {
+    // TODO: should probably pass in read buf
+    pub fn deserialize<T: DecodeOwned>(&mut self) -> Result<T, Box<dyn Error>>
+    {
+        let size = varint::decode_from(&mut self.input)?;
+        let mut input = unsafe { alloc_slice_uninit(size as usize) }.unwrap(); // todo: cache this
+        self.input.read_exact(&mut input)?;
+        Ok(bitcode::decode::<T>(&input)?)
+    }
+
     // Load a dependency
     // Assets/lifecyclers are responsible for tracking/maintaining dependency references
     #[must_use]
@@ -61,21 +85,22 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
 {
     fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedAssetHandle, input: Box<dyn AssetRead>)
     {
+        let retyped = unsafe { AssetHandle::<A>::attach_from(untyped_handle) };
         let result = self.load(AssetLoadRequest
         {
-            asset_key: untyped_handle.as_ref().key(),
+            asset_key: retyped.key(),
             input,
             storage,
         });
-
-        untyped_handle.as_ref().store_payload::<A>(result);
+        retyped.store_payload(result);
     }
 
     // this doesn't really make sense here
     // todo: can probably have an untyped 'asset handle' similar to the untyped lifecycler
     fn error_untyped(&self, untyped_handle: UntypedAssetHandle, error: AssetLoadError)
     {
-        untyped_handle.as_ref().store_payload::<A>(AssetPayload::Unavailable(error));
+        let retyped = unsafe { AssetHandle::<A>::attach_from(untyped_handle) };
+        retyped.store_payload(AssetPayload::Unavailable(error));
     }
 }
 

@@ -115,6 +115,9 @@ impl AssetHandleInner
         debug_assert_eq!(A::asset_type(), self.key.asset_type());
         // (debug) store a TypeId to verify templates match?
 
+        #[cfg(feature = "debug_asset_lifetimes")]
+        eprintln!("{:?} storing new payload", self.key());
+
         match self.payload.load(Ordering::Acquire) // todo: verify ordering?
         {
             0 => {},
@@ -190,6 +193,10 @@ impl UntypedAssetHandle
             is_reloading: AtomicBool::new(false),
             payload: AtomicUsize::new(0), // pending
         };
+
+        #[cfg(feature = "debug_asset_lifetimes")]
+        eprintln!("{key:?} alloc");
+
         let layout = Layout::for_value(&inner);
         Self(unsafe
         {
@@ -205,6 +212,9 @@ impl UntypedAssetHandle
         debug_assert_eq!(A::asset_type(), (&*self.0).key.asset_type());
 
         (*self.0).store_payload::<A>(AssetPayload::Pending); // clears the stored payload
+
+        #[cfg(feature = "debug_asset_lifetimes")]
+        eprintln!("{:?} de-alloc asset handle", (&*self.0).key);
 
         let layout = Layout::for_value(&*self.0);
         std::alloc::dealloc(self.0 as *mut u8, layout);
@@ -243,6 +253,17 @@ impl<A: Asset> AssetHandle<A>
         };
         handle.debug_assert_type();
         handle.add_ref();
+        handle
+    }
+
+    pub(super) unsafe fn attach_from(untyped_handle: UntypedAssetHandle) -> Self
+    {
+        let handle = Self
+        {
+            inner: untyped_handle.0,
+            phantom: PhantomData::default(),
+        };
+        handle.debug_assert_type();
         handle
     }
 
@@ -298,7 +319,8 @@ impl<A: Asset> AssetHandle<A>
         let old_refs = self.inner().ref_count.fetch_add(1, Ordering::Acquire);
         debug_assert_ne!(old_refs, isize::MAX);
 
-        // eprintln!("{self:?} inc ref to {}", old_refs + 1);
+        #[cfg(feature = "debug_asset_lifetimes")]
+        eprintln!("{self:?} increment ref to {}", old_refs + 1);
     }
 
     pub(super) fn store_payload(&self, payload: AssetPayload<A>)
@@ -333,13 +355,17 @@ impl<A: Asset> Drop for AssetHandle<A>
         let inner = unsafe { &*self.inner };
         let old_refs = inner.ref_count.fetch_sub(1, Ordering::Release);
 
-        // eprintln!("{self:?} dec ref to {}", old_refs - 1);
+        #[cfg(feature = "debug_asset_lifetimes")]
+        eprintln!("{self:?} decrement ref to {}", old_refs - 1);
 
         if old_refs != 1
         {
             debug_assert!(old_refs > 0);
             return;
         }
+
+        #[cfg(feature = "debug_asset_lifetimes")]
+        eprintln!("{:?} dropping", self.key());
 
         inner.dropper.send(AssetLifecycleRequest::Drop(UntypedAssetHandle(self.inner))).expect("Failed to drop asset as the drop channel already closed"); // todo: error handling (can just drop it here?)
     }
@@ -391,6 +417,10 @@ impl<A: Asset> Debug for AssetHandle<A>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
-        f.write_fmt(format_args!("⟨{:?}|{}⟩", self.key(), A::short_type_name()))
+        match f.alternate()
+        {
+            true => f.write_fmt(format_args!("{}:{:?}", A::short_type_name(), self.key())),
+            false => self.key().fmt(f)
+        }
     }
 }

@@ -49,13 +49,13 @@ impl AssetBuilder for TextureBuilder
                 {
                     ColorType::L8 => TextureFilePixelFormat::R8,
                     ColorType::La8 => TextureFilePixelFormat::Rg8,
-                    ColorType::Rgb8 => TextureFilePixelFormat::Rgb8,
+                    ColorType::Rgb8 => TextureFilePixelFormat::Rgba8,
                     ColorType::Rgba8 => TextureFilePixelFormat::Rgba8,
                     ColorType::L16 => TextureFilePixelFormat::R8,
                     ColorType::La16 => TextureFilePixelFormat::Rg8,
-                    ColorType::Rgb16 => TextureFilePixelFormat::Rgb8,
+                    ColorType::Rgb16 => TextureFilePixelFormat::Rgba8,
                     ColorType::Rgba16 => TextureFilePixelFormat::Rgba8,
-                    ColorType::Rgb32F => TextureFilePixelFormat::Rgb8,
+                    ColorType::Rgb32F => TextureFilePixelFormat::Rgba8,
                     ColorType::Rgba32F => TextureFilePixelFormat::Rgba8,
                     _ => { todo!("Unknown pixel format") } // todo: non fatal error
                 },
@@ -66,7 +66,7 @@ impl AssetBuilder for TextureBuilder
             {
                 TextureFilePixelFormat::R8 => output.write_all(img.into_luma8().as_bytes())?,
                 TextureFilePixelFormat::Rg8 => output.write_all(img.into_luma_alpha8().as_bytes())?,
-                TextureFilePixelFormat::Rgb8 => output.write_all(img.into_rgb8().as_bytes())?,
+                // TextureFilePixelFormat::Rgb8 => output.write_all(img.into_rgb8().as_bytes())?,
                 TextureFilePixelFormat::Rgba8 => output.write_all(img.into_rgba8().as_bytes())?,
                 TextureFilePixelFormat::Rgba8Srgb => output.write_all(img.into_rgba8().as_bytes())?, // TODO
             }

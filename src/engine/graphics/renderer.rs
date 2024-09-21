@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use arc_swap::ArcSwapOption;
 use egui::epaint::Shadow;
-use egui::{Pos2, Rect, Rounding, Stroke, Visuals};
+use egui::{Pos2, Rect, Rounding, Stroke, Ui, Visuals};
 use egui_wgpu_backend;
 use parking_lot::{Mutex, RwLock};
 use sdl2::video::Window;
@@ -10,6 +10,7 @@ use sdl2::video::Window;
 use wgpu::rwh::{HasRawDisplayHandle, HasRawWindowHandle};
 use wgpu::*;
 use crate::engine::{DataPayload, FrameNumber};
+use crate::engine::graphics::debug_gui::DebugGui;
 
 pub const MAX_CONSECUTIVE_FRAMES: usize = 3;
 
@@ -25,6 +26,11 @@ pub struct MSAAConfiguration
 {
     pub current_sample_count: u32, // pipelines and ms-framebuffer will need to be recreated if this is changed
     pub buffer: TextureView,
+}
+
+pub enum DebugRenderMode
+{
+    Wireframe,
 }
 
 pub struct Renderer
@@ -46,6 +52,9 @@ pub struct Renderer
 
     // todo: this needs to know when a new frame is available before picking one
     render_frames: RwLock<[RenderFrameData; MAX_CONSECUTIVE_FRAMES]>,
+
+    #[cfg(debug_assertions)]
+    debug_render_mode: ArcSwapOption<DebugRenderMode>,
 }
 impl Renderer
 {
@@ -201,6 +210,8 @@ impl Renderer
             debug_gui,
             debug_gui_renderer: Mutex::new(debug_gui_renderer),
             render_frames: RwLock::new(render_frames),
+            #[cfg(debug_assertions)]
+            debug_render_mode: ArcSwapOption::empty(),
         })
     }
 
@@ -435,6 +446,15 @@ impl Renderer
             })
     }
 }
+impl<'a> DebugGui<'a> for Renderer
+{
+    fn name(&'a self) -> &'a str { "Renderer" }
+
+    fn debug_gui(&'a self, ui: &mut Ui)
+    {
+        ui.label("TODO");
+    }
+}
 
 pub struct RenderFrame
 {
@@ -450,9 +470,4 @@ pub struct RenderFrame
 }
 impl RenderFrame
 {
-}
-
-pub trait RenderFuture<Payload, Error>
-{
-    fn poll(&self, renderer: &Renderer) -> DataPayload<Payload, Error>;
 }

@@ -56,13 +56,13 @@ impl DebugMenuMemory
     {
         let gui_id = Self::gui_id_by_name::<T>(name);
         self.states.entry(gui_id.0).or_insert_with(||
+        {
+            DebugMenuItemState
             {
-                DebugMenuItemState
-                {
-                    name: name.to_string(),
-                    is_active: false
-                }
-            }).is_active = activate;
+                name: name.to_string(),
+                is_active: false
+            }
+        }).is_active = activate;
     }
 
     // toggle a state in the memory, does nothing if the state doesn't already exist. Returns the new state

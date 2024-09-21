@@ -100,7 +100,7 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
             let c = match &mut colors
             {
                 Some(c) => c.next().ok_or(ModelImportError::MismatchedVertexCount)?.into(),
-                None => Rgba::from(in_prim.index() as u32 * 10000 + 20000),
+                None => Rgba::from(in_prim.index() as u32 * 10000 + 20000), // TODO: testing
             };
 
             vertices.push(VertexPosNormTexCol
@@ -159,7 +159,7 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
         //     roughness: pbr.roughness_factor(),
         // };
 
-        let mesh_bounds =AABB::new(bb.min.into(), bb.max.into());
+        let mesh_bounds = AABB::new(bb.min.into(), bb.max.into());
         model_bounds.union_with(mesh_bounds);
 
         // TODO: assert vertex/index count < 2^32

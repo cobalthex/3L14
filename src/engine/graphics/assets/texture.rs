@@ -19,7 +19,7 @@ pub enum TextureFilePixelFormat
     // Uncompressed formats
     R8 = 1,
     Rg8 = 2,
-    Rgb8 = 3,
+    // Rgb8 = 3,
     Rgba8 = 4,
     Rgba8Srgb = 5,
 
@@ -84,33 +84,61 @@ impl TextureLifecycler
             device_bytes: AtomicI64::new(0)
         }
     }
-
-    fn create(&self, width: u32, height: u32, texels: &[u8]) -> Texture
+}
+impl AssetLifecycler for TextureLifecycler
+{
+    type Asset = Texture;
+    fn load(&self, mut request: AssetLoadRequest) -> AssetPayload<Self::Asset>
     {
+        let tex_file: TextureFile = match request.deserialize()
+        {
+            Ok(f) => f,
+            Err(err) =>
+            {
+                eprintln!("Error deserializing texture metadata: {err}");
+                return AssetPayload::Unavailable(AssetLoadError::ParseError(0))
+            },
+        };
+
+        let mut texel_bytes = Vec::new();
+        match request.input.read_to_end(&mut texel_bytes)
+        {
+            Ok(b) => b,
+            Err(err) => { return AssetPayload::Unavailable(AssetLoadError::IOError(err)); },
+        };
         let dtor = TextureDescriptor
         {
             label: None, // TODO
             size: Extent3d
             {
-                width,
-                height,
-                depth_or_array_layers: 1,
+                width: tex_file.width,
+                height: tex_file.height,
+                depth_or_array_layers: tex_file.depth,
             },
-            mip_level_count: 1,
+            mip_level_count: tex_file.mip_count as u32,
             sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
+            dimension:
+                if tex_file.depth > 1 { TextureDimension::D3 }
+                else if tex_file.height > 1 { TextureDimension::D2 }
+                else { TextureDimension::D1 },
+            format: match tex_file.pixel_format
+            {
+                TextureFilePixelFormat::R8 => TextureFormat::R8Unorm,
+                TextureFilePixelFormat::Rg8 => TextureFormat::Rg8Unorm,
+                TextureFilePixelFormat::Rgba8 => TextureFormat::Rgba8Unorm,
+                TextureFilePixelFormat::Rgba8Srgb => TextureFormat::Rgba8UnormSrgb,
+            },
             usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
 
-        let tex = self.renderer.device().create_texture_with_data(
+        let gpu_tex = self.renderer.device().create_texture_with_data(
             self.renderer.queue(),
             &dtor,
             TextureDataOrder::LayerMajor,
-            texels);
+            texel_bytes.as_slice());
 
-        let view = tex.create_view(&TextureViewDescriptor
+        let view = gpu_tex.create_view(&TextureViewDescriptor
         {
             label: None,
             format: None,
@@ -122,42 +150,17 @@ impl TextureLifecycler
             array_layer_count: None,
         });
 
-        let payload = Texture
+        let tex = Texture
         {
-            gpu_tex: tex,
+            gpu_tex,
             gpu_view: view,
             desc: dtor,
         };
 
-        let bytes = payload.total_device_bytes();
+        let bytes = tex.total_device_bytes();
         self.device_bytes.fetch_add(bytes, Ordering::Relaxed); // relaxed ok here?
 
-        payload
-    }
-}
-impl AssetLifecycler for TextureLifecycler
-{
-    type Asset = Texture;
-    fn load(&self, mut request: AssetLoadRequest) -> AssetPayload<Self::Asset>
-    {
-        let mut bytes = Vec::new();
-        match request.input.read_to_end(&mut bytes)
-        {
-            Ok(b) => b,
-            Err(err) => { return AssetPayload::Unavailable(AssetLoadError::IOError(err)); },
-        };
-        let texture_file = match bitcode::decode(&bytes)
-        {
-            Ok(tex_file) => tex_file,
-            Err(err) =>
-            {
-                eprintln!("Error deserializing texture metadata: {err}");
-                return AssetPayload::Unavailable(AssetLoadError::ParseError(0))
-            },
-        };
-        // todo: need to figure out encoded size
-
-        todo!()
+        AssetPayload::Available(tex)
     }
 }
 

@@ -113,12 +113,12 @@ impl Debug for AssetKey
         match f.alternate()
         {
             true =>
-                f.write_fmt(format_args!("{:032x}", self.0)),
-            false =>
                 f.write_fmt(format_args!("⟨{:?}|{:024x}+{:04x}⟩",
                      self.asset_type(),
                      self.base_id(),
                      self.derived_id())),
+            false =>
+                f.write_fmt(format_args!("⟨{:032x}⟩", self.0)),
         }
     }
 }

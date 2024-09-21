@@ -1,4 +1,5 @@
 use std::io::Read;
+use std::ops::Deref;
 use std::process::ExitCode;
 use std::time::Duration;
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
@@ -135,7 +136,7 @@ fn main() -> ExitReason
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        let model_key: AssetKey = 0x00700000cc7bc1421648535151d91992u128.into();
+        let model_key: AssetKey = 0x0070000024dea06310e6d6784da2e916.into();
         let mut test_model = assets.load::<Model>(model_key);
         // let test_shader = assets.load::<Shader, _>(&"shaders/test.wgsl");
 
@@ -455,6 +456,7 @@ fn main() -> ExitReason
                 debug_menu.add(&input);
                 debug_menu.add(&camera);
                 debug_menu.add(&assets);
+                debug_menu.add(renderer.deref());
                 debug_menu.present();
             }
 
@@ -466,6 +468,7 @@ fn main() -> ExitReason
             }
         }
     }
+    
     std::mem::drop(renderer);
     std::mem::drop(windows);
     std::mem::drop(assets);
