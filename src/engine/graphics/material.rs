@@ -1,9 +1,8 @@
-use crate::engine::assets::{Asset, AssetHandle, AssetPayload, AssetTypeId, HasAssetDependencies};
+ use crate::engine::assets::{Asset, AssetHandle, AssetKey, AssetPayload, AssetTypeId, HasAssetDependencies};
 use crate::engine::graphics::assets::Texture;
 use crate::engine::graphics::colors::Rgba;
 use crate::engine::graphics::{colors, Renderer};
 use wgpu::{AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, FilterMode, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, TextureAspect, TextureSampleType, TextureViewDescriptor, TextureViewDimension};
-// todo: in the future these should be data driven (maybe parametric?)
 
 pub struct MaterialCache
 {
@@ -114,25 +113,23 @@ impl MaterialCache
     }
 }
 
-pub struct Material
+pub struct PbrProps
 {
-    pub albedo_map: Option<AssetHandle<Texture>>,
     pub albedo_color: Rgba,
     pub metallicity: f32,
     pub roughness: f32,
 }
-impl Default for Material
+
+pub struct MaterialFile
 {
-    fn default() -> Self
-    {
-        Self
-        {
-            albedo_map: None,
-            albedo_color: colors::WHITE,
-            metallicity: 0.5,
-            roughness: 0.5,
-        }
-    }
+    pub textures: Box<[AssetKey]>,
+    pub pbr_probs: PbrProps,
+}
+
+pub struct Material
+{
+    pub textures: Box<AssetHandle<Texture>>,
+    pub prb_props: PbrProps, // todo: cbuffer ptr
 }
 impl Asset for Material
 {

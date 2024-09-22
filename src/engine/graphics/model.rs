@@ -129,7 +129,7 @@ impl Asset for Model
     {
         self.meshes.iter().all(|m|
         {
-            m.material.asset_dependencies_loaded()
+            m.material.all_dependencies_loaded()
         })
     }
 }
