@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use bitcode::{Decode, Encode};
 use rand::RngCore;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::const_assert;
@@ -26,7 +27,7 @@ pub type AssetKeyBaseId = u128; // only 100 bits are used
 
 // TODO: revisit endianness?
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode)]
 pub struct AssetKey(u128);
 impl AssetKey
 {

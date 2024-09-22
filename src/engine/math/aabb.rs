@@ -9,7 +9,7 @@ pub struct AABB
 }
 impl AABB
 {
-    pub fn zero() -> Self { Self { min: Vec3::ZERO, max: Vec3::ZERO }}
+    pub fn max_min() -> Self { Self { min: Vec3::MAX, max: Vec3::MIN }}
     pub fn new(min: Vec3, max: Vec3) -> Self { Self { min, max } }
 
     pub fn size(&self) -> Vec3 { self.max - self.min }

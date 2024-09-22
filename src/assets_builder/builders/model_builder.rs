@@ -77,7 +77,7 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
     let mut model_bounds = AABB { min: Vec3::MAX, max: Vec3::MIN };
     let mut meshes: Vec<ModelFileMesh> = Vec::new();
 
-    let mut model_bounds = AABB::zero();
+    let mut model_bounds = AABB::max_min();
 
     // todo: iter.map() ?
     for in_prim in in_mesh.primitives()

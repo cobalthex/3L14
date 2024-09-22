@@ -1,4 +1,6 @@
- use crate::engine::assets::{Asset, AssetHandle, AssetKey, AssetPayload, AssetTypeId, HasAssetDependencies};
+use bitcode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
+use crate::engine::assets::{Asset, AssetHandle, AssetKey, AssetPayload, AssetTypeId, HasAssetDependencies};
 use crate::engine::graphics::assets::Texture;
 use crate::engine::graphics::colors::Rgba;
 use crate::engine::graphics::{colors, Renderer};
@@ -73,9 +75,14 @@ impl MaterialCache
 
     pub fn get_or_create_bind_group(&self, material: &Material, renderer: &Renderer) -> Option<BindGroup>
     {
-        // TODO: let chaining?
-        let Some(albedo_map_asset) = &material.albedo_map else { return None; };
-        let AssetPayload::Available(albedo_map) = &*albedo_map_asset.payload() else { return None; };
+        let textures = material.textures.map(|t|
+        {
+           match &t.payload()
+           {
+               AssetPayload::Available(tex) => tex,
+               _ => { return None; }
+           }
+        });
 
         let bind_group_layout = &self.bind_group_layouts;
         let sampler = &self.samplers;
@@ -113,6 +120,7 @@ impl MaterialCache
     }
 }
 
+#[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct PbrProps
 {
     pub albedo_color: Rgba,
@@ -120,6 +128,7 @@ pub struct PbrProps
     pub roughness: f32,
 }
 
+#[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct MaterialFile
 {
     pub textures: Box<[AssetKey]>,
@@ -128,7 +137,7 @@ pub struct MaterialFile
 
 pub struct Material
 {
-    pub textures: Box<AssetHandle<Texture>>,
+    pub textures: Box<[AssetHandle<Texture>]>,
     pub prb_props: PbrProps, // todo: cbuffer ptr
 }
 impl Asset for Material

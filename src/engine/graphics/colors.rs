@@ -1,9 +1,10 @@
 use bitcode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use crate::engine::graphics::colors;
 
 // todo: HDR support?
 #[repr(packed)]
-#[derive(Debug, Copy, Clone, PartialEq, Encode, Decode)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct Rgba
 {
     pub r: u8,

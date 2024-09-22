@@ -20,8 +20,9 @@ fn main()
     let built_assets_root = assets_root.join("build");
 
     let mut builder_cfg = AssetsBuilderConfig::new(&src_assets_root, &built_assets_root);
-    builder_cfg.add_builder(builders::TextureBuilder);
     builder_cfg.add_builder(builders::ModelBuilder);
+    builder_cfg.add_builder(builders::TextureBuilder);
+    builder_cfg.add_builder(builders::MaterialBuilder);
 
     eprintln!("Starting assets builder");
 
