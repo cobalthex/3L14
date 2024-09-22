@@ -136,7 +136,7 @@ fn main() -> ExitReason
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        let model_key: AssetKey = 0x0070000024dea06310e6d6784da2e916.into();
+        let model_key: AssetKey = 0x00700020cc7bc1421648535151d91992.into();
         let mut test_model = assets.load::<Model>(model_key);
         // let test_shader = assets.load::<Shader, _>(&"shaders/test.wgsl");
 

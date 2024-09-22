@@ -351,6 +351,8 @@ pub struct SourceInput
     file_extension: UniCase<String>, // does not include .
     base_id: AssetKeyBaseId,
     input: Box<dyn SourceInputRead>, // generic?
+    
+    // pub build_config: HashMap<UniCase<String>, >
 }
 impl SourceInput
 {

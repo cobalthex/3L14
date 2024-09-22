@@ -18,7 +18,7 @@ pub trait WgpuVertexDecl
 }
 
 // todo: parametric vertex support
-#[repr(align(4))]
+#[repr(C)]
 #[allow(dead_code)]
 #[derive(Debug, Default, Encode, Decode)]
 pub struct VertexPosNormTexCol

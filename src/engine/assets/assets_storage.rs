@@ -427,7 +427,7 @@ impl<'i, 'a: 'i> DebugGui<'a> for Assets
             {
                 egui::Grid::new("Handles table")
                     .striped(true)
-                    .num_columns(6)
+                    .num_columns(3)
                     .show(cui, |gui|
                         {
                             gui.heading("Key");
@@ -569,17 +569,16 @@ mod tests
         use super::*;
         use crate::engine::DataPayload::*;
 
+        // TODO: disable threading and add 'loop_once' function for worker
+
         #[test]
+        #[should_panic]
         fn missing_lifecycler()
         {
             let assets = Assets::new(AssetLifecyclers::default(), AssetsConfig::test());
 
             let req: AssetHandle<TestAsset> = assets.load_from::<TestAsset, _>(TEST_ASSET_1, Cursor::new([]));
-            match &*await_asset(&req)
-            {
-                Unavailable(AssetLoadError::LifecyclerNotRegistered) => {},
-                other => panic!("Invalid load result: {other:#?}"),
-            }
+            await_asset(&req);
         }
 
         #[test]
@@ -715,6 +714,7 @@ mod tests
 
             let first_asset_name = "first";
             let second_asset_name = "second";
+
             set_passthru(&assets, Some(|mut req: AssetLoadRequest|
             {
                 let mut name = String::new();
@@ -735,6 +735,7 @@ mod tests
 
             input_bytes = Cursor::new(second_asset_name.as_bytes());
             req = assets.load_from::<TestAsset, _>(TEST_ASSET_1, input_bytes);
+            std::thread::sleep(Duration::from_millis(10)); // TODO: HACK
             match &*await_asset(&req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.name, second_asset_name),

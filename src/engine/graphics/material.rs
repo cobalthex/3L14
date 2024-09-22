@@ -1,4 +1,4 @@
-use crate::engine::assets::{AssetHandle, AssetPayload, HasAssetDependencies};
+use crate::engine::assets::{Asset, AssetHandle, AssetPayload, AssetTypeId, HasAssetDependencies};
 use crate::engine::graphics::assets::Texture;
 use crate::engine::graphics::colors::Rgba;
 use crate::engine::graphics::{colors, Renderer};
@@ -134,10 +134,7 @@ impl Default for Material
         }
     }
 }
-impl HasAssetDependencies for Material
+impl Asset for Material
 {
-    fn asset_dependencies_loaded(&self) -> bool
-    {
-        self.albedo_map.as_ref().map_or(true, |m| m.is_loaded_recursive())
-    }
+    fn asset_type() -> AssetTypeId { AssetTypeId::RenderMaterial }
 }
