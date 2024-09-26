@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::io::Write;
+use game_3l14::engine::graphics::assets::material::{MaterialFile, PbrProps};
 use glam::Vec3;
 use gltf::mesh::util::ReadIndices;
 use unicase::UniCase;
@@ -59,7 +60,7 @@ impl AssetBuilder for ModelBuilder
 
             for mesh in document.meshes()
             {
-                let model = parse_gltf(mesh, &buffers, &images)?;
+                let model = parse_gltf(mesh, &buffers, &images, outputs)?;
                 let mut output = outputs.add_output(AssetTypeId::Model)?;
 
                 output.serialize(&model)?;
@@ -72,7 +73,7 @@ impl AssetBuilder for ModelBuilder
 }
 
 
-fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &Vec<gltf::image::Data>) -> Result<ModelFile, ModelImportError>
+fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &Vec<gltf::image::Data>, outputs: &mut BuildOutputs) -> Result<ModelFile, ModelImportError>
 {
     let mut model_bounds = AABB { min: Vec3::MAX, max: Vec3::MIN };
     let mut meshes: Vec<ModelFileMesh> = Vec::new();
@@ -128,36 +129,46 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
             },
         };
 
-        // let pbr = in_prim.material().pbr_metallic_roughness();
-        // let albedo_map = match pbr.base_color_texture()
-        // {
-        //     None => None,
-        //     Some(tex) =>
-        //         {
-        //             let tex_index = tex.texture().source().index();
-        //             let data = &images[tex_index];
-        //             let tex_name = tex.texture().name().map_or_else(|| { format!("{asset_name}:tex{}", tex_index) }, |n| n.to_string());
-        //             let reader = GltfTexture
-        //             {
-        //                 name: tex_name.clone(),
-        //                 width: data.width,
-        //                 height: data.height,
-        //                 texel_data: data.pixels.clone(),
-        //                 read_offset: 0,
-        //             };
-        //             // let tex: AssetHandle<Texture> = request.load_dependency_from(&tex_name, reader);
-        //             // // todo: this needs to reconcile the image format
-        //             // Some(tex)
-        //             None
-        //         }
-        // };
-        // let material = Material
-        // {
-        //     albedo_map,
-        //     albedo_color: pbr.base_color_factor().into(),
-        //     metallicity: pbr.metallic_factor(),
-        //     roughness: pbr.roughness_factor(),
-        // };
+        let pbr = in_prim.material().pbr_metallic_roughness();
+        let albedo_map = match pbr.base_color_texture()
+        {
+            None => None,
+            Some(tex) =>
+            {
+                let tex_index = tex.texture().source().index();
+                let data = &images[tex_index];
+                let tex_name = tex.texture().name().map_or_else(|| { format!("{asset_name}:tex{}", tex_index) }, |n| n.to_string());
+                let reader = GltfTexture
+                {
+                    name: tex_name.clone(),
+                    width: data.width,
+                    height: data.height,
+                    texel_data: data.pixels.clone(),
+                    read_offset: 0,
+                };
+                // let tex: AssetHandle<Texture> = request.load_dependency_from(&tex_name, reader);
+                // // todo: this needs to reconcile the image format
+                // Some(tex)
+                None
+            }
+        };
+
+        let material =
+        {
+            // call into MaterialBuilder?
+            let mut mtl_output = outputs.add_output(AssetTypeId::RenderMaterial)?;
+            mtl_output.serialize(&MaterialFile
+            {
+                textures: Box::new([]),
+                pbr_props: PbrProps
+                {
+                    albedo_color: pbr.base_color_factor().into(),
+                    metallicity: pbr.metallic_factor(),
+                    roughness: pbr.roughness_factor(),
+                },
+            })?;
+            mtl_output.finish()?
+        };
 
         let mesh_bounds = AABB::new(bb.min.into(), bb.max.into());
         model_bounds.union_with(mesh_bounds);
@@ -168,6 +179,7 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
             vertices: vertices.into_boxed_slice(),
             indices,
             bounds: mesh_bounds,
+            material: 0u128.into(), // TODO
         });
     }
 

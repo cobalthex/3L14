@@ -1,6 +1,6 @@
 use std::error::Error;
 use game_3l14::engine::assets::AssetTypeId;
-use game_3l14::engine::graphics::material::MaterialFile;
+use game_3l14::engine::graphics::assets::material::MaterialFile;
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionStrings};
 
 pub struct MaterialBuilder;

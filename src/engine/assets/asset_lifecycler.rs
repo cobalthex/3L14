@@ -28,6 +28,7 @@ pub struct AssetLoadRequest
 
     // timer?
     // is_reloading?
+    // dependencies
 }
 impl AssetLoadRequest
 {
@@ -40,23 +41,23 @@ impl AssetLoadRequest
         Ok(bitcode::decode::<T>(&input)?)
     }
 
-    // Load a dependency
+    // Load another asset
     // Assets/lifecyclers are responsible for tracking/maintaining dependency references
     #[must_use]
-    pub fn load_dependency<D: Asset>(&self, asset_key: AssetKey) -> AssetHandle<D>
+    pub fn load_dependency<A: Asset>(&self, asset_key: AssetKey) -> AssetHandle<A>
     {
         // pattern matches Assets::load()
         self.storage.enqueue_load(asset_key, |h| AssetLifecycleRequest::LoadFileBacked(h))
     }
 
-    // Load a dependency from a specified source
-    // Assets/lifecyclers are responsible for tracking/maintaining dependency references
+    // Load a reference from a specified source
+    // Assets/lifecyclers are responsible for tracking/maintaining reference references
     #[must_use]
-    pub fn load_dependency_from<D: Asset, R: AssetRead + 'static>(
+    pub fn load_dependency_from<A: Asset, R: AssetRead + 'static>(
         &self,
         asset_key: AssetKey,
         input_data: R // take box?
-    ) -> AssetHandle<D>
+    ) -> AssetHandle<A>
     {
         // pattern matches Assets::load_from()
         self.storage.enqueue_load(asset_key, |h| AssetLifecycleRequest::LoadFromMemory(h, Box::new(input_data)))
@@ -75,10 +76,8 @@ pub trait AssetLifecycler: Sync + Send
 // only for use internally in the asset system, mostly just utility methods for interacting with generics
 pub(super) trait UntypedAssetLifecycler: Sync + Send
 {
-    // takes ownership of the untyped handle
     fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedAssetHandle, input: Box<dyn AssetRead>);
 
-    // takes ownership of the untyped handle
     fn error_untyped(&self, untyped_handle: UntypedAssetHandle, error: AssetLoadError);
 }
 impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
@@ -86,17 +85,21 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
     fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedAssetHandle, input: Box<dyn AssetRead>)
     {
         let retyped = unsafe { AssetHandle::<A>::attach_from(untyped_handle) };
-        let result = self.load(AssetLoadRequest
+        match self.load(AssetLoadRequest { asset_key: retyped.key(), input, storage })
         {
-            asset_key: retyped.key(),
-            input,
-            storage,
-        });
-        retyped.store_payload(result);
+            AssetPayload::Pending =>
+            {
+                // gets sent to the back of the queue to wait behind other loads
+                // TODO: correctly wait on dependencies?
+                // input.seek(SeekFrom::Start(0));
+
+            }
+            (p) => retyped.store_payload(p),
+        }
     }
 
     // this doesn't really make sense here
-    // todo: can probably have an untyped 'asset handle' similar to the untyped lifecycler
+    // special case for internal errors
     fn error_untyped(&self, untyped_handle: UntypedAssetHandle, error: AssetLoadError)
     {
         let retyped = unsafe { AssetHandle::<A>::attach_from(untyped_handle) };
@@ -118,7 +121,6 @@ impl RegisteredAssetType
     }
 }
 
-// TODO: make this a trait?
 #[derive(Default)]
 pub struct AssetLifecyclers
 {
@@ -151,3 +153,16 @@ pub(super) enum AssetLifecycleRequest
     LoadFileBacked(UntypedAssetHandle), // loads the file pointed by the asset path
     LoadFromMemory(UntypedAssetHandle, Box<dyn AssetRead>),
 }
+
+
+
+/* TODO
+
+- spin-up extra worker threads if there's a high queue depth?
+
+- notification callbacks when a certain asset type is built ?
+= reverse dependency chain update notifications (e.g Material needs to rebind when texture/shader rebuild)
+
+- while updates are being pushed, lock 'sender' and wait for all loads to finish before deduping then sending out notifications
+
+ */

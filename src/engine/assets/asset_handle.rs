@@ -69,6 +69,7 @@ pub(super) struct AssetHandleInner
     payload: AtomicUsize, // null when pending
 }
 
+// TODO: this is probably unsound, if payload ptr gets swapped, this needs to be holding onto its own ref
 pub struct PayloadGuard<'a, A: Asset>
 {
     inner: ManuallyDrop<Option<Arc<AssetPayload<A>>>>,

@@ -11,7 +11,7 @@ use game_3l14::engine::graphics::assets::shader::ShaderLifecycler;
 use game_3l14::engine::graphics::assets::texture::TextureLifecycler;
 use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
 use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
-use game_3l14::engine::graphics::material::MaterialCache;
+use game_3l14::engine::graphics::assets::material::MaterialCache;
 
 #[derive(Debug)]
 #[repr(i32)]

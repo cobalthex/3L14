@@ -42,15 +42,12 @@ pub struct TextureFile
 
 pub struct Texture
 {
-    gpu_tex: wgpu::Texture,
-    gpu_view: wgpu::TextureView,
-    desc: wgpu::TextureDescriptor<'static>, // TODO: might be able to get this from the gpu_tex directly
+    pub gpu_tex: wgpu::Texture,
+    pub gpu_view: wgpu::TextureView,
+    pub desc: wgpu::TextureDescriptor<'static>, // TODO: might be able to get this from the gpu_tex directly
 }
 impl Texture
 {
-    pub fn gpu_handle(&self) -> &wgpu::Texture { &self.gpu_tex }
-    pub fn desc(&self) -> &wgpu::TextureDescriptor { &self.desc }
-
     pub fn total_device_bytes(&self) -> i64
     {
         let mut total_size = 0i64;

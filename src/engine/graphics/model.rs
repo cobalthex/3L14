@@ -5,8 +5,8 @@ use std::sync::Arc;
 use bitcode::{Decode, Encode};
 use wgpu::{vertex_attr_array, BufferSlice, BufferUsages, IndexFormat, VertexBufferLayout};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId, HasAssetDependencies};
-use crate::engine::graphics::material::Material;
+use crate::engine::assets::{Asset, AssetHandle, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId, HasAssetDependencies};
+use crate::engine::graphics::assets::material::Material;
 use crate::engine::{AsU8Slice, AABB};
 use crate::engine::assets::AssetLoadError::ParseError;
 use crate::engine::graphics::Renderer;
@@ -48,18 +48,41 @@ impl WgpuVertexDecl for VertexPosNormTexCol
     fn layout() -> VertexBufferLayout<'static> { Self::LAYOUT }
 }
 
+#[derive(Encode, Decode)]
+pub enum ModelFileMeshIndices
+{
+    U16(Box<[u16]>),
+    U32(Box<[u32]>),
+}
+
+#[derive(Encode, Decode)]
+pub struct ModelFileMesh
+{
+    pub vertices: Box<[VertexPosNormTexCol]>,
+    pub indices: ModelFileMeshIndices,
+    pub bounds: AABB,
+    pub material: AssetKey,
+    // TODO: materials
+}
+
+#[derive(Encode, Decode)]
+pub struct ModelFile
+{
+    pub bounds: AABB,
+    pub meshes: Box<[ModelFileMesh]>,
+}
 pub struct ModelMesh
 {
-    bounds: AABB, // note; these are untransformed
-    vertices: wgpu::Buffer,
-    vertex_count: u32,
+    pub bounds: AABB, // note; these are untransformed
+    pub vertices: wgpu::Buffer,
+    pub vertex_count: u32,
 
-    indices: wgpu::Buffer,
-    index_count: u32,
-    index_format: IndexFormat,
+    pub indices: wgpu::Buffer,
+    pub index_count: u32,
+    pub index_format: IndexFormat,
 
     // todo: materials
-    material: Material,
+    pub material: AssetHandle<Material>,
 }
 impl ModelMesh
 {
@@ -80,32 +103,8 @@ impl ModelMesh
     {
         0 .. self.index_count
     }
-    pub fn index_format(&self) -> IndexFormat { self.index_format }
 
-    pub fn material(&self) -> &Material { &self.material }
-}
-
-#[derive(Encode, Decode)]
-pub enum ModelFileMeshIndices
-{
-    U16(Box<[u16]>),
-    U32(Box<[u32]>),
-}
-
-#[derive(Encode, Decode)]
-pub struct ModelFileMesh
-{
-    pub vertices: Box<[VertexPosNormTexCol]>,
-    pub indices: ModelFileMeshIndices,
-    pub bounds: AABB,
-    // TODO: materials
-}
-
-#[derive(Encode, Decode)]
-pub struct ModelFile
-{
-    pub bounds: AABB,
-    pub meshes: Box<[ModelFileMesh]>,
+    // pub fn material(&self) -> &Material { &self.material }
 }
 
 pub struct Model
@@ -129,7 +128,7 @@ impl Asset for Model
     {
         self.meshes.iter().all(|m|
         {
-            m.material.all_dependencies_loaded()
+            m.material.is_loaded_recursive()
         })
     }
 }
@@ -157,7 +156,7 @@ impl AssetLifecycler for ModelLifecycler
             {
                 // combine buffers?
                 let meshes =
-                mf.meshes.iter().map(|mesh|
+                (&mf.meshes).iter().map(|mesh|
                 {
                     let vbuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
                     {
@@ -190,11 +189,7 @@ impl AssetLifecycler for ModelLifecycler
                             ModelFileMeshIndices::U16(_) => IndexFormat::Uint16,
                             ModelFileMeshIndices::U32(_) => IndexFormat::Uint32,
                         },
-                        material: Material
-                        {
-                            albedo_map: Some(request.load_dependency(0x00400000d8355d3edc9b042bc8f71a39u128.into())),
-                            .. Default::default()
-                        },
+                        material: request.load_dependency(mesh.material),
                     }
                 });
 
