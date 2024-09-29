@@ -75,18 +75,34 @@ impl MaterialCache
 
     pub fn get_or_create_bind_group<'m>(&self, material: &'m Material, renderer: &Renderer) -> Option<BindGroup>
     {
-        let mut bind_group_entries = Vec::new();
+        // TODO: placeholder bind groups?
+
+        // todo: the ergonomics of this aren't great
+        
+        let mut texes = Vec::new();
         for tex in &material.textures
         {
-            let AssetPayload::Available(tex_payload) = &*tex.payload() else
+            let Some(tex_payload) = tex.payload().take() else
             {
                 return None;
             };
+            if !tex_payload.is_available()
+            {
+                return None;
+            }
 
+            texes.push(tex_payload)
+        }
+
+        let mut bind_group_entries = Vec::new();
+        bind_group_entries.reserve_exact(texes.len() + 1);
+
+        for tex in texes
+        {
             bind_group_entries.push(BindGroupEntry
             {
                 binding: bind_group_entries.len() as u32,
-                resource: BindingResource::TextureView(&tex_payload.gpu_view),
+                resource: BindingResource::TextureView(),
             })
         }
 
@@ -155,7 +171,7 @@ impl AssetLifecycler for MaterialLifecycler
         {
            request.load_dependency::<Texture>(*t)
         });
-        
+
         AssetPayload::Available(Material
         {
             textures: textures.collect(),

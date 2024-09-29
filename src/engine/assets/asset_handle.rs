@@ -1,18 +1,16 @@
+use crate::engine::{DataPayload, ShortTypeName};
+use crossbeam::channel::Sender;
+use parking_lot::Mutex;
 use std::alloc::Layout;
-use std::any::{Any, TypeId};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::future::Future;
 use std::marker::PhantomData;
-use std::mem::{swap, ManuallyDrop};
-use std::ops::Deref;
+use std::mem::swap;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
-use crossbeam::channel::Sender;
-use parking_lot::Mutex;
-use crate::engine::{DataPayload, ShortTypeName};
 
 use super::*;
 
@@ -37,7 +35,7 @@ impl Display for AssetLoadError
 }
 impl Error for AssetLoadError { }
 
-pub type AssetPayload<Asset> = DataPayload<Asset, AssetLoadError>;
+pub type AssetPayload<Asset> = DataPayload<Arc<Asset>, AssetLoadError>;
 impl<A: Asset> AssetPayload<A>
 {
     // Is this + all dependencies loaded/available?
@@ -66,47 +64,7 @@ pub(super) struct AssetHandleInner
     generation: AtomicU32, // updated <after> storing a payload
     is_reloading: AtomicBool, // cleared before payload is set
 
-    payload: AtomicUsize, // null when pending
-}
-
-// TODO: this is probably unsound, if payload ptr gets swapped, this needs to be holding onto its own ref
-pub struct PayloadGuard<'a, A: Asset>
-{
-    inner: ManuallyDrop<Option<Arc<AssetPayload<A>>>>,
-    _phantom: PhantomData<&'a A>,
-}
-impl<'a, A: Asset> PayloadGuard<'a, A>
-{
-    fn new(ptr: usize) -> Self
-    {
-        match ptr
-        {
-            0 => Self { inner: ManuallyDrop::new(None), _phantom: PhantomData::default() },
-            nz => Self
-            {
-                inner: ManuallyDrop::new(Some(unsafe { Arc::from_raw(nz as *const AssetPayload<A>) })),
-                _phantom: PhantomData::default(),
-            }
-        }
-    }
-
-    pub fn clone(&self) -> Option<Arc<AssetPayload<A>>>
-    {
-        self.inner.as_ref().map(|a| a.clone())
-    }
-}
-impl<'a, A: Asset> Deref for PayloadGuard<'a, A>
-{
-    type Target = AssetPayload<A>;
-
-    fn deref(&self) -> &Self::Target
-    {
-        match self.inner.deref()
-        {
-            None => &AssetPayload::Pending,
-            Some(arc) => arc
-        }
-    }
+    payload: AtomicUsize, // if high bit is 1, stores Arc<Asset>
 }
 
 impl AssetHandleInner
@@ -162,10 +120,9 @@ impl AssetHandleInner
     }
 
     #[inline]
-    pub fn payload<A: Asset>(&self) -> PayloadGuard<A>
+    pub fn payload<A: Asset>(&self) -> AssetPayload<A>
     {
-        let payload = self.payload.load(Ordering::Relaxed); // relaxed ok?
-        PayloadGuard::new(payload)
+        
     }
 
     #[inline]
@@ -371,9 +328,9 @@ impl<A: Asset> Drop for AssetHandle<A>
         inner.dropper.send(AssetLifecycleRequest::Drop(UntypedAssetHandle(self.inner))).expect("Failed to drop asset as the drop channel already closed"); // todo: error handling (can just drop it here?)
     }
 }
-impl<'a, A: Asset> Future for &'a AssetHandle<A> // non-reffing requires being able to consume an Arc
+impl<A: Asset> Future for AssetHandle<A> // non-reffing requires being able to consume an Arc
 {
-    type Output = PayloadGuard<'a, A>;
+    type Output = PayloadGuard<A>;
 
     // TODO: re-evaluate
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output>
