@@ -5,10 +5,9 @@ use std::sync::Arc;
 use bitcode::{Decode, Encode};
 use wgpu::{vertex_attr_array, BufferSlice, BufferUsages, IndexFormat, VertexBufferLayout};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use crate::engine::assets::{Asset, AssetHandle, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId, HasAssetDependencies};
+use crate::engine::assets::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId, HasAssetDependencies};
 use crate::engine::graphics::assets::material::Material;
 use crate::engine::{AsU8Slice, AABB};
-use crate::engine::assets::AssetLoadError::ParseError;
 use crate::engine::graphics::Renderer;
 use super::colors::Rgba;
 
@@ -148,65 +147,54 @@ impl AssetLifecycler for ModelLifecycler
 {
     type Asset = Model;
 
-    fn load(&self, mut request: AssetLoadRequest) -> AssetPayload<Self::Asset>
+    fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn std::error::Error>>
     {
-        match request.deserialize::<ModelFile>()
+        let mf = request.deserialize::<ModelFile>()?;
+        
+        // combine buffers?
+        let meshes =
+        (&mf.meshes).iter().map(|mesh|
         {
-            Ok(mf) =>
+            let vbuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
             {
-                // combine buffers?
-                let meshes =
-                (&mf.meshes).iter().map(|mesh|
-                {
-                    let vbuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
-                    {
-                        label: Some(format!("{:?} vertices", request.asset_key).as_str()),
-                        contents: unsafe { mesh.vertices.as_u8_slice() },
-                        usage: BufferUsages::VERTEX,
-                    });
+                label: Some(format!("{:?} vertices", request.asset_key).as_str()),
+                contents: unsafe { mesh.vertices.as_u8_slice() },
+                usage: BufferUsages::VERTEX,
+            });
 
-                    let index_count;
-                    let ibuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
-                    {
-                        label: Some(format!("{:?} indices", request.asset_key).as_str()),
-                        contents: match &mesh.indices
-                        {
-                            ModelFileMeshIndices::U16(u16s) => unsafe { index_count = u16s.len(); u16s.as_u8_slice() }
-                            ModelFileMeshIndices::U32(u32s) => unsafe { index_count = u32s.len(); u32s.as_u8_slice() }
-                        },
-                        usage: BufferUsages::INDEX,
-                    });
-
-                    ModelMesh
-                    {
-                        bounds: mesh.bounds,
-                        vertices: vbuffer,
-                        vertex_count: mesh.vertices.len() as u32,
-                        indices: ibuffer,
-                        index_count: index_count as u32,
-                        index_format: match mesh.indices
-                        {
-                            ModelFileMeshIndices::U16(_) => IndexFormat::Uint16,
-                            ModelFileMeshIndices::U32(_) => IndexFormat::Uint32,
-                        },
-                        material: request.load_dependency(mesh.material),
-                    }
-                });
-
-                let model = Model
-                {
-                    bounds: mf.bounds,
-                    name: Some(format!("{:?}", request.asset_key)), // debug name?
-                    meshes: meshes.collect(),
-                };
-
-                AssetPayload::Available(model)
-            },
-            Err(err) =>
+            let index_count;
+            let ibuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
             {
-                eprintln!("Error parsing model file: {err}");
-                AssetPayload::Unavailable(ParseError(1))
+                label: Some(format!("{:?} indices", request.asset_key).as_str()),
+                contents: match &mesh.indices
+                {
+                    ModelFileMeshIndices::U16(u16s) => unsafe { index_count = u16s.len(); u16s.as_u8_slice() }
+                    ModelFileMeshIndices::U32(u32s) => unsafe { index_count = u32s.len(); u32s.as_u8_slice() }
+                },
+                usage: BufferUsages::INDEX,
+            });
+
+            ModelMesh
+            {
+                bounds: mesh.bounds,
+                vertices: vbuffer,
+                vertex_count: mesh.vertices.len() as u32,
+                indices: ibuffer,
+                index_count: index_count as u32,
+                index_format: match mesh.indices
+                {
+                    ModelFileMeshIndices::U16(_) => IndexFormat::Uint16,
+                    ModelFileMeshIndices::U32(_) => IndexFormat::Uint32,
+                },
+                material: request.load_dependency(mesh.material),
             }
-        }
+        });
+
+        Ok(Model
+        {
+            bounds: mf.bounds,
+            name: Some(format!("{:?}", request.asset_key)), // debug name?
+            meshes: meshes.collect(),
+        })
     }
 }

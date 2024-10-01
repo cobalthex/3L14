@@ -69,7 +69,7 @@ pub trait AssetLifecycler: Sync + Send
     type Asset: Asset;
 
     /// Get or create an asset payload for the requested asset
-    fn load(&self, request: AssetLoadRequest) -> AssetPayload<Self::Asset>;
+    fn load(&self, request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>;
     // reload ?
 }
 
@@ -87,14 +87,15 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
         let retyped = unsafe { AssetHandle::<A>::attach_from(untyped_handle) };
         match self.load(AssetLoadRequest { asset_key: retyped.key(), input, storage })
         {
-            AssetPayload::Pending =>
+            Ok(asset) =>
             {
-                // gets sent to the back of the queue to wait behind other loads
-                // TODO: correctly wait on dependencies?
-                // input.seek(SeekFrom::Start(0));
-
+                retyped.store_payload(AssetPayload::Available(Arc::new(asset)))
             }
-            (p) => retyped.store_payload(p),
+            Err(err) =>
+            {
+                eprintln!("Failed to load {retyped:#?}: {err}");
+                retyped.store_payload(AssetPayload::Unavailable(AssetLoadError::Parse))
+            },
         }
     }
 

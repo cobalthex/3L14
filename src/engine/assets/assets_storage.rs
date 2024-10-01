@@ -6,14 +6,12 @@ use notify::event::ModifyKind;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use notify_debouncer_full::{Debouncer, FileIdMap};
 use parking_lot::Mutex;
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::thread::{Builder, JoinHandle};
 use std::time::Duration;
-
 // TODO: probably don't pass around UniCase publicly
 
 type AssetHandleBank = HashMap<AssetKey, UntypedAssetHandle>;
@@ -35,9 +33,11 @@ impl AssetsStorage
     {
         // debug assert?
         assert_eq!(A::asset_type(), asset_key.asset_type()); // todo: return an error handle
-        assert_eq!(
-            self.registered_asset_types.get(&A::asset_type()).expect("Asset type is unregistered").type_id,
-            TypeId::of::<A>());
+        match self.registered_asset_types.get(&A::asset_type())
+        {
+            None => panic!("Asset type {:?} does not have a registered lifecycler", A::asset_type()),
+            Some(rat) => assert_eq!(rat.type_id, TypeId::of::<A>()),
+        }
 
         let mut handle_bank = self.handles.lock();
 
@@ -104,6 +104,8 @@ impl AssetsStorage
         input_fn: F) -> AssetHandle<A>
     {
         let (_pre_existed, asset_handle) = self.create_or_update_handle(asset_key);
+
+        // todo: what to do if already queued for load?
 
         if self.lifecyclers.contains_key(&asset_key.asset_type())
         {
@@ -220,7 +222,7 @@ impl AssetsStorage
                                     Err(err) =>
                                     {
                                         eprintln!("Failed to read asset file {:?}: {err}", self.asset_key_to_file_path(inner.key()));
-                                        lifecycler.error_untyped(untyped_handle, AssetLoadError::IOError(err));
+                                        lifecycler.error_untyped(untyped_handle, AssetLoadError::Fetch);
                                         return;
                                     }
                                 };
@@ -483,8 +485,12 @@ impl Drop for Assets
 #[cfg(test)]
 mod tests
 {
-    use std::sync::atomic::AtomicUsize;
     use super::*;
+    use std::error::Error;
+    use std::fmt::{Display, Formatter};
+    use std::sync::atomic::AtomicUsize;
+
+    // TODO: should probably make sure there are no mem leaks in these tests
 
     const TEST_ASSET_1: AssetKey = AssetKey::new(AssetTypeId::Test1, true, 0, 1);
     const TEST_ASSET_2: AssetKey = AssetKey::new(AssetTypeId::Test2, true, 0, 1);
@@ -500,6 +506,14 @@ mod tests
     }
 
     #[derive(Debug)]
+    struct TestError;
+    impl Display for TestError
+    {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { std::fmt::Debug::fmt(self, f) }
+    }
+    impl Error for TestError { }
+
+    #[derive(Debug)]
     struct TestAsset
     {
         name: String,
@@ -513,7 +527,7 @@ mod tests
     struct Passthru
     {
         call_count: usize,
-        passthru_fn: fn(AssetLoadRequest) -> AssetPayload<TestAsset>,
+        passthru_fn: fn(AssetLoadRequest) -> Result<TestAsset, Box<dyn Error>>,
     }
 
     #[derive(Default)]
@@ -525,11 +539,11 @@ mod tests
     impl AssetLifecycler for TestAssetLifecycler
     {
         type Asset = TestAsset;
-        fn load(&self, request: AssetLoadRequest) -> AssetPayload<Self::Asset>
+        fn load(&self, request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
         {
             match &mut *self.passthru.lock()
             {
-                None => AssetPayload::Unavailable(AssetLoadError::Test(0)),
+                None => Err(Box::new(TestError)),
                 Some(passthru) =>
                 {
                     passthru.call_count += 1;
@@ -539,7 +553,7 @@ mod tests
         }
     }
 
-    fn set_passthru(assets: &Assets, passthru_fn: Option<fn(AssetLoadRequest) -> AssetPayload<TestAsset>>)
+    fn set_passthru(assets: &Assets, passthru_fn: Option<fn(AssetLoadRequest) -> Result<TestAsset, Box<dyn Error>>>)
     {
         let lifecycler = assets.storage.get_lifecycler::<TestAsset>().unwrap();
         let tal = unsafe { &*(lifecycler as *const dyn UntypedAssetLifecycler as *const TestAssetLifecycler) };
@@ -557,16 +571,16 @@ mod tests
         tal.passthru.lock().as_ref().map(|p| p.call_count)
     }
 
-    fn await_asset<A: Asset>(handle: &AssetHandle<A>) -> PayloadGuard<A>
+    fn await_asset<A: Asset>(handle: &AssetHandle<A>) -> AssetPayload<A>
     {
         futures::executor::block_on(handle)
     }
 
     mod load
     {
-        use std::io::Cursor;
         use super::*;
         use crate::engine::DataPayload::*;
+        use std::io::Cursor;
 
         // TODO: disable threading and add 'loop_once' function for worker
 
@@ -588,9 +602,9 @@ mod tests
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
             let req: AssetHandle<TestAsset> = assets.load::<TestAsset>(TEST_ASSET_1);
-            match &*await_asset(&req)
+            match await_asset(&req)
             {
-                Unavailable(AssetLoadError::IOError(_)) => {},
+                Unavailable(AssetLoadError::Fetch) => {},
                 other => panic!("Invalid load result: {other:#?}"),
             }
         }
@@ -604,13 +618,13 @@ mod tests
 
             set_passthru(&assets, Some(|req: AssetLoadRequest|
             {
-                Unavailable(AssetLoadError::Test(0))
+                Err(Box::new(TestError))
             }));
 
             let req: AssetHandle<TestAsset> = assets.load_from::<TestAsset, _>(TEST_ASSET_1, Cursor::new([]));
-            match &*await_asset(&req)
+            match await_asset(&req)
             {
-                Unavailable(AssetLoadError::Test(0)) => {},
+                Unavailable(AssetLoadError::Parse) => {},
                 other => panic!("Asset not unavailable(Test): {other:#?}"),
             }
         }
@@ -623,7 +637,7 @@ mod tests
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
             let req: AssetHandle<TestAsset> = assets.load_from::<TestAsset, _>(TEST_ASSET_1, Cursor::new([]));
-            match *req.payload()
+            match req.payload()
             {
                 AssetPayload::Pending => {},
                 _ => panic!("Asset not pending"),
@@ -639,7 +653,7 @@ mod tests
                 .add_lifecycler(TestAssetLifecycler::default());
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
-            set_passthru(&assets, Some(|_req: AssetLoadRequest| Unavailable(AssetLoadError::Test(0))));
+            set_passthru(&assets, Some(|_req: AssetLoadRequest| Err(Box::new(TestError))));
 
             assert_eq!(Some(0), get_passthru_call_count(&assets));
 
@@ -663,12 +677,12 @@ mod tests
 
             set_passthru(&assets, Some(|_req: AssetLoadRequest|
             {
-                Available(TestAsset { name: "test asset".to_string(), nested: None })
+                Ok(TestAsset { name: "test asset".to_string(), nested: None })
             }));
 
             let req: AssetHandle<TestAsset> = assets.load_from::<TestAsset, _>(TEST_ASSET_1, Cursor::new([]));
             let dup = req.clone();
-            match &*await_asset(&req)
+            match await_asset(&req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.name, "test asset"),
                 _ => panic!("Asset not available"),
@@ -688,16 +702,13 @@ mod tests
             set_passthru(&assets, Some(|mut req: AssetLoadRequest|
             {
                 let mut name = String::new();
-                match req.input.read_to_string(&mut name)
-                {
-                    Ok(_) => Available(TestAsset { name, nested: None }),
-                    Err(_) => Unavailable(AssetLoadError::ParseError(0)),
-                }
+                req.input.read_to_string(&mut name)?;
+                Ok(TestAsset { name, nested: None })
             }));
 
             let input_bytes = Cursor::new(loaded_asset_name.as_bytes());
             let req = assets.load_from::<TestAsset, _>(TEST_ASSET_1, input_bytes);
-            match &*await_asset(&req)
+            match await_asset(&req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.name, loaded_asset_name),
                 _ => panic!("Asset not available"),
@@ -717,16 +728,13 @@ mod tests
             set_passthru(&assets, Some(|mut req: AssetLoadRequest|
             {
                 let mut name = String::new();
-                match req.input.read_to_string(&mut name)
-                {
-                    Ok(_) => Available(TestAsset { name, nested: None }),
-                    Err(_) => Unavailable(AssetLoadError::ParseError(0)),
-                }
+                req.input.read_to_string(&mut name)?;
+                Ok(TestAsset { name, nested: None })
             }));
 
             let mut input_bytes = Cursor::new(first_asset_name.as_bytes());
             let mut req = assets.load_from::<TestAsset, _>(TEST_ASSET_1, input_bytes);
-            match &*await_asset(&req)
+            match await_asset(&req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.name, first_asset_name),
                 _ => panic!("Asset not available"),
@@ -735,7 +743,7 @@ mod tests
             input_bytes = Cursor::new(second_asset_name.as_bytes());
             req = assets.load_from::<TestAsset, _>(TEST_ASSET_1, input_bytes);
             std::thread::sleep(Duration::from_millis(10)); // TODO: HACK
-            match &*await_asset(&req)
+            match await_asset(&req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.name, second_asset_name),
                 _ => panic!("Asset not available"),

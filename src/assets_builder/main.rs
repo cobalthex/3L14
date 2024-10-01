@@ -1,9 +1,9 @@
 mod core;
 mod builders;
 
+use crate::core::{AssetsBuilder, AssetsBuilderConfig};
 use clap::Parser;
 use std::path::Path;
-use crate::core::{AssetsBuilder, AssetsBuilderConfig};
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -38,7 +38,7 @@ fn main()
         {
             Ok(results) =>
             {
-                eprintln!("Successfully built {src_path:?} into {results:?}");
+                eprintln!("Successfully built {src_path:?} into {results:#?}");
             }
             Err(err) =>
             {

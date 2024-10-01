@@ -41,7 +41,7 @@ egui = "0.28.1"
 egui_extras = "0.28.1"
 gltf = "1.4.1"
 presser = "0.3.1"
-clap = { version = "4.5.17", features = ["derive"] }
+clap = { version = "4.5.18", features = ["derive"] }
 approx = "0.5.1"
 unicase = "2.7.0"
 crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
@@ -63,6 +63,7 @@ ron = { version = "0.8.1", features = ["integer128"] }
 serde = { version = "1.0.210", features = ["derive"] }
 bitcode = { version = "0.6.3", features = ["glam", "std"] }
 image = "0.25.2"
+hassle-rs = "0.11.0"
 
 [dev-dependencies]
 criterion = { version = "0.5.1" }

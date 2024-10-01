@@ -17,17 +17,14 @@ use super::*;
 // tbh, after change, this could probably just be stored as an Arc
 
 #[derive(Debug)]
+#[repr(u16)]
 pub enum AssetLoadError
 {
-    Shutdown, // The asset system has been shutdown and no new assets can be loaded
+    Shutdown = 1, // The asset system has been shutdown and no new assets can be loaded
     MismatchedAssetType, // asset key does not match handle type
     LifecyclerNotRegistered,
-    InvalidFormat,
-    IOError(std::io::Error),
-    ParseError(u16), // The parse error is specific to each lifecycler -- TODO: strings in debug, ints in release?
-
-    #[cfg(test)]
-    Test(u16),
+    Fetch,
+    Parse,
 }
 impl Display for AssetLoadError
 {
@@ -69,6 +66,9 @@ pub(super) struct AssetHandleInner
 
 impl AssetHandleInner
 {
+    // if high bit is set, it is storing a pointer
+    const PAYLOAD_PTR_MASK: usize = 1 << (usize::BITS - 1);
+
     pub fn store_payload<A: Asset>(&self, payload: AssetPayload<A>)
     {
         debug_assert_eq!(A::asset_type(), self.key.asset_type());
@@ -77,23 +77,27 @@ impl AssetHandleInner
         #[cfg(feature = "debug_asset_lifetimes")]
         eprintln!("{:?} storing new payload", self.key());
 
-        match self.payload.load(Ordering::Acquire) // todo: verify ordering?
-        {
-            0 => {},
-            n =>
-            unsafe {
-                let _old_arc = Arc::from_raw(n as *const AssetPayload<A>);
-            }
-        }
+        // can maybe get some inspiration from
+        // https://vorner.github.io/2020/09/03/performance-cheating.html
 
-        match payload
+        let new_val = match payload
         {
-            DataPayload::Pending => self.payload.store(0, Ordering::Release),
-            _ =>
+            AssetPayload::Pending => 0,
+            AssetPayload::Unavailable(err) => err as usize,
+            AssetPayload::Available(arc) =>
             {
-                let arc = Arc::into_raw(Arc::new(payload));
-                self.payload.store(arc as usize, Ordering::Release); // todo: verify ordering
+                let raw = Arc::into_raw(arc);
+                debug_assert_eq!((raw as usize) & Self::PAYLOAD_PTR_MASK, 0); // rethink entire design if this ever fails :)
+                (raw as usize) | Self::PAYLOAD_PTR_MASK
             },
+        };
+
+        let old_val = self.payload.swap(new_val, Ordering::AcqRel); // seqcst?
+
+        if (old_val & Self::PAYLOAD_PTR_MASK) != 0
+        {
+            // drop the old arc
+            let _arc = unsafe { Arc::from_raw((old_val & !Self::PAYLOAD_PTR_MASK) as *const A) };
         }
 
         // ideally this entire function should be atomic (RwLock the whole thing?)
@@ -122,7 +126,21 @@ impl AssetHandleInner
     #[inline]
     pub fn payload<A: Asset>(&self) -> AssetPayload<A>
     {
-        
+        debug_assert_eq!(A::asset_type(), self.asset_type());
+        let ptr = self.payload.load(Ordering::Acquire);
+
+        match ptr
+        {
+            0 => AssetPayload::Pending,
+            p if (ptr & Self::PAYLOAD_PTR_MASK) != 0 =>
+            {
+                let arc = unsafe { Arc::from_raw((ptr & !Self::PAYLOAD_PTR_MASK) as *const A) };
+                let avail = AssetPayload::Available(arc.clone());
+                std::mem::forget(arc);
+                avail
+            },
+            e=> AssetPayload::Unavailable(unsafe { std::mem::transmute(e as u16) }),
+        }
     }
 
     #[inline]
@@ -248,10 +266,7 @@ impl<A: Asset> AssetHandle<A>
 
     // Retrieve the current payload, holds a strong reference for as long as the guard exists
     #[inline]
-    pub fn payload(&self) -> PayloadGuard<A>
-    {
-        self.inner().payload()
-    }
+    pub fn payload(&self) -> AssetPayload<A> { self.inner().payload() }
 
     // The number of references to this asset
     #[inline]
@@ -284,10 +299,6 @@ impl<A: Asset> AssetHandle<A>
     pub(super) fn store_payload(&self, payload: AssetPayload<A>)
     {
         let inner = unsafe { &*self.inner };
-        if let DataPayload::Unavailable(err) = &payload
-        {
-            eprintln!("Error loading asset {self:?}: {err:?}");
-        }
         inner.store_payload(payload);
     }
 }
@@ -328,9 +339,9 @@ impl<A: Asset> Drop for AssetHandle<A>
         inner.dropper.send(AssetLifecycleRequest::Drop(UntypedAssetHandle(self.inner))).expect("Failed to drop asset as the drop channel already closed"); // todo: error handling (can just drop it here?)
     }
 }
-impl<A: Asset> Future for AssetHandle<A> // non-reffing requires being able to consume an Arc
+impl<A: Asset> Future for &AssetHandle<A> // non-reffing requires being able to consume an Arc
 {
-    type Output = PayloadGuard<A>;
+    type Output = AssetPayload<A>;
 
     // TODO: re-evaluate
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output>
@@ -344,7 +355,8 @@ impl<A: Asset> Future for AssetHandle<A> // non-reffing requires being able to c
             return Poll::Pending;
         }
 
-        match *self.payload()
+        let p = self.payload();
+        match p
         {
             AssetPayload::Pending =>
             {
@@ -352,7 +364,7 @@ impl<A: Asset> Future for AssetHandle<A> // non-reffing requires being able to c
                 swap(&mut *locked, &mut Some(cx.waker().clone()));
                 Poll::Pending
             },
-            AssetPayload::Available(_) | AssetPayload::Unavailable(_) => Poll::Ready(inner.payload()),
+            AssetPayload::Available(_) | AssetPayload::Unavailable(_) => Poll::Ready(p),
         }
     }
 }

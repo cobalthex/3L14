@@ -1,3 +1,4 @@
+use std::error::Error;
 use crate::engine::graphics::Renderer;
 use crate::format_bytes;
 use bitcode::{Decode, Encode};
@@ -85,24 +86,13 @@ impl TextureLifecycler
 impl AssetLifecycler for TextureLifecycler
 {
     type Asset = Texture;
-    fn load(&self, mut request: AssetLoadRequest) -> AssetPayload<Self::Asset>
+
+    fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
     {
-        let tex_file: TextureFile = match request.deserialize()
-        {
-            Ok(f) => f,
-            Err(err) =>
-            {
-                eprintln!("Error deserializing texture metadata: {err}");
-                return AssetPayload::Unavailable(AssetLoadError::ParseError(0))
-            },
-        };
+        let tex_file: TextureFile = request.deserialize()?;
 
         let mut texel_bytes = Vec::new();
-        match request.input.read_to_end(&mut texel_bytes)
-        {
-            Ok(b) => b,
-            Err(err) => { return AssetPayload::Unavailable(AssetLoadError::IOError(err)); },
-        };
+        request.input.read_to_end(&mut texel_bytes)?;
         let dtor = TextureDescriptor
         {
             label: None, // TODO
@@ -157,7 +147,7 @@ impl AssetLifecycler for TextureLifecycler
         let bytes = tex.total_device_bytes();
         self.device_bytes.fetch_add(bytes, Ordering::Relaxed); // relaxed ok here?
 
-        AssetPayload::Available(tex)
+        Ok(tex)
     }
 }
 

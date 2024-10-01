@@ -5,7 +5,15 @@ use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat, M
 use image::{ColorType, EncodableLayout, GenericImageView};
 use std::error::Error;
 use std::io::{BufReader, Write};
+use serde::Deserialize;
 use unicase::UniCase;
+
+#[derive(Deserialize)]
+struct TextureBuilderConfig
+{
+    #[serde(default)]
+    generate_mips: bool,
+}
 
 pub struct TextureBuilder;
 impl AssetBuilder for TextureBuilder
@@ -31,6 +39,8 @@ impl AssetBuilder for TextureBuilder
 
     fn build_assets(&self, mut input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
+        let config: TextureBuilderConfig = input.parse_config()?;
+
         let mut output = outputs.add_output(AssetTypeId::Texture)?;
 
         if input.file_extension() == &UniCase::new("png")

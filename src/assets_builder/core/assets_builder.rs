@@ -1,4 +1,4 @@
-use game_3l14::engine::assets::{AssetKey, AssetKeyBaseId, AssetKeyDerivedId, AssetMetadata, AssetTypeId, BuilderHash};
+use game_3l14::engine::assets::{Asset, AssetKey, AssetKeyBaseId, AssetKeyDerivedId, AssetMetadata, AssetTypeId, BuilderHash};
 use game_3l14::engine::{varint, ShortTypeName};
 use rand::RngCore;
 use std::collections::HashMap;
@@ -8,10 +8,12 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hasher;
 use std::io;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
-use std::mem::MaybeUninit;
+use std::mem::{swap, MaybeUninit};
 use std::path::{Path, PathBuf};
 use bitcode::Encode;
 use metrohash::MetroHash64;
+use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 use unicase::UniCase;
 
 use super::*;
@@ -141,10 +143,7 @@ impl AssetsBuilder
 
         let source_meta = match std::fs::File::open(&source_meta_file_path)
         {
-            Ok(fin) =>
-            {
-                ron::de::from_reader(fin).expect("TODO: error handling")
-            },
+            Ok(fin) => ron::de::from_reader(fin).map_err(BuildError::SourceMetaParseError)?,
             Err(err) if err.kind() == ErrorKind::NotFound =>
             {
                 // TODO: assert that thread_rng impls CryptoRng
@@ -154,6 +153,7 @@ impl AssetsBuilder
                 let new_meta = SourceMetadata
                 {
                     base_id,
+                    builder_config: ron::Value::Unit,
                 };
 
                 let meta_write = std::fs::File::create(&source_meta_file_path).map_err(BuildError::SourceMetaIOError)?;
@@ -173,9 +173,11 @@ impl AssetsBuilder
 
         let input = SourceInput
         {
+            source_path: rel_path.to_path_buf(),
             file_extension: UniCase::from(file_ext),
             base_id: source_meta.base_id,
             input: Box::new(source_read),
+            builder_config: source_meta.builder_config,
         };
 
         let mut outputs = BuildOutputs
@@ -207,6 +209,7 @@ pub enum BuildError
     NoBuilderForSource,
     SourceIOError(io::Error),
     SourceMetaIOError(io::Error),
+    SourceMetaParseError(ron::error::SpannedError),
     SourceMetaSerializeError(ron::Error),
     TooManyDerivedIDs,
     BuilderError(Box<dyn std::error::Error>),
@@ -242,6 +245,8 @@ impl<W: BuildOutputWrite> Seek for BuildOutput<W>
 }
 impl<W: BuildOutputWrite> BuildOutput<W>
 {
+    pub fn asset_key(&self) -> AssetKey { self.asset_key }
+
     /* TODO: use savefile for serialization?
     - versioned, can do migrations more easily
         migrations would take the form of loading the old asset, applying any transforms, and re-baking
@@ -348,15 +353,26 @@ impl<T: Read + Seek> SourceInputRead for T { }
 
 pub struct SourceInput
 {
+    source_path: PathBuf, // Should only be used for debug purposes
     file_extension: UniCase<String>, // does not include .
     base_id: AssetKeyBaseId,
-    input: Box<dyn SourceInputRead>, // generic?
-    
-    // pub build_config: HashMap<UniCase<String>, >
+    input: Box<dyn SourceInputRead>,
+
+    builder_config: ron::Value,
 }
 impl SourceInput
 {
+    pub fn source_path(&self) -> &Path { self.source_path.as_ref() }
+    pub fn source_path_string(&self) -> String { self.source_path.to_string_lossy().to_string() }
     pub fn file_extension(&self) -> &UniCase<String> { &self.file_extension }
+
+    // Parse the incoming source config, can only be called once -- TODO: clone instead?
+    pub fn parse_config<C: DeserializeOwned>(&mut self) -> ron::Result<C>
+    {
+        let mut taken = ron::Value::Unit;
+        swap(&mut self.builder_config, &mut taken);
+        taken.into_rust()
+    }
 }
 impl Read for SourceInput
 {
@@ -365,4 +381,15 @@ impl Read for SourceInput
 impl Seek for SourceInput
 {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> { self.input.seek(pos) }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SourceMetadata
+{
+    pub base_id: AssetKeyBaseId,
+
+    // key value pairs to pass into builder?
+    // pub builder_config: serde::Value,
+
+    builder_config: ron::Value,
 }

@@ -22,11 +22,3 @@ pub trait AssetBuilder: 'static
     // Build the source data into one or more outputted assets
     fn build_assets(&self, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>;
 }
-
-#[derive(Serialize, Deserialize)]
-pub struct SourceMetadata
-{
-    pub base_id: AssetKeyBaseId,
-
-    // key value pairs to pass into builder?
-}

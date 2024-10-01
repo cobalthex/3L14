@@ -3,12 +3,21 @@ use std::fmt::{Display, Formatter};
 use std::io::Write;
 use game_3l14::engine::graphics::assets::material::{MaterialFile, PbrProps};
 use glam::Vec3;
+use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
+use serde::Deserialize;
 use unicase::UniCase;
 use game_3l14::engine::AABB;
 use game_3l14::engine::assets::AssetTypeId;
 use game_3l14::engine::graphics::{ModelFile, ModelFileMesh, ModelFileMeshIndices, Rgba, VertexPosNormTexCol};
+use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat};
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionStrings};
+
+
+#[derive(Deserialize)]
+struct ModelBuilderConfig
+{
+}
 
 #[derive(Debug)]
 pub enum ModelImportError
@@ -73,7 +82,7 @@ impl AssetBuilder for ModelBuilder
 }
 
 
-fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &Vec<gltf::image::Data>, outputs: &mut BuildOutputs) -> Result<ModelFile, ModelImportError>
+fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &Vec<gltf::image::Data>, outputs: &mut BuildOutputs) -> Result<ModelFile, Box<dyn Error>>
 {
     let mut model_bounds = AABB { min: Vec3::MAX, max: Vec3::MIN };
     let mut meshes: Vec<ModelFileMesh> = Vec::new();
@@ -129,29 +138,42 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
             },
         };
 
+        let mut textures = Vec::new();
+
         let pbr = in_prim.material().pbr_metallic_roughness();
-        let albedo_map = match pbr.base_color_texture()
+        if let Some(tex) = pbr.base_color_texture()
         {
-            None => None,
-            Some(tex) =>
+            let tex_index = tex.texture().source().index();
+            let tex_data = &images[tex_index];
+
+            let mut tex_output = outputs.add_output(AssetTypeId::Texture)?;
+
+            tex_output.serialize(&TextureFile
             {
-                let tex_index = tex.texture().source().index();
-                let data = &images[tex_index];
-                let tex_name = tex.texture().name().map_or_else(|| { format!("{asset_name}:tex{}", tex_index) }, |n| n.to_string());
-                let reader = GltfTexture
+                width: tex_data.width,
+                height: tex_data.height,
+                depth: 1,
+                mip_count: 1,
+                mip_offsets: Default::default(),
+                pixel_format: match tex_data.format
                 {
-                    name: tex_name.clone(),
-                    width: data.width,
-                    height: data.height,
-                    texel_data: data.pixels.clone(),
-                    read_offset: 0,
-                };
-                // let tex: AssetHandle<Texture> = request.load_dependency_from(&tex_name, reader);
-                // // todo: this needs to reconcile the image format
-                // Some(tex)
-                None
-            }
-        };
+                    Format::R8 => TextureFilePixelFormat::R8,
+                    Format::R8G8 => TextureFilePixelFormat::Rg8,
+                    Format::R8G8B8 => todo!(),
+                    Format::R8G8B8A8 => TextureFilePixelFormat::Rgba8,
+                    Format::R16 => todo!(),
+                    Format::R16G16 => todo!(),
+                    Format::R16G16B16 => todo!(),
+                    Format::R16G16B16A16 => todo!(),
+                    Format::R32G32B32FLOAT => todo!(),
+                    Format::R32G32B32A32FLOAT => todo!(),
+                }
+            })?;
+
+            tex_output.write_all(&tex_data.pixels)?;
+
+            textures.push(tex_output.finish()?);
+        }
 
         let material =
         {
@@ -159,7 +181,7 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
             let mut mtl_output = outputs.add_output(AssetTypeId::RenderMaterial)?;
             mtl_output.serialize(&MaterialFile
             {
-                textures: Box::new([]),
+                textures: textures.into_boxed_slice(),
                 pbr_props: PbrProps
                 {
                     albedo_color: pbr.base_color_factor().into(),
@@ -179,7 +201,7 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
             vertices: vertices.into_boxed_slice(),
             indices,
             bounds: mesh_bounds,
-            material: 0u128.into(), // TODO
+            material,
         });
     }
 

@@ -1,3 +1,6 @@
 (
     base_id: 66913275529527453533645249081,
+    builder_config: (
+        generate_mips: true,
+    )
 )

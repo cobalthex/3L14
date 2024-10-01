@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::error::Error;
 use std::io::Read;
 use std::sync::Arc;
 use wgpu::ShaderModule;
@@ -34,26 +35,18 @@ impl ShaderLifecycler
 impl AssetLifecycler for ShaderLifecycler
 {
     type Asset = Shader;
-    fn load(&self, mut request: AssetLoadRequest) -> AssetPayload<Self::Asset>
+    fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
     {
         let mut source_text = String::new();
-        match request.input.read_to_string(&mut source_text)
-        {
-            Ok(_) => {}
-            Err(err) =>
-            {
-                eprintln!("Failed to load shader: {err}");
-                return AssetPayload::Unavailable(AssetLoadError::ParseError(err.kind() as u16));
-            }
-        }
+        request.input.read_to_string(&mut source_text)?;
 
         let module = self.renderer.device().create_shader_module(ShaderModuleDescriptor
         {
-            label: None, // TODO
+            label: Some(&format!("{:?}", request.asset_key)),
             source: ShaderSource::Wgsl(Cow::from(source_text)),
         });
 
-        AssetPayload::Available(Shader
+        Ok(Shader
         {
             module,
         })

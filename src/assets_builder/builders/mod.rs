@@ -6,3 +6,6 @@ pub use texture_builder::*;
 
 pub mod material_builder;
 pub use material_builder::*;
+
+mod shader_builder;
+pub use shader_builder::*;

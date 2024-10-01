@@ -1,3 +1,4 @@
+use std::error::Error;
 use crate::engine::assets::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId};
 use crate::engine::graphics::assets::Texture;
 use crate::engine::graphics::colors::Rgba;
@@ -73,36 +74,38 @@ impl MaterialCache
         })
     }
 
-    pub fn get_or_create_bind_group<'m>(&self, material: &'m Material, renderer: &Renderer) -> Option<BindGroup>
+    pub fn get_or_create_bind_group(&self, material_handle: &AssetHandle<Material>, renderer: &Renderer) -> Option<BindGroup>
     {
         // TODO: placeholder bind groups?
 
         // todo: the ergonomics of this aren't great
-        
+
+        let material = match material_handle.payload()
+        {
+            AssetPayload::Pending => { return None; }
+            AssetPayload::Unavailable(_) => { return None; }
+            AssetPayload::Available(m) => { m }
+        };
+
         let mut texes = Vec::new();
         for tex in &material.textures
         {
-            let Some(tex_payload) = tex.payload().take() else
+            match tex.payload()
             {
-                return None;
-            };
-            if !tex_payload.is_available()
-            {
-                return None;
+                AssetPayload::Available(p) => { texes.push(p); },
+                _ => { return None; }
             }
-
-            texes.push(tex_payload)
         }
 
         let mut bind_group_entries = Vec::new();
         bind_group_entries.reserve_exact(texes.len() + 1);
 
-        for tex in texes
+        for tex in &texes
         {
             bind_group_entries.push(BindGroupEntry
             {
                 binding: bind_group_entries.len() as u32,
-                resource: BindingResource::TextureView(),
+                resource: BindingResource::TextureView(&tex.gpu_view),
             })
         }
 
@@ -150,29 +153,21 @@ impl Asset for Material
     fn asset_type() -> AssetTypeId { AssetTypeId::RenderMaterial }
 }
 
-struct MaterialLifecycler;
+pub struct MaterialLifecycler;
 impl AssetLifecycler for MaterialLifecycler
 {
     type Asset = Material;
 
-    fn load(&self, mut request: AssetLoadRequest) -> AssetPayload<Self::Asset>
+    fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
     {
-        let mtl_file: MaterialFile = match request.deserialize()
-        {
-            Ok(m) => m,
-            Err(err) =>
-            {
-                eprintln!("Error deserializing material: {err}");
-                return AssetPayload::Unavailable(AssetLoadError::ParseError(0));
-            }
-        };
+        let mtl_file: MaterialFile = request.deserialize()?;
 
         let textures = mtl_file.textures.iter().map(|t|
         {
            request.load_dependency::<Texture>(*t)
         });
 
-        AssetPayload::Available(Material
+        Ok(Material
         {
             textures: textures.collect(),
             prb_props: mtl_file.pbr_props,

@@ -7,6 +7,7 @@ use game_3l14::engine::{*, timing::*, input::*, windows::*, graphics::*, world::
 use clap::Parser;
 use glam::{Mat4, Quat, Vec3};
 use wgpu::*;
+use game_3l14::engine::graphics::assets::{Material, MaterialLifecycler};
 use game_3l14::engine::graphics::assets::shader::ShaderLifecycler;
 use game_3l14::engine::graphics::assets::texture::TextureLifecycler;
 use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
@@ -123,6 +124,7 @@ fn main() -> ExitReason
             .add_lifecycler(ModelLifecycler::new(renderer.clone()))
             .add_lifecycler(TextureLifecycler::new(renderer.clone()))
             .add_lifecycler(ShaderLifecycler::new(renderer.clone()))
+            .add_lifecycler(MaterialLifecycler)
         , assets_config);
 
     {
@@ -136,9 +138,8 @@ fn main() -> ExitReason
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        let model_key: AssetKey = 0x00700020cc7bc1421648535151d91992.into();
+        let model_key: AssetKey = 0x00700010cc7bc1421648535151d91992.into();
         let mut test_model = assets.load::<Model>(model_key);
-        // let test_shader = assets.load::<Shader, _>(&"shaders/test.wgsl");
 
         let mut camera = Camera::new(Some("fp_cam"), renderer.display_aspect_ratio());
         camera.transform.position = Vec3::new(0.0, 2.0, -10.0);
@@ -370,23 +371,23 @@ fn main() -> ExitReason
 
                 let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
                 {
-                    match &*test_model.payload()
+                    match test_model.payload()
                     {
-                        AssetPayload::<Model>::Pending =>
+                        AssetPayload::Pending =>
                         {
                             render_passes::test(
                                 &render_frame,
                                 &mut encoder,
                                 Some(colors::GOOD_PURPLE));
                         }
-                        AssetPayload::<Model>::Unavailable(_) =>
+                        AssetPayload::Unavailable(_) =>
                         {
                             render_passes::test(
                                 &render_frame,
                                 &mut encoder,
                                 Some(colors::BAD_RED));
                         }
-                        AssetPayload::<Model>::Available(model) =>
+                        AssetPayload::Available(model) =>
                         {
                             let mut test_pass = render_passes::test(
                                 &render_frame,
@@ -398,11 +399,6 @@ fn main() -> ExitReason
 
                             let mut world_index = 0;
 
-                            if !model.all_dependencies_loaded()
-                            {
-                                continue;
-                            }
-
                             // todo: use DrawIndirect?
                             let world_transform = Mat4::IDENTITY; // model.transform.to_world();
                             worlds_buf[world_index].world = world_transform;
@@ -413,9 +409,9 @@ fn main() -> ExitReason
                             for mesh in model.meshes()
                             {
                                 test_pass.set_vertex_buffer(0, mesh.vertices());
-                                test_pass.set_index_buffer(mesh.indices(), mesh.index_format());
+                                test_pass.set_index_buffer(mesh.indices(), mesh.index_format);
 
-                                let Some(mtl_bind_group) = material_cache.get_or_create_bind_group(mesh.material(), &renderer)
+                                let Some(mtl_bind_group) = material_cache.get_or_create_bind_group(&mesh.material, &renderer)
                                     else { continue; };
 
                                 test_pass.set_bind_group(2, &mtl_bind_group, &[]);
