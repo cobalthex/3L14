@@ -1,31 +1,35 @@
 use std::error::Error;
-use game_3l14::engine::assets::AssetTypeId;
+use game_3l14::engine::asset::AssetTypeId;
 use game_3l14::engine::graphics::assets::material::MaterialFile;
-use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionStrings};
+use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
 
 pub struct MaterialBuilder;
-impl AssetBuilder for MaterialBuilder
+impl AssetBuilderMeta for MaterialBuilder
 {
-    fn supported_input_file_extensions(&self) -> &'static [&'static str]
+    fn supported_input_file_extensions() -> &'static [&'static str]
     {
         &["matl"]
     }
 
-    fn builder_version(&self) -> VersionStrings
+    fn builder_version() -> VersionStrings
     {
         &[
             b"Initial"
         ]
     }
 
-    fn format_version(&self) -> VersionStrings
+    fn format_version() -> VersionStrings
     {
         &[
             b"Initial"
         ]
     }
+}
+impl AssetBuilder for MaterialBuilder
+{
+    type Config = ();
 
-    fn build_assets(&self, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, config: Self::Config, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         let mtl_source: MaterialFile = ron::de::from_reader(input)?;
         let mut mtl_output = outputs.add_output(AssetTypeId::RenderMaterial)?;

@@ -31,7 +31,7 @@ glam = { version = "0.29.0", features = ["serde"] }
 nameof = "1.2.2"
 parking_lot = "0.12.3"
 sdl2 = { version = "0.37.0", features = ["ttf", "raw-window-handle"] }
-wgpu = { version = "22.1.0", features = ["naga-ir"] }
+wgpu = { version = "22.1.0", features = ["spirv"] }
 paste = "1.0.15"
 jobsys = "0.2.0"
 futures = { version = "0.3.30", features = ["thread-pool"] }
@@ -64,6 +64,8 @@ serde = { version = "1.0.210", features = ["derive"] }
 bitcode = { version = "0.6.3", features = ["glam", "std"] }
 image = "0.25.2"
 hassle-rs = "0.11.0"
+const_format = "0.2.33"
+erased-serde = "0.4.5"
 
 [dev-dependencies]
 criterion = { version = "0.5.1" }

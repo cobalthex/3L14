@@ -1,23 +1,16 @@
-use std::error::Error;
-use std::fmt::{Display, Formatter};
-use std::io::Write;
+use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
+use game_3l14::engine::asset::AssetTypeId;
 use game_3l14::engine::graphics::assets::material::{MaterialFile, PbrProps};
+use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat};
+use game_3l14::engine::graphics::{ModelFile, ModelFileMesh, ModelFileMeshIndices, Rgba, VertexPosNormTexCol};
+use game_3l14::engine::AABB;
 use glam::Vec3;
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
-use serde::Deserialize;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
+use std::io::Write;
 use unicase::UniCase;
-use game_3l14::engine::AABB;
-use game_3l14::engine::assets::AssetTypeId;
-use game_3l14::engine::graphics::{ModelFile, ModelFileMesh, ModelFileMeshIndices, Rgba, VertexPosNormTexCol};
-use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat};
-use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionStrings};
-
-
-#[derive(Deserialize)]
-struct ModelBuilderConfig
-{
-}
 
 #[derive(Debug)]
 pub enum ModelImportError
@@ -35,28 +28,32 @@ impl Display for ModelImportError
 impl std::error::Error for ModelImportError { }
 
 pub struct ModelBuilder;
-impl AssetBuilder for ModelBuilder
+impl AssetBuilderMeta for ModelBuilder
 {
-    fn supported_input_file_extensions(&self) -> &'static [&'static str]
+    fn supported_input_file_extensions() -> &'static [&'static str]
     {
         &["glb", "gltf"]
     }
 
-    fn builder_version(&self) -> VersionStrings
+    fn builder_version() -> VersionStrings
     {
         &[
             b"Initial"
         ]
     }
 
-    fn format_version(&self) -> VersionStrings
+    fn format_version() -> VersionStrings
     {
         &[
             b"Initial"
         ]
     }
+}
+impl AssetBuilder for ModelBuilder
+{
+    type Config = ();
 
-    fn build_assets(&self, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, config: Self::Config, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         if input.file_extension() == &UniCase::new("glb") ||
             input.file_extension() == &UniCase::new("gltf")

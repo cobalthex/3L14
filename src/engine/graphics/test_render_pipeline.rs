@@ -1,6 +1,6 @@
 use arc_swap::ArcSwapOption;
 use wgpu::*;
-use crate::engine::assets::AssetHandle;
+use crate::engine::asset::AssetHandle;
 use crate::engine::graphics::assets::shader::Shader;
 use crate::engine::graphics::Renderer;
 use super::model::{VertexPosNormTexCol, WgpuVertexDecl};

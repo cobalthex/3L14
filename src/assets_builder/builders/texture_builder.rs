@@ -1,46 +1,56 @@
-use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionStrings};
-use game_3l14::engine::alloc_slice::alloc_slice_uninit;
-use game_3l14::engine::assets::AssetTypeId;
+use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
+use game_3l14::engine::asset::AssetTypeId;
 use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat, MAX_MIP_COUNT};
 use image::{ColorType, EncodableLayout, GenericImageView};
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::io::{BufReader, Write};
-use serde::Deserialize;
 use unicase::UniCase;
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct TextureBuilderConfig
 {
-    #[serde(default)]
     generate_mips: bool,
+}
+impl Default for TextureBuilderConfig
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            generate_mips: true,
+        }
+    }
 }
 
 pub struct TextureBuilder;
-impl AssetBuilder for TextureBuilder
+impl AssetBuilderMeta for TextureBuilder
 {
-    fn supported_input_file_extensions(&self) -> &'static [&'static str]
+    fn supported_input_file_extensions() -> &'static [&'static str]
     {
         &["dds", "png"]
     }
 
-    fn builder_version(&self) -> VersionStrings
+    fn builder_version() -> VersionStrings
     {
         &[
             b"Initial"
         ]
     }
 
-    fn format_version(&self) -> VersionStrings
+    fn format_version() -> VersionStrings
     {
         &[
             b"Initial"
         ]
     }
+}
+impl AssetBuilder for TextureBuilder
+{
+    type Config = TextureBuilderConfig;
 
-    fn build_assets(&self, mut input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, config: Self::Config, mut input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
-        let config: TextureBuilderConfig = input.parse_config()?;
-
         let mut output = outputs.add_output(AssetTypeId::Texture)?;
 
         if input.file_extension() == &UniCase::new("png")

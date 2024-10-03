@@ -23,8 +23,9 @@ fn main()
     builder_cfg.add_builder(builders::ModelBuilder);
     builder_cfg.add_builder(builders::TextureBuilder);
     builder_cfg.add_builder(builders::MaterialBuilder);
+    builder_cfg.add_builder(builders::ShaderBuilder);
 
-    eprintln!("Starting assets builder");
+    eprintln!("Starting asset builder");
 
     let builder = AssetsBuilder::new(builder_cfg);
 

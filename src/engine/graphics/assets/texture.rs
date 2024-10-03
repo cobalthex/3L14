@@ -8,7 +8,7 @@ use std::sync::Arc;
 use wgpu::util::{DeviceExt, TextureDataOrder};
 use wgpu::{Extent3d, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor};
 
-use crate::engine::assets::{Asset, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId};
+use crate::engine::asset::{Asset, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId};
 use crate::engine::graphics::debug_gui::DebugGui;
 
 pub const MAX_MIP_COUNT: usize = 16;

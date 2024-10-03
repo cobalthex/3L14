@@ -5,7 +5,7 @@ use std::sync::Arc;
 use bitcode::{Decode, Encode};
 use wgpu::{vertex_attr_array, BufferSlice, BufferUsages, IndexFormat, VertexBufferLayout};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use crate::engine::assets::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId, HasAssetDependencies};
+use crate::engine::asset::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId, HasAssetDependencies};
 use crate::engine::graphics::assets::material::Material;
 use crate::engine::{AsU8Slice, AABB};
 use crate::engine::graphics::Renderer;

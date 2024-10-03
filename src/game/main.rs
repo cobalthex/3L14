@@ -3,7 +3,7 @@ use std::ops::Deref;
 use std::process::ExitCode;
 use std::time::Duration;
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
-use game_3l14::engine::{*, timing::*, input::*, windows::*, graphics::*, world::*, assets::*};
+use game_3l14::engine::{*, timing::*, input::*, windows::*, graphics::*, world::*, asset::*};
 use clap::Parser;
 use glam::{Mat4, Quat, Vec3};
 use wgpu::*;

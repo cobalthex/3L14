@@ -1,5 +1,5 @@
 use std::error::Error;
-use crate::engine::assets::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId};
+use crate::engine::asset::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId};
 use crate::engine::graphics::assets::Texture;
 use crate::engine::graphics::colors::Rgba;
 use crate::engine::graphics::Renderer;

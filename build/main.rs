@@ -21,8 +21,8 @@ fn main()
     match std::fs::symlink_metadata(&assets_symlink)
     {
         Ok(meta) if meta.is_symlink() => {},
-    Ok(_) => panic!("! out-dir assets file existed but was not a symlink"),
-        Err(err) if err.kind() != ErrorKind::NotFound => panic!("! out-dir assets file '{assets_symlink:?}' was unreadable: {err:?}"),
+    Ok(_) => panic!("! out-dir asset file existed but was not a symlink"),
+        Err(err) if err.kind() != ErrorKind::NotFound => panic!("! out-dir asset file '{assets_symlink:?}' was unreadable: {err:?}"),
         _ => symlink::symlink_dir("assets/build", assets_symlink).expect("! Failed to symlink asset directory"),
     }
 

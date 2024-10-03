@@ -1,6 +1,10 @@
-use game_3l14::engine::assets::{Asset, AssetKey, AssetKeyBaseId, AssetKeyDerivedId, AssetMetadata, AssetTypeId, BuilderHash};
+use bitcode::Encode;
+use erased_serde::Deserializer;
+use game_3l14::engine::asset::{AssetKey, AssetKeyBaseId, AssetKeyDerivedId, AssetMetadata, AssetTypeId, BuilderHash};
 use game_3l14::engine::{varint, ShortTypeName};
-use rand::RngCore;
+use metrohash::MetroHash64;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::OsStr;
@@ -8,12 +12,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hasher;
 use std::io;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
-use std::mem::{swap, MaybeUninit};
 use std::path::{Path, PathBuf};
-use bitcode::Encode;
-use metrohash::MetroHash64;
-use serde::{Deserialize, Serialize};
-use serde::de::DeserializeOwned;
 use unicase::UniCase;
 
 use super::*;
@@ -21,9 +20,10 @@ use super::*;
 struct AssetBuilderEntry
 {
     name: &'static str,
-    builder: Box<dyn AssetBuilder>,
+    builder: Box<dyn ErasedAssetBuilder>,
     builder_hash: BuilderHash,
     format_hash: BuilderHash,
+    builder_config: Box<dyn erased_serde::Serialize>,
 }
 
 pub struct AssetsBuilderConfig
@@ -44,7 +44,7 @@ impl AssetsBuilderConfig
         {
             source_files_root: PathBuf::from(source_files_root.as_ref()),
             built_files_root: PathBuf::from(built_files_root.as_ref()),
-            builders_version_hash: Self::hash_bstrings(0,&[
+            builders_version_hash: Self::hash_bstrings(0, &[
                 b"Initial"
             ]),
             asset_builders: Vec::new(),
@@ -62,18 +62,19 @@ impl AssetsBuilderConfig
     }
 
     // Register a builder for it's registered extensions. Will panic if a particular extension was already registered
-    pub fn add_builder<B: AssetBuilder>(&mut self, builder: B)
+    pub fn add_builder<C: Default + Serialize + DeserializeOwned, B: AssetBuilder<Config=C> + ErasedAssetBuilder + AssetBuilderMeta>(&mut self, builder: B)
     {
         let b_index = self.asset_builders.len();
         self.asset_builders.push(AssetBuilderEntry
         {
             name: B::short_type_name(),
-            builder_hash: Self::hash_bstrings(self.builders_version_hash, builder.builder_version()),
-            format_hash: Self::hash_bstrings(0, builder.format_version()),
+            builder_hash: Self::hash_bstrings(self.builders_version_hash, B::builder_version()),
+            format_hash: Self::hash_bstrings(0, B::format_version()),
             builder: Box::new(builder),
+            builder_config: Box::new(C::default()),
         });
 
-        for ext in self.asset_builders[b_index].builder.supported_input_file_extensions()
+        for ext in B::supported_input_file_extensions()
         {
             if UniCase::new(ext) == Self::SOURCE_FILE_META_EXTENSION
             {
@@ -83,7 +84,7 @@ impl AssetsBuilderConfig
             if let Some(obi) = self.file_ext_to_builder.insert(UniCase::new(ext), b_index)
             {
                 panic!("Tried to register builder {} for extension {} that was already registered to {}",
-                    B::short_type_name(), ext, self.asset_builders[obi].name)
+                       B::short_type_name(), ext, self.asset_builders[obi].name)
             }
         }
     }
@@ -109,14 +110,7 @@ impl AssetsBuilder
 
     pub fn builders_version_hash(&self) -> u64 { self.config.builders_version_hash }
 
-    fn hash_bstrings(seed: u64, bstrings: &[&[u8]]) -> u64
-    {
-        let mut hasher = MetroHash64::with_seed(seed);
-        bstrings.iter().for_each(|s| { hasher.write(s); });
-        hasher.finish()
-    }
-
-    // transform a source file into one or more built assets, returns the built count
+    // transform a source file into one or more built asset, returns the built count
     pub fn build_assets<P: AsRef<Path> + Debug>(&self, source_path: P) -> Result<BuildResults, BuildError>
     {
         let canonical_path =
@@ -135,7 +129,7 @@ impl AssetsBuilder
 
         let file_ext = rel_path.extension().unwrap_or(OsStr::new("")).to_string_lossy();
 
-        let b_index = self.config.file_ext_to_builder.get(&UniCase::from(file_ext.as_ref())).ok_or(BuildError::NoBuilderForSource)?;
+        let b_index = self.config.file_ext_to_builder.get(&UniCase::from(file_ext.as_ref())).ok_or(BuildError::NoBuilderForSource(file_ext.to_string()))?;
         let builder = self.config.asset_builders.get(*b_index).expect("Had builder ID but no matching builder!");
 
         let source_meta_file_path = canonical_path.with_extension(
@@ -153,11 +147,10 @@ impl AssetsBuilder
                 let new_meta = SourceMetadata
                 {
                     base_id,
-                    builder_config: ron::Value::Unit,
                 };
 
                 let meta_write = std::fs::File::create(&source_meta_file_path).map_err(BuildError::SourceMetaIOError)?;
-                ron::ser::to_writer_pretty(meta_write, &new_meta, ron::ser::PrettyConfig::new().compact_arrays(true))
+                ron::ser::to_writer_pretty(meta_write, &new_meta, ron::ser::PrettyConfig::new().compact_arrays(true).struct_names(true))
                     .map_err(BuildError::SourceMetaSerializeError)?;
 
                 new_meta
@@ -177,7 +170,7 @@ impl AssetsBuilder
             file_extension: UniCase::from(file_ext),
             base_id: source_meta.base_id,
             input: Box::new(source_read),
-            builder_config: source_meta.builder_config,
+            raw_config: None,
         };
 
         let mut outputs = BuildOutputs
@@ -206,7 +199,7 @@ impl AssetsBuilder
 pub enum BuildError
 {
     InvalidSourcePath, // lies outside the sources root
-    NoBuilderForSource,
+    NoBuilderForSource(String),
     SourceIOError(io::Error),
     SourceMetaIOError(io::Error),
     SourceMetaParseError(ron::error::SpannedError),
@@ -311,7 +304,7 @@ pub struct BuildOutputs<'a>
 }
 impl<'a> BuildOutputs<'a>
 {
-    // TODO: outputs should be atomic
+    // TODO: outputs should be atomic (all or none)
 
     // Build one or more outputs from a source. Note: generated asset keys are dependent on call order
     pub fn add_output(&mut self, asset_type: AssetTypeId) -> Result<BuildOutput<impl BuildOutputWrite>, BuildError>
@@ -351,34 +344,25 @@ impl<'a> BuildOutputs<'a>
 pub trait SourceInputRead: Read + Seek { }
 impl<T: Read + Seek> SourceInputRead for T { }
 
-pub struct SourceInput
+pub struct SourceInput<'de>
 {
     source_path: PathBuf, // Should only be used for debug purposes
     file_extension: UniCase<String>, // does not include .
     base_id: AssetKeyBaseId,
     input: Box<dyn SourceInputRead>,
-
-    builder_config: ron::Value,
+    pub(super) raw_config: Option<Box<dyn Deserializer<'de>>>,
 }
-impl SourceInput
+impl<'de> SourceInput<'de>
 {
     pub fn source_path(&self) -> &Path { self.source_path.as_ref() }
     pub fn source_path_string(&self) -> String { self.source_path.to_string_lossy().to_string() }
     pub fn file_extension(&self) -> &UniCase<String> { &self.file_extension }
-
-    // Parse the incoming source config, can only be called once -- TODO: clone instead?
-    pub fn parse_config<C: DeserializeOwned>(&mut self) -> ron::Result<C>
-    {
-        let mut taken = ron::Value::Unit;
-        swap(&mut self.builder_config, &mut taken);
-        taken.into_rust()
-    }
 }
-impl Read for SourceInput
+impl<'de> Read for SourceInput<'de>
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.input.read(buf) }
 }
-impl Seek for SourceInput
+impl<'de> Seek for SourceInput<'de>
 {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> { self.input.seek(pos) }
 }
@@ -387,9 +371,4 @@ impl Seek for SourceInput
 pub struct SourceMetadata
 {
     pub base_id: AssetKeyBaseId,
-
-    // key value pairs to pass into builder?
-    // pub builder_config: serde::Value,
-
-    builder_config: ron::Value,
 }

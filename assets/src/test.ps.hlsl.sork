@@ -1,0 +1,8 @@
+SourceMetadata(
+    base_id: 58759102003214869984333715861,
+    builder_config: {
+        "debug": false,
+        "emit_symbols": false,
+        "stage": (),
+    },
+)

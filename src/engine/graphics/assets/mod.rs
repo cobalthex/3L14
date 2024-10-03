@@ -6,4 +6,4 @@ pub mod material;
 pub use material::*;
 
 
-// TODO: should these assets go into the assets folder?
+// TODO: should these asset go into the asset folder?
