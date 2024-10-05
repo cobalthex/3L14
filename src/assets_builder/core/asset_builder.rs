@@ -1,7 +1,6 @@
 use super::*;
-use erased_serde::{Deserializer, Serialize};
 use serde::de::DeserializeOwned;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::io::{Seek, Write};
 
@@ -21,28 +20,36 @@ pub trait AssetBuilderMeta
     fn format_version() -> VersionStrings;
 }
 
+pub(super) type ErasedBuildConfig = toml::Value; // leaky abstraction
+
 pub(super) trait ErasedAssetBuilder // virtual base trait?
 {
     // Build the source data into one or more outputted assets
-    fn build_assets(&self, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>;
+    fn build_assets(&self, erased_config: ErasedBuildConfig, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>;
+
+    fn default_config(&self) -> ErasedBuildConfig;
 }
 
-pub trait AssetBuilder: 'static
+pub trait AssetBuildConfig: Default + Serialize + DeserializeOwned { }
+impl<T: Default + Serialize + DeserializeOwned> AssetBuildConfig for T { }
+
+pub trait AssetBuilder
 {
-    type Config: Default + Serialize + DeserializeOwned;
+    type BuildConfig: AssetBuildConfig;
 
     // Build the source data into one or more outputted assets
-    fn build_assets(&self, config: Self::Config, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>;
+    fn build_assets(&self, config: Self::BuildConfig, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>;
 }
-impl<C: Default + Serialize + DeserializeOwned> ErasedAssetBuilder for dyn AssetBuilder<Config=C>
+impl<AB: AssetBuilder<BuildConfig=impl AssetBuildConfig>> ErasedAssetBuilder for AB
 {
-    fn build_assets(&self, mut input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, erased_config: ErasedBuildConfig, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
-        let config = match &mut input.raw_config
-        {
-            None => C::default(),
-            Some(rc) => erased_serde::deserialize(rc.as_mut())?,
-        };
+        let config = erased_config.try_into()?;
         AssetBuilder::build_assets(self, config, input, outputs)
+    }
+
+    fn default_config(&self) -> ErasedBuildConfig
+    {
+        ErasedBuildConfig::try_from(AB::BuildConfig::default()).unwrap()
     }
 }

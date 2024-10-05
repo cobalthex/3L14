@@ -25,7 +25,7 @@ debug_asset_lifetimes = []
 [dependencies]
 proc_macros_3l14 = { path = "macros" }
 
-chrono = "0.4.38"
+chrono = { version = "0.4.38", features = ["serde"] }
 flagset = "0.4.6"
 glam = { version = "0.29.0", features = ["serde"] }
 nameof = "1.2.2"
@@ -59,13 +59,13 @@ notify-debouncer-full = "0.3.1"
 rand = "0.8.5"
 metrohash = "1.0.6"
 ddsfile = "0.5.2"
-ron = { version = "0.8.1", features = ["integer128"] }
 serde = { version = "1.0.210", features = ["derive"] }
 bitcode = { version = "0.6.3", features = ["glam", "std"] }
 image = "0.25.2"
 hassle-rs = "0.11.0"
 const_format = "0.2.33"
-erased-serde = "0.4.5"
+toml = { version = "0.8.19", features = ["parse"] }
+base64 = "0.22.1"
 
 [dev-dependencies]
 criterion = { version = "0.5.1" }

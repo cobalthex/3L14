@@ -1,6 +1,4 @@
-(
-    base_id: 66913275529527453533645249081,
-    builder_config: (
-        generate_mips: true,
-    )
-)
+source_id = "0027199119d20d9cf3463f375e"
+
+[build_config]
+generate_mips = true

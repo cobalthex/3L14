@@ -5,7 +5,7 @@ use game_3l14::engine::asset::AssetTypeId;
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
 
 #[derive(Default, Serialize, Deserialize)]
-enum ShaderStage
+pub enum ShaderStage
 {
     #[default]
     Vertex = 0,
@@ -14,7 +14,7 @@ enum ShaderStage
 }
 
 #[derive(Default, Serialize, Deserialize)]
-struct ShaderBuilderConfig
+pub struct ShaderBuilderConfig
 {
     stage: ShaderStage,
     debug: bool,
@@ -45,9 +45,9 @@ impl AssetBuilderMeta for ShaderBuilder
 }
 impl AssetBuilder for ShaderBuilder
 {
-    type Config = ShaderBuilderConfig;
+    type BuildConfig = ShaderBuilderConfig;
 
-    fn build_assets(&self, config: Self::Config, mut input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, config: Self::BuildConfig, mut input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         let mut src_text = String::new();
         input.read_to_string(&mut src_text)?;

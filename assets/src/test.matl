@@ -1,0 +1,5 @@
+textures = []
+[pbr_props]
+albedo_color = { r = 255, g = 128, b = 12, a = 255 }
+metallicity = 0.5
+roughness = 0.5

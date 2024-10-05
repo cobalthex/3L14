@@ -1,4 +1,4 @@
-use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
+use crate::core::{AssetBuildConfig, AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
 use game_3l14::engine::asset::AssetTypeId;
 use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat, MAX_MIP_COUNT};
 use image::{ColorType, EncodableLayout, GenericImageView};
@@ -8,11 +8,11 @@ use std::io::{BufReader, Write};
 use unicase::UniCase;
 
 #[derive(Serialize, Deserialize)]
-struct TextureBuilderConfig
+pub struct TextureBuildConfig
 {
     generate_mips: bool,
 }
-impl Default for TextureBuilderConfig
+impl Default for TextureBuildConfig
 {
     fn default() -> Self
     {
@@ -47,9 +47,9 @@ impl AssetBuilderMeta for TextureBuilder
 }
 impl AssetBuilder for TextureBuilder
 {
-    type Config = TextureBuilderConfig;
+    type BuildConfig = TextureBuildConfig;
 
-    fn build_assets(&self, config: Self::Config, mut input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, config: Self::BuildConfig, mut input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         let mut output = outputs.add_output(AssetTypeId::Texture)?;
 

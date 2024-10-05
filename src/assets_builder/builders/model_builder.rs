@@ -10,6 +10,7 @@ use gltf::mesh::util::ReadIndices;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::io::Write;
+use serde::{Deserialize, Serialize};
 use unicase::UniCase;
 
 #[derive(Debug)]
@@ -25,7 +26,12 @@ impl Display for ModelImportError
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { std::fmt::Debug::fmt(&self, f) }
 }
-impl std::error::Error for ModelImportError { }
+impl Error for ModelImportError { }
+
+#[derive(Default, Serialize, Deserialize)]
+pub struct ModelBuildConfig
+{
+}
 
 pub struct ModelBuilder;
 impl AssetBuilderMeta for ModelBuilder
@@ -51,14 +57,13 @@ impl AssetBuilderMeta for ModelBuilder
 }
 impl AssetBuilder for ModelBuilder
 {
-    type Config = ();
+    type BuildConfig = ModelBuildConfig;
 
-    fn build_assets(&self, config: Self::Config, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, config: Self::BuildConfig, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         if input.file_extension() == &UniCase::new("glb") ||
             input.file_extension() == &UniCase::new("gltf")
         {
-        //let (document, buffers, _img) = gltf::import(file)?;
             let gltf::Gltf { document, blob } = gltf::Gltf::from_reader(input)?;
 
             let buffers =  gltf::import_buffers(&document, None, blob)?;
@@ -81,9 +86,7 @@ impl AssetBuilder for ModelBuilder
 
 fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &Vec<gltf::image::Data>, outputs: &mut BuildOutputs) -> Result<ModelFile, Box<dyn Error>>
 {
-    let mut model_bounds = AABB { min: Vec3::MAX, max: Vec3::MIN };
     let mut meshes: Vec<ModelFileMesh> = Vec::new();
-
     let mut model_bounds = AABB::max_min();
 
     // todo: iter.map() ?

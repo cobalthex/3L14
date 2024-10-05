@@ -1,7 +1,5 @@
 use std::alloc::{Layout, LayoutError};
-use std::mem::MaybeUninit;
 use std::ptr;
-use futures::stream::All;
 
 #[derive(Debug)]
 pub enum AllocError

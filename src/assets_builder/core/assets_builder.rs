@@ -1,10 +1,8 @@
 use bitcode::Encode;
-use erased_serde::Deserializer;
-use game_3l14::engine::asset::{AssetKey, AssetKeyBaseId, AssetKeyDerivedId, AssetMetadata, AssetTypeId, BuilderHash};
+use game_3l14::engine::asset::{AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetMetadata, AssetTypeId, BuilderHash};
 use game_3l14::engine::{varint, ShortTypeName};
 use metrohash::MetroHash64;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::OsStr;
@@ -17,13 +15,14 @@ use unicase::UniCase;
 
 use super::*;
 
+// TODO: split this file out some?
+
 struct AssetBuilderEntry
 {
     name: &'static str,
     builder: Box<dyn ErasedAssetBuilder>,
     builder_hash: BuilderHash,
     format_hash: BuilderHash,
-    builder_config: Box<dyn erased_serde::Serialize>,
 }
 
 pub struct AssetsBuilderConfig
@@ -62,16 +61,15 @@ impl AssetsBuilderConfig
     }
 
     // Register a builder for it's registered extensions. Will panic if a particular extension was already registered
-    pub fn add_builder<C: Default + Serialize + DeserializeOwned, B: AssetBuilder<Config=C> + ErasedAssetBuilder + AssetBuilderMeta>(&mut self, builder: B)
+    pub fn add_builder<B: AssetBuilder<BuildConfig=impl AssetBuildConfig> + AssetBuilderMeta + 'static>(&mut self, builder: B)
     {
         let b_index = self.asset_builders.len();
         self.asset_builders.push(AssetBuilderEntry
         {
             name: B::short_type_name(),
-            builder_hash: Self::hash_bstrings(self.builders_version_hash, B::builder_version()),
-            format_hash: Self::hash_bstrings(0, B::format_version()),
+            builder_hash: BuilderHash(Self::hash_bstrings(self.builders_version_hash, B::builder_version())),
+            format_hash: BuilderHash(Self::hash_bstrings(0, B::format_version())),
             builder: Box::new(builder),
-            builder_config: Box::new(C::default()),
         });
 
         for ext in B::supported_input_file_extensions()
@@ -137,21 +135,26 @@ impl AssetsBuilder
 
         let source_meta = match std::fs::File::open(&source_meta_file_path)
         {
-            Ok(fin) => ron::de::from_reader(fin).map_err(BuildError::SourceMetaParseError)?,
+            Ok(mut fin) =>
+            {
+                let mut meta_contents = String::new();
+                fin.read_to_string(&mut meta_contents).map_err(BuildError::SourceMetaIOError)?;
+                toml::from_str(&meta_contents).map_err(BuildError::SourceMetaParseError)?
+            },
             Err(err) if err.kind() == ErrorKind::NotFound =>
             {
                 // TODO: assert that thread_rng impls CryptoRng
                 // loop while base ID is zero?
-                let base_id= AssetKey::generate_base_id();
+                let source_id = AssetKeySourceId::generate();
 
                 let new_meta = SourceMetadata
                 {
-                    base_id,
+                    source_id,
+                    build_config: builder.builder.default_config(),
                 };
 
-                let meta_write = std::fs::File::create(&source_meta_file_path).map_err(BuildError::SourceMetaIOError)?;
-                ron::ser::to_writer_pretty(meta_write, &new_meta, ron::ser::PrettyConfig::new().compact_arrays(true).struct_names(true))
-                    .map_err(BuildError::SourceMetaSerializeError)?;
+                let meta_string = toml::ser::to_string_pretty(&new_meta).map_err(BuildError::SourceMetaSerializeError)?;
+                std::fs::write(&source_meta_file_path, &meta_string).map_err(BuildError::SourceMetaIOError)?;
 
                 new_meta
             },
@@ -168,15 +171,14 @@ impl AssetsBuilder
         {
             source_path: rel_path.to_path_buf(),
             file_extension: UniCase::from(file_ext),
-            base_id: source_meta.base_id,
+            source_id: source_meta.source_id,
             input: Box::new(source_read),
-            raw_config: None,
         };
 
         let mut outputs = BuildOutputs
         {
-            base_id: source_meta.base_id,
-            timestamp: chrono::Utc::now().timestamp_millis() as u64,
+            source_id: source_meta.source_id,
+            timestamp: chrono::Utc::now(),
             rel_source_path: rel_path,
             abs_output_dir: self.config.built_files_root.as_path(),
             builder_hash: builder.builder_hash,
@@ -185,7 +187,7 @@ impl AssetsBuilder
             results: Vec::new(),
         };
 
-        match builder.builder.build_assets(input, &mut outputs)
+        match builder.builder.build_assets(source_meta.build_config, input, &mut outputs)
         {
             Ok(_) => Ok(outputs.results),
             Err(err) => Err(BuildError::BuilderError(err)),
@@ -195,6 +197,13 @@ impl AssetsBuilder
     // rebuild_asset(ext, base_id, file_bytes() ?
 }
 
+#[derive(Serialize, Deserialize)]
+struct SourceMetadata
+{
+    pub source_id: AssetKeySourceId,
+    build_config: toml::Value,
+}
+
 #[derive(Debug)]
 pub enum BuildError
 {
@@ -202,18 +211,19 @@ pub enum BuildError
     NoBuilderForSource(String),
     SourceIOError(io::Error),
     SourceMetaIOError(io::Error),
-    SourceMetaParseError(ron::error::SpannedError),
-    SourceMetaSerializeError(ron::Error),
+    SourceMetaParseError(toml::de::Error),
+    SourceMetaSerializeError(toml::ser::Error),
     TooManyDerivedIDs,
-    BuilderError(Box<dyn std::error::Error>),
-    OutputIOError(std::io::Error),
-    OutputMetaSerializeError(ron::Error),
+    BuilderError(Box<dyn Error>),
+    OutputIOError(io::Error),
+    OutputMetaIOError(io::Error),
+    OutputMetaSerializeError(toml::ser::Error),
 }
 impl Display for BuildError
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { std::fmt::Debug::fmt(&self, f) }
 }
-impl std::error::Error for BuildError { }
+impl Error for BuildError { }
 
 pub type BuildResults = Vec<AssetKey>;
 
@@ -271,7 +281,7 @@ impl<W: BuildOutputWrite> BuildOutput<W>
         let asset_meta = AssetMetadata
         {
             key: self.asset_key,
-            build_timestamp: chrono::Utc::now().timestamp_millis() as u64,
+            build_timestamp: chrono::Utc::now(),
             source_path: self.source_path,
             builder_hash: self.builder_hash,
             format_hash: self.format_hash,
@@ -279,7 +289,8 @@ impl<W: BuildOutputWrite> BuildOutput<W>
         };
         // TODO: read old file and compare asset key
 
-        ron::ser::to_writer(self.meta_writer, &asset_meta).map_err(BuildError::OutputMetaSerializeError)?;
+        let out_string = toml::ser::to_string(&asset_meta).unwrap();//.map_err(BuildError::OutputMetaSerializeError)?;
+        self.meta_writer.write_all(out_string.as_bytes()).map_err(BuildError::OutputMetaIOError)?;
 
         // todo: signal back to BuildOutputs on failure automatically?
 
@@ -289,8 +300,8 @@ impl<W: BuildOutputWrite> BuildOutput<W>
 
 pub struct BuildOutputs<'a>
 {
-    base_id: AssetKeyBaseId,
-    timestamp: u64, // unix timestamp in milliseconds
+    source_id: AssetKeySourceId,
+    timestamp: chrono::DateTime<chrono::Utc>,
 
     rel_source_path: &'a Path,
     abs_output_dir: &'a Path,
@@ -311,12 +322,11 @@ impl<'a> BuildOutputs<'a>
     {
         let derived_id: AssetKeyDerivedId =
         {
-            let entry = self.derived_ids.entry(asset_type).or_insert(0);
-            *entry = entry.checked_add(1).ok_or(BuildError::TooManyDerivedIDs)?;
-            *entry - 1
+            let entry = self.derived_ids.entry(asset_type).or_insert(AssetKeyDerivedId::default());
+            entry.next().ok_or(BuildError::TooManyDerivedIDs)?
         };
 
-        let asset_key = AssetKey::new(asset_type, false, derived_id, self.base_id);
+        let asset_key = AssetKey::new(asset_type, false, derived_id, self.source_id);
 
         let output_path = self.abs_output_dir.join(asset_key.as_file_name());
         let output_writer = std::fs::File::create(&output_path).map_err(BuildError::OutputIOError)?;
@@ -344,31 +354,24 @@ impl<'a> BuildOutputs<'a>
 pub trait SourceInputRead: Read + Seek { }
 impl<T: Read + Seek> SourceInputRead for T { }
 
-pub struct SourceInput<'de>
+pub struct SourceInput
 {
     source_path: PathBuf, // Should only be used for debug purposes
     file_extension: UniCase<String>, // does not include .
-    base_id: AssetKeyBaseId,
+    source_id: AssetKeySourceId,
     input: Box<dyn SourceInputRead>,
-    pub(super) raw_config: Option<Box<dyn Deserializer<'de>>>,
 }
-impl<'de> SourceInput<'de>
+impl SourceInput
 {
     pub fn source_path(&self) -> &Path { self.source_path.as_ref() }
     pub fn source_path_string(&self) -> String { self.source_path.to_string_lossy().to_string() }
     pub fn file_extension(&self) -> &UniCase<String> { &self.file_extension }
 }
-impl<'de> Read for SourceInput<'de>
+impl Read for SourceInput
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.input.read(buf) }
 }
-impl<'de> Seek for SourceInput<'de>
+impl Seek for SourceInput
 {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> { self.input.seek(pos) }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SourceMetadata
-{
-    pub base_id: AssetKeyBaseId,
 }

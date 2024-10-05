@@ -1,8 +1,6 @@
-SourceMetadata(
-    base_id: 58759102003214869984333715861,
-    builder_config: {
-        "debug": false,
-        "emit_symbols": false,
-        "stage": (),
-    },
-)
+source_id = "00a6b39c4eecb14a98dc220f6a"
+
+[build_config]
+debug = false
+emit_symbols = false
+stage = "Vertex"
