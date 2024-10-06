@@ -26,6 +26,11 @@ impl<T> AssetPath for T where T: AsRef<str> + Hash + Display + Debug { }
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(test, derive(Debug))] // custom debug taking bits into account?
 pub struct AssetKeyDerivedId(u16); // only 15 bits are used.
+impl AssetKeyDerivedId
+{
+    #[cfg(test)]
+    pub const fn test() -> Self { Self(0) }
+}
 // Used to generate new derived IDs, next returns the existing value and increments self
 impl Iterator for AssetKeyDerivedId
 {
@@ -47,6 +52,12 @@ impl AssetKeySourceId
         let mut bytes = [0u8; size_of::<Self>()];
         rand::thread_rng().fill_bytes(&mut bytes[0..((AssetKey::SOURCE_KEY_BITS / 8) as usize)]);
         Self(u128::from_le_bytes(bytes))
+    }
+
+    #[cfg(test)]
+    pub const fn test(n: u8) -> Self
+    {
+        Self(n as u128)
     }
 }
 // custom serialize/deserialize b/c TOML doesn't support u128
@@ -156,7 +167,7 @@ impl<'de> Deserialize<'de> for AssetKey
         match u128::from_str_radix(&String::deserialize(deserializer)?, 16)
         {
             Ok(u) => Ok(Self(u)),
-            Err(e) => Err(D::Error::custom(e)) 
+            Err(e) => Err(D::Error::custom(e))
         }
     }
 }
@@ -169,10 +180,9 @@ impl Debug for AssetKey
         match f.alternate()
         {
             true =>
-                f.write_fmt(format_args!("⟨{:?}|{:026x}+{:04x}⟩",
+                f.write_fmt(format_args!("⟨{:?}|{:032x}⟩",
                      self.asset_type(),
-                     self.source_id().0,
-                     self.derived_id().0)),
+                     self.0)),
             false =>
                 f.write_fmt(format_args!("⟨{:032x}⟩", self.0)),
         }

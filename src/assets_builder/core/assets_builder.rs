@@ -363,7 +363,6 @@ pub struct SourceInput
 }
 impl SourceInput
 {
-    pub fn source_path(&self) -> &Path { self.source_path.as_ref() }
     pub fn source_path_string(&self) -> String { self.source_path.to_string_lossy().to_string() }
     pub fn file_extension(&self) -> &UniCase<String> { &self.file_extension }
 }

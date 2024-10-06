@@ -1,6 +1,6 @@
 source_id = "00a6b39c4eecb14a98dc220f6a"
 
 [build_config]
-debug = false
-emit_symbols = false
-stage = "Vertex"
+debug = true
+emit_symbols = true
+stage = "Pixel"

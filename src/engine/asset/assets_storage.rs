@@ -492,8 +492,8 @@ mod tests
 
     // TODO: should probably make sure there are no mem leaks in these tests
 
-    const TEST_ASSET_1: AssetKey = AssetKey::new(AssetTypeId::Test1, true, 0, 1);
-    const TEST_ASSET_2: AssetKey = AssetKey::new(AssetTypeId::Test2, true, 0, 1);
+    const TEST_ASSET_1: AssetKey = AssetKey::new(AssetTypeId::Test1, true, AssetKeyDerivedId::test(), AssetKeySourceId::test(1));
+    const TEST_ASSET_2: AssetKey = AssetKey::new(AssetTypeId::Test2, true, AssetKeyDerivedId::test(), AssetKeySourceId::test(1));
 
     #[derive(Debug)]
     struct NestedAsset
@@ -616,7 +616,7 @@ mod tests
                 .add_lifecycler(TestAssetLifecycler::default());
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
-            set_passthru(&assets, Some(|req: AssetLoadRequest|
+            set_passthru(&assets, Some(|_req: AssetLoadRequest|
             {
                 Err(Box::new(TestError))
             }));

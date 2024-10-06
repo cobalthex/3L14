@@ -1,4 +1,4 @@
-name: Build 3L14
+name: Build and test 3L14
 
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
       with:
         save-if: "${{ github.ref == 'refs/heads/main' }}"
 
-    - name: Build 3L14
-      id: build_3l14
+    - name: Build and test 3L14
+      id: build_test_3l14
       run: |
-        cargo build --verbose --release
+        cargo test --verbose --release
