@@ -12,6 +12,3 @@ pub use assets_storage::*;
 
 mod asset_types;
 pub use asset_types::*;
-
-mod asset_metadata;
-pub use asset_metadata::*;

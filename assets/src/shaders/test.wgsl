@@ -61,7 +61,7 @@ fn vs_main(
 }
 
 @fragment
-fn fs_main(in_frag: VertexOutput) -> @location(0) vec4f
+fn ps_main(in_frag: VertexOutput) -> @location(0) vec4f
 {
     let light = max(dot(in_frag.normal.xyz, light.direction), 0.0);
     let tex_sample = textureSample(tex, tex_sampler, in_frag.texcoord);

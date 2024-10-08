@@ -43,7 +43,7 @@ fn main()
             }
             Err(err) =>
             {
-                eprintln!("Failed to build {src_path:?}: {err:?}");
+                eprintln!("Failed to build {src_path:?}: {err:#}");
             }
         }
     }

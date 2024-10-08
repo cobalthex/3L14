@@ -7,6 +7,7 @@ use game_3l14::engine::graphics::assets::material::MaterialFile;
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
 
 #[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MaterialBuildConfig
 {
 }
@@ -44,6 +45,7 @@ impl AssetBuilder for MaterialBuilder
         let mtl: MaterialFile = toml::from_str(&mtl_source)?;
 
         let mut mtl_output = outputs.add_output(AssetTypeId::RenderMaterial)?;
+        mtl_output.depends_on_multiple(&mtl.textures);
         mtl_output.serialize(&mtl)?;
         mtl_output.finish()?;
         Ok(())

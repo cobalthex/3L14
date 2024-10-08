@@ -1,7 +1,6 @@
 // based on EBML (Matroska)'s varint impl
 
 use std::io;
-use std::io::Read;
 
 pub const fn encode(n: u64) -> (u8, [u8;8])
 {

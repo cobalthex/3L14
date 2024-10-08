@@ -1,14 +1,14 @@
-use std::error::Error;
 use crate::engine::graphics::Renderer;
 use crate::format_bytes;
 use bitcode::{Decode, Encode};
 use egui::Ui;
+use std::error::Error;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use wgpu::util::{DeviceExt, TextureDataOrder};
 use wgpu::{Extent3d, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor};
 
-use crate::engine::asset::{Asset, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId};
+use crate::engine::asset::{Asset, AssetLifecycler, AssetLoadRequest, AssetTypeId};
 use crate::engine::graphics::debug_gui::DebugGui;
 
 pub const MAX_MIP_COUNT: usize = 16;

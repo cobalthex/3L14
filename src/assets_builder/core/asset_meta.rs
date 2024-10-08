@@ -1,9 +1,17 @@
-use crate::engine::asset::AssetKey;
 use base64::Engine;
+use game_3l14::engine::asset::{AssetKey, AssetKeySourceId};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
+
+#[derive(Serialize, Deserialize)]
+pub struct SourceMetadata
+{
+    pub source_id: AssetKeySourceId,
+    // is_dependent? (don't self build, omit source_id)
+    pub(super) build_config: toml::Value,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct BuilderHash(pub u64);

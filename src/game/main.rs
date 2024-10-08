@@ -141,8 +141,11 @@ fn main() -> ExitReason
         let model_key: AssetKey = 0x00700000042f8fe4c6e9839688654c23.into();
         let mut test_model = assets.load::<Model>(model_key);
 
-        let test_shader_key: AssetKey = 0x00500000a6b39c4eecb14a98dc220f6a.into();
-        let test_shader = assets.load::<Shader>(test_shader_key);
+        let test_vshader_key: AssetKey = 0x00500000351453683a969abaa8a17f8a.into();
+        let test_vshader = assets.load::<Shader>(test_vshader_key);
+
+        let test_pshader_key: AssetKey = 0x00500000a6b39c4eecb14a98dc220f6a.into();
+        let test_pshader = assets.load::<Shader>(test_pshader_key);
 
         let mut camera = Camera::new(Some("fp_cam"), renderer.display_aspect_ratio());
         camera.transform.position = Vec3::new(0.0, 2.0, -10.0);
@@ -236,11 +239,7 @@ fn main() -> ExitReason
 
         let material_cache = MaterialCache::new(&renderer);
 
-        let test_pipeline = test_render_pipeline::new(
-            &renderer,
-            &cam_bind_group_layout,
-            &world_bind_group_layout,
-            &material_cache.bind_group_layouts);
+        let mut test_pipeline = None;
 
         let mut worlds_buf: [TransformUniform; MAX_ENTRIES_IN_WORLD_BUF] = array_init::array_init(|_| TransformUniform::default());
 
@@ -372,6 +371,20 @@ fn main() -> ExitReason
             {
                 puffin::profile_scope!("Render frame");
 
+                if test_pipeline.is_none()
+                {
+                    let AssetPayload::Available(vsh) = test_vshader.payload() else { continue; };
+                    let AssetPayload::Available(psh) = test_pshader.payload() else { continue; };
+
+                    test_pipeline = Some(test_render_pipeline::new(
+                        &renderer,
+                        &vsh.module,
+                        &psh.module,
+                        &cam_bind_group_layout,
+                        &world_bind_group_layout,
+                        &material_cache.bind_group_layouts));
+                }
+
                 let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
                 {
                     match test_model.payload()
@@ -397,7 +410,7 @@ fn main() -> ExitReason
                                 &mut encoder,
                                 Some(colors::CORNFLOWER_BLUE));
 
-                            test_pass.set_pipeline(&test_pipeline);
+                            test_pass.set_pipeline(test_pipeline.as_ref().unwrap());
                             test_pass.set_bind_group(0, &cam_bind_group, &[]);
 
                             let mut world_index = 0;

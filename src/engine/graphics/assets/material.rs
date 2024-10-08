@@ -1,10 +1,10 @@
-use std::error::Error;
-use crate::engine::asset::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadError, AssetLoadRequest, AssetPayload, AssetTypeId};
+use crate::engine::asset::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadRequest, AssetPayload, AssetTypeId};
 use crate::engine::graphics::assets::Texture;
 use crate::engine::graphics::colors::Rgba;
 use crate::engine::graphics::Renderer;
 use bitcode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use std::error::Error;
 use wgpu::{AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, FilterMode, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, TextureSampleType, TextureViewDimension};
 
 pub struct MaterialCache

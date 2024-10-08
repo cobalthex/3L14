@@ -1,16 +1,16 @@
-use std::path::PathBuf;
-use std::sync::Arc;
+use crate::engine::graphics::debug_gui::DebugGui;
+use crate::engine::FrameNumber;
 use arc_swap::ArcSwapOption;
 use egui::epaint::Shadow;
 use egui::{Pos2, Rect, Rounding, Stroke, Ui, Visuals};
 use egui_wgpu_backend;
 use parking_lot::{Mutex, RwLock};
 use sdl2::video::Window;
+use std::path::PathBuf;
+use std::sync::Arc;
 #[allow(deprecated)]
 use wgpu::rwh::{HasRawDisplayHandle, HasRawWindowHandle};
 use wgpu::*;
-use crate::engine::{DataPayload, FrameNumber};
-use crate::engine::graphics::debug_gui::DebugGui;
 
 pub const MAX_CONSECUTIVE_FRAMES: usize = 3;
 

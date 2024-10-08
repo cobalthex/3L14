@@ -1,25 +1,44 @@
-struct CameraUniform
+[[vk::binding(0, 0)]]
+cbuffer Camera
 {
-    Mat4x4 proj_view;
-    float total_secs;
+    float4x4 ProjView;
+    float TotalSecs;
 };
-struct WorldUniform
+[[vk::binding(0, 1)]]
+cbuffer World
 {
-    Mat4x4 world;
+    float4x4 World;
 };
-
-cbuffer CameraUniform camera;
-cbuffer WorldUniform world;
 
 struct VertexOutput
 {
-    float4 clip_position: POSITION;
+    float4 clip_position: SV_POSITION;
+    float4 normal: NORMAL;
+    float2 texcoord: TEXCOORD0;
     float4 color: COLOR0;
+};
+
+float4 UnpackColor(uint packed)
+{
+    uint r = packed & 0xff;
+    uint g = (packed >> 8) & 0xff;
+    uint b = (packed >> 16) & 0xff;
+    uint a = (packed >> 24) & 0xff;
+
+    return float4(r, g, b, a) / 255.0;
 }
 
-VertexOutput vs_main(float3 in_position : POSITION, float3 in_normal : NORMAL, float3 in_texcoord : TEXCOORD0, float4 color : COLOR0)
+
+VertexOutput vs_main(
+    float3 in_position : POSITION,
+    float3 in_normal : NORMAL,
+    float3 in_texcoord : TEXCOORD0,
+    uint color : COLOR0)
 {
     VertexOutput out_vertex;
-    out_vertex.clip_position = (camera.proj_view * world.transform) * float4(in_position, 1);
-    out_vertex.color = color;
+    out_vertex.clip_position = mul((ProjView * World), float4(in_position, 1));
+    out_vertex.normal = float4(in_normal, 1);
+    out_vertex.texcoord = in_texcoord;
+    out_vertex.color = UnpackColor(color);
+    return out_vertex;
 }

@@ -63,7 +63,6 @@ serde = { version = "1.0.210", features = ["derive"] }
 bitcode = { version = "0.6.3", features = ["glam", "std"] }
 image = "0.25.2"
 hassle-rs = "0.11.0"
-const_format = "0.2.33"
 toml = { version = "0.8.19", features = ["parse"] }
 base64 = "0.22.1"
 

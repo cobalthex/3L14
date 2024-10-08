@@ -134,7 +134,7 @@ impl AssetHandleInner
             0 => AssetPayload::Pending,
             p if (ptr & Self::PAYLOAD_PTR_MASK) != 0 =>
             {
-                let arc = unsafe { Arc::from_raw((ptr & !Self::PAYLOAD_PTR_MASK) as *const A) };
+                let arc = unsafe { Arc::from_raw((p & !Self::PAYLOAD_PTR_MASK) as *const A) };
                 let avail = AssetPayload::Available(arc.clone());
                 std::mem::forget(arc);
                 avail

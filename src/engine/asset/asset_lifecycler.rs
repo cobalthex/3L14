@@ -5,19 +5,8 @@ use bitcode::DecodeOwned;
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::error::Error;
-use std::fmt::{Debug, Display, Formatter};
 use std::io::{Read, Seek};
 use std::sync::Arc;
-
-#[derive(Debug)]
-struct Eror;
-impl Error for Eror { }
-impl Display for Eror
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        Ok(())
-    }
-}
 
 pub struct AssetLoadRequest
 {

@@ -1,6 +1,6 @@
 // All the supported asset types
-#[repr(u16)]
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u16)]
 pub enum AssetTypeId
 {
     Invalid = 0,

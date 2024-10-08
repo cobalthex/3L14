@@ -1,8 +1,9 @@
+use super::*;
 use bitcode::Encode;
-use game_3l14::engine::asset::{AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetMetadata, AssetTypeId, BuilderHash};
+use game_3l14::engine::asset::{AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetTypeId};
 use game_3l14::engine::{varint, ShortTypeName};
 use metrohash::MetroHash64;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserializer, Serializer};
 use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::OsStr;
@@ -12,8 +13,6 @@ use std::io;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use unicase::UniCase;
-
-use super::*;
 
 // TODO: split this file out some?
 
@@ -197,14 +196,8 @@ impl AssetsBuilder
     // rebuild_asset(ext, base_id, file_bytes() ?
 }
 
-#[derive(Serialize, Deserialize)]
-struct SourceMetadata
-{
-    pub source_id: AssetKeySourceId,
-    build_config: toml::Value,
-}
-
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum BuildError
 {
     InvalidSourcePath, // lies outside the sources root
@@ -257,6 +250,15 @@ impl<W: BuildOutputWrite> BuildOutput<W>
     - type hashing (type_hash)?
      */
 
+    pub fn depends_on(&mut self, dependency: AssetKey)
+    {
+        self.dependencies.push(dependency);
+    }
+    pub fn depends_on_multiple(&mut self, dependencies: &[AssetKey])
+    {
+        self.dependencies.extend_from_slice(dependencies)
+    }
+
     // Serialize some data to the stream using the default serializer
     pub fn serialize<T: Encode>(&mut self, value: &T) -> Result<usize, impl Error>
     {
@@ -265,16 +267,10 @@ impl<W: BuildOutputWrite> BuildOutput<W>
         self.writer.write(val.as_slice())
     }
 
-    pub fn depends_on(&mut self, dependent_asset: AssetKey)
-    {
-        self.dependencies.push(dependent_asset);
-    }
-
     pub fn finish(mut self) -> Result<AssetKey, BuildError>
     {
         self.writer.flush().map_err(BuildError::OutputIOError)?;
 
-        self.dependencies.sort();
         self.dependencies.dedup();
 
         // write metadata

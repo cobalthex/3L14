@@ -1,0 +1,7 @@
+source_id = "00351453683a969abaa8a17f8a"
+
+[build_config]
+debug = false
+emit_symbols = false
+skip_validation = false
+stage = "Vertex"

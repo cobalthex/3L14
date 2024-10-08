@@ -1,31 +1,71 @@
 use quote::quote;
-use syn::{self, Ident, parse_macro_input};
+use std::collections::HashMap;
+use syn::{self, parse_macro_input, Data, DeriveInput, LitStr};
 
-// todo: use send/sync types only?
-
-#[proc_macro_derive(GlobalSingleton)]
-pub fn global_singleton_derive_impl(input: proc_macro::TokenStream) -> proc_macro::TokenStream
+#[proc_macro_derive(EnumWithProps, attributes(enum_prop))]
+pub fn enum_props_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 {
-    // Parse the input tokens into a syntax tree
-    let parsed = parse_macro_input!(input as syn::DeriveInput);
+    let derive = parse_macro_input!(input as DeriveInput);
+    let type_name = &derive.ident;
 
-    let for_ty = &parsed.ident;
-
-    // let global_span = for_ty.span().unwrap().start();
-    let global_span = for_ty.span();
-    let global = Ident::new(&format!("g_{}", for_ty), global_span);
-
-    quote!
+    let variants = if let Data::Enum(ref data_enum) = derive.data
     {
-        #[warn(non_upper_case_globals)]
-        static #global: once_cell::sync::OnceCell<#for_ty> = once_cell::sync::OnceCell::new();
-        impl GlobalSingleton for #for_ty
+        &data_enum.variants
+    }
+    else
+    {
+        panic!("#[derive(EnumWithProps)] can only be used with enums");
+    };
+
+    // Store generated methods for each property
+
+    let mut props = HashMap::new();
+
+    for variant in variants
+    {
+        let variant_ident = &variant.ident;
+
+        for attr in &variant.attrs
         {
-            fn global_init()
+            if !attr.path().is_ident("enum_prop") { continue; }
+
+            attr.parse_nested_meta(|meta|
             {
-                #global.set(#for_ty::new()).expect("GlobalSingleton already set!"); // todo: use name
-            }
-            fn get<'s>() -> &'s Self { #global.get().expect("GlobalSingleton not initialized!") }
+                let prop_key = meta.path.get_ident().ok_or(meta.error("Missing property key"))?;
+                let prop_val: LitStr = meta.value()?.parse()?;
+
+                let method_name = prop_key.clone();
+                let prop = props.entry(method_name).or_insert(Vec::<proc_macro2::TokenStream>::new());
+                prop.push(quote!(Self::#variant_ident => #prop_val).into());
+
+                Ok(())
+            }).expect("Failed to parse enum_prop");
         }
-    }.into()
+    }
+
+    let methods = props.iter().map(|(prop_key, prop_values)|
+    {
+        quote!
+        {
+            pub const fn #prop_key(&self) -> &'static str
+            {
+                match self
+                {
+                    #(#prop_values,)*
+                    _ => panic!("This variant does not have a property for {}", #prop_key),
+                }
+            }
+        }
+    });
+
+    // Expand the generated methods
+    let expanded = quote!
+    {
+        impl #type_name
+        {
+            #(#methods)*
+        }
+    };
+
+    proc_macro::TokenStream::from(expanded)
 }

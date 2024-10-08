@@ -29,6 +29,7 @@ impl Display for ModelImportError
 impl Error for ModelImportError { }
 
 #[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ModelBuildConfig
 {
 }
@@ -69,13 +70,18 @@ impl AssetBuilder for ModelBuilder
             let buffers =  gltf::import_buffers(&document, None, blob)?;
             let images = gltf::import_images(&document, None, &buffers)?;
 
-            for mesh in document.meshes()
+            for gltf_mesh in document.meshes()
             {
-                let model = parse_gltf(mesh, &buffers, &images, outputs)?;
-                let mut output = outputs.add_output(AssetTypeId::Model)?;
+                let model = parse_gltf(gltf_mesh, &buffers, &images, outputs)?;
+                let mut model_output = outputs.add_output(AssetTypeId::Model)?;
 
-                output.serialize(&model)?;
-                output.finish()?;
+                for mesh in &model.meshes
+                {
+                    model_output.depends_on(mesh.material);
+                }
+
+                model_output.serialize(&model)?;
+                model_output.finish()?;
             }
         }
 
@@ -179,6 +185,9 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
         {
             // call into MaterialBuilder?
             let mut mtl_output = outputs.add_output(AssetTypeId::RenderMaterial)?;
+
+            mtl_output.depends_on_multiple(&textures);
+
             mtl_output.serialize(&MaterialFile
             {
                 textures: textures.into_boxed_slice(),

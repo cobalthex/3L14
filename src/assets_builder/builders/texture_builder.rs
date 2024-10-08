@@ -8,6 +8,7 @@ use std::io::{BufReader, Write};
 use unicase::UniCase;
 
 #[derive(Serialize, Deserialize)]
+#[serde(default)]
 pub struct TextureBuildConfig
 {
     generate_mips: bool,

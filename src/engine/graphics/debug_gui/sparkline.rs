@@ -74,7 +74,7 @@ impl<const N_ENTRIES: usize> Sparkline<N_ENTRIES>
 
         for i in 1..self.count
         {
-            let val = self.entries[0];
+            let val = self.entries[i];
             if val < self.min { self.min = val }
             if val > self.max { self.max = val }
         }

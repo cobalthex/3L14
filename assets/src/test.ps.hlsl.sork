@@ -2,5 +2,5 @@ source_id = "00a6b39c4eecb14a98dc220f6a"
 
 [build_config]
 debug = true
-emit_symbols = true
+emit_symbols = false
 stage = "Pixel"

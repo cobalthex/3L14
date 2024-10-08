@@ -1,26 +1,20 @@
 use std::error::Error;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use hassle_rs::{Dxc, DxcIncludeHandler, Dxil, HassleError};
+use hassle_rs::{Dxc, DxcIncludeHandler, DxcOperationResult, Dxil, HassleError};
 use serde::{Deserialize, Serialize, Serializer};
 use game_3l14::engine::asset::AssetTypeId;
+use game_3l14::engine::graphics::assets::{ShaderFile, ShaderStage};
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
 
 #[derive(Default, Serialize, Deserialize)]
-pub enum ShaderStage
-{
-    #[default]
-    Vertex = 0,
-    Pixel = 1, // fragment
-    Compute = 2,
-}
-
-#[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ShaderBuildConfig
 {
     stage: ShaderStage,
     debug: bool,
     emit_symbols: bool,
+    skip_validation: bool,
 }
 
 struct IncludeHandler<'a>
@@ -90,23 +84,14 @@ impl AssetBuilder for ShaderBuilder
 
         // TODO: wgsl
 
-        const ENTRY_POINT_SUFFIX: &'static str = "main";
-
-        // todo: can all this be optimized to const?
-        let profile = match config.stage
-        {
-            ShaderStage::Vertex => "vs",
-            ShaderStage::Pixel => "ps",
-            ShaderStage::Compute => "cs",
-        };
-
-        let entry_point = format!("{profile}_{ENTRY_POINT_SUFFIX}");
-        let profile = format!("{profile}_6_0");
+        let entry_point = config.stage.entry_point();
+        let profile = format!("{}_6_0", config.stage.prefix());
 
         let mut defines = Vec::new();
 
         let mut dxc_args = vec![
             "-spirv", // emit Spir-V
+            "-fspv-target-env=universal1.5",
         ];
 
         if config.debug
@@ -119,7 +104,7 @@ impl AssetBuilder for ShaderBuilder
         {
             dxc_args.push("-Zi");
             dxc_args.push("-Zss");
-            // dxc_args.push("-Fd");
+            // dxc_args.push("-fspv-debug=line");
         }
 
         // -Fd <file|directory\> - debug info
@@ -150,15 +135,13 @@ impl AssetBuilder for ShaderBuilder
             Err(result) =>
             {
                 let error_blob = result.0.get_error_buffer()?;
-                Err(HassleError::CompileError(
-                    dxc_library.get_blob_as_string(&error_blob.into())?,
-                ))
+                let error_str = dxc_library.get_blob_as_string(&error_blob.into())?;
+                Err(HassleError::CompileError(error_str))
             },
             Ok(result) =>
             {
                 let result_blob = result.get_result()?;
-
-                Ok(result_blob.to_vec())
+                Ok(result_blob.to_vec()) // todo: This could be no-copy
             }
         }?;
 
@@ -170,17 +153,22 @@ impl AssetBuilder for ShaderBuilder
         let module = spirv;
         // let module = match dxc_validator.validate(blob_encoding.into())
         // {
-        //     Ok(blob) => Ok(blob.to_vec()),
+        //     Ok(blob) => Ok(blob.to_vec()), // todo: This could be no-copy
         //     Err(result) =>
         //     {
         //         let error_blob = result.0.get_error_buffer()?;
-        //         Err(HassleError::ValidationError(
-        //             dxc_library.get_blob_as_string(&error_blob.into())?,
-        //         ))
+        //         let error_str = dxc_library.get_blob_as_string(&error_blob.into())?;
+        //         Err(HassleError::ValidationError(error_str))
         //     }
         // }?;
 
         let mut output = outputs.add_output(AssetTypeId::Shader)?;
+
+        output.serialize(&ShaderFile
+        {
+            stage: config.stage,
+        })?;
+
         output.write_all(module.as_ref())?;
         output.finish()?;
 
