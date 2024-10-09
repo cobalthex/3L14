@@ -2,19 +2,41 @@ mod core;
 mod builders;
 
 use crate::core::{AssetsBuilder, AssetsBuilderConfig};
-use clap::Parser;
 use std::path::Path;
+use clap::{Parser, Subcommand};
+
+#[derive(Debug, Subcommand)]
+pub enum CliCommands
+{
+    #[clap(about = "Build sources into assets")]
+    Build
+    {
+        #[arg(long, exclusive = true)]
+        all: bool,
+        #[arg(long, exclusive = true, value_delimiter = ',', num_args = 1..)]
+        source: Vec<String>,
+
+        // build IDs ?
+    },
+    #[clap(about = "List known source assets and their source ID")]
+    Sources,
+}
 
 #[derive(Debug, Parser)]
 struct CliArgs
 {
-    // A list of asset paths to build
-    #[arg(short, long)]
-    build: Vec<String>, // TODO: should this input source or built asset paths?
+    #[command(subcommand)]
+    command: CliCommands,
+
+    // todo:
+    //  - reset source build config
+
 }
 
 fn main()
 {
+    let cli_args = <CliArgs as clap::Parser>::parse();
+
     let Ok(assets_root) = Path::new("assets").canonicalize() else { return; }; // TODO: error handling
     let src_assets_root = assets_root.join("src");
     let built_assets_root = assets_root.join("build");
@@ -25,25 +47,38 @@ fn main()
     builder_cfg.add_builder(builders::MaterialBuilder);
     builder_cfg.add_builder(builders::ShaderBuilder::new(&src_assets_root));
 
-    eprintln!("Starting asset builder");
-    
     let builder = AssetsBuilder::new(builder_cfg);
 
-    let cli_args = CliArgs::parse();
-
-    for build in cli_args.build
+    match cli_args.command
     {
-        let src_path = Path::new(&build);
-
-        match builder.build_assets(src_path)
+        CliCommands::Build { all: true, .. } =>
         {
-            Ok(results) =>
+            todo!();
+        },
+        CliCommands::Build { all: false, source: sources } =>
+        {
+            for source in sources
             {
-                eprintln!("Successfully built {src_path:?} into {results:#?}");
+                let src_path = Path::new(&source);
+
+                match builder.build_source(src_path)
+                {
+                    Ok(results) =>
+                        {
+                            eprintln!("Successfully built {src_path:?} into {results:#?}");
+                        }
+                    Err(err) =>
+                        {
+                            eprintln!("Failed to build {src_path:?}: {err:#}");
+                        }
+                }
             }
-            Err(err) =>
+        }
+        CliCommands::Sources =>
+        {
+            for source in builder.scan_sources()
             {
-                eprintln!("Failed to build {src_path:?}: {err:#}");
+                println!("{source:?}");
             }
         }
     }

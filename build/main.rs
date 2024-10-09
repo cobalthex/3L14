@@ -34,9 +34,9 @@ fn main()
     {
         Ok(meta) if meta.is_symlink() => {},
         Ok(_) => panic!("! out-dir asset dir existed but was not a symlink"),
-        
+
         Err(err) if err.kind() != ErrorKind::NotFound => panic!("! out-dir asset file '{assets_symlink_target:?}' was unreadable: {err:?}"),
-        
+
         _ => symlink::symlink_dir(assets_symlink_src, assets_symlink_target).expect("! Failed to symlink asset directory"),
     }
 
@@ -45,11 +45,15 @@ fn main()
     //     if bin_name == "assets_builder"
     //     {
     // symlink?
-    copy_dir_all(Path::new("3rdparty/dxc"), &out_dir, Some(&[OsStr::new("dll")]))
-        .expect("! Failed to copy DXC");
+    if let Err(e) = copy_dir_all(Path::new("3rdparty/dxc"), &out_dir, Some(&[OsStr::new("dll")]))
+    {
+        println!("cargo::warning=Failed to copy DXC: {e}");
+    }
 
-    copy_dir_all(Path::new("3rdparty/sdl"), &out_dir, Some(&[OsStr::new("dll")]))
-        .expect("! Failed to copy SDL");
+    if let Err(e) = copy_dir_all(Path::new("3rdparty/sdl"), &out_dir, Some(&[OsStr::new("dll")]))
+    {
+        println!("cargo::warning=Failed to copy SDL: {e}");
+    }
 }
 
 fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>, file_exts: Option<&[&OsStr]>) -> io::Result<usize>

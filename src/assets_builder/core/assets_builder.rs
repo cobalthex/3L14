@@ -13,7 +13,7 @@ use std::io;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use unicase::UniCase;
-
+use walkdir::WalkDir;
 // TODO: split this file out some?
 
 struct AssetBuilderEntry
@@ -107,8 +107,14 @@ impl AssetsBuilder
 
     pub fn builders_version_hash(&self) -> u64 { self.config.builders_version_hash }
 
+    pub fn scan_sources(&self) -> ScanSources
+    {
+        let walker = WalkDir::new(&self.config.source_files_root);
+        ScanSources { walk_dir: walker.into_iter() }
+    }
+
     // transform a source file into one or more built asset, returns the built count
-    pub fn build_assets<P: AsRef<Path> + Debug>(&self, source_path: P) -> Result<BuildResults, BuildError>
+    pub fn build_source<P: AsRef<Path> + Debug>(&self, source_path: P) -> Result<BuildResults, BuildError>
     {
         let canonical_path =
         {

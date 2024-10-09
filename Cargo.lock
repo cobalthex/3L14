@@ -1088,6 +1088,7 @@ dependencies = [
  "toml 0.8.19",
  "type-map",
  "unicase",
+ "walkdir",
  "wgpu",
  "winres",
 ]

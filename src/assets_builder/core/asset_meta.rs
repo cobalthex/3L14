@@ -5,6 +5,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
 
+// used only for scanning, field names (and ideally order) must match SourceMetadata
+// not guaranteed to work with all serialization formats (TOML supported)
+#[derive(Deserialize)]
+pub(super) struct SourceMetadataSlim
+{
+    pub source_id: AssetKeySourceId,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct SourceMetadata
 {

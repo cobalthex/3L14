@@ -3,7 +3,7 @@ use crate::engine::asset::AssetTypeId;
 use bitcode::{Decode, Encode};
 use rand::RngCore;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display, Formatter, Write};
 use std::hash::Hash;
 use std::path::PathBuf;
 use serde::de::Error;
@@ -24,7 +24,6 @@ pub trait AssetPath: AsRef<str> + Hash + Display + Debug { }
 impl<T> AssetPath for T where T: AsRef<str> + Hash + Display + Debug { }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(test, derive(Debug))] // custom debug taking bits into account?
 pub struct AssetKeyDerivedId(u16); // only 15 bits are used.
 impl AssetKeyDerivedId
 {
@@ -41,9 +40,15 @@ impl Iterator for AssetKeyDerivedId
         self.0.checked_add(1).map(|u| { self.0 = u; rval })
     }
 }
+impl Debug for AssetKeyDerivedId
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    {
+        f.write_fmt(format_args!("{:04x}", self.0))
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(test, derive(Debug))] // custom debug taking bits into account?
 pub struct AssetKeySourceId(u128); // only 100 bits are used.
 impl AssetKeySourceId
 {
@@ -78,6 +83,13 @@ impl<'de> Deserialize<'de> for AssetKeySourceId
             Ok(u) => Ok(Self(u)),
             Err(e) => Err(D::Error::custom(e)),
         }
+    }
+}
+impl Debug for AssetKeySourceId
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    {
+        f.write_fmt(format_args!("{:026x}", self.0))
     }
 }
 
