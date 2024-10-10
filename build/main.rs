@@ -22,23 +22,29 @@ fn main()
     out_dir.push("../../.."); // gross
     out_dir = out_dir.canonicalize().expect("! Failed to canonicalize Env:OUT_DIR");
 
-    let mut assets_symlink_src = project_root.clone();
-    assets_symlink_src.push("assets/build");
-    assets_symlink_src = assets_symlink_src.canonicalize().expect("! Cannot parse asset build dir");
-
     let mut assets_symlink_target = out_dir.clone();
     assets_symlink_target.push("assets");
+    
+    let mut assets_symlink_src = project_root.clone();
+    assets_symlink_src.push("assets/build");
+    match assets_symlink_src.canonicalize() {
+        Ok(src_path) =>
+        {
+            // TODO: copy in release builds
+            match std::fs::symlink_metadata(&assets_symlink_target)
+            {
+                // don't panic?
+                Ok(meta) if meta.is_symlink() => {},
+                Ok(_) => panic!("! out-dir asset dir existed but was not a symlink"),
 
-    // TODO: copy in release builds
-    match std::fs::symlink_metadata(&assets_symlink_target)
-    {
-        Ok(meta) if meta.is_symlink() => {},
-        Ok(_) => panic!("! out-dir asset dir existed but was not a symlink"),
+                Err(err) if err.kind() != ErrorKind::NotFound => panic!("! out-dir asset file '{assets_symlink_target:?}' was unreadable: {err:?}"),
 
-        Err(err) if err.kind() != ErrorKind::NotFound => panic!("! out-dir asset file '{assets_symlink_target:?}' was unreadable: {err:?}"),
-
-        _ => symlink::symlink_dir(assets_symlink_src, assets_symlink_target).expect("! Failed to symlink asset directory"),
+                _ => symlink::symlink_dir(assets_symlink_src, assets_symlink_target).expect("! Failed to symlink asset directory"),
+            }
+        }
+        Err(err) => println!("cargo::warning=Failed to find assets build dir: {err}"),
     }
+
 
     // if let Some(bin_name) = env::var_os("CARGO_BIN_NAME")
     // {
