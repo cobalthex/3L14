@@ -2044,6 +2044,7 @@ dependencies = [
 name = "proc_macros_3l14"
 version = "0.1.0"
 dependencies = [
+ "metrohash",
  "proc-macro2",
  "quote",
  "syn 2.0.73",

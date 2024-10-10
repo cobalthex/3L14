@@ -416,7 +416,7 @@ fn main() -> ExitReason
                             let mut world_index = 0;
 
                             // todo: use DrawIndirect?
-                            let world_transform = Mat4::IDENTITY; // model.transform.to_world();
+                            let world_transform = Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0));
                             worlds_buf[world_index].world = world_transform;
                             let offset = (world_index * std::mem::size_of::<TransformUniform>()) as u32;
                             test_pass.set_bind_group(1, &world_bind_group, &[offset]);

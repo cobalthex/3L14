@@ -29,7 +29,7 @@ impl MaterialCache
     {
         renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
         {
-            label: Some("texture bind group layout"),
+            label: Some("TEST -- texture bind group layout"),
             entries:
             &[
                 BindGroupLayoutEntry

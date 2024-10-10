@@ -1,10 +1,9 @@
+use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
+use game_3l14::engine::asset::AssetTypeId;
+use game_3l14::engine::graphics::assets::material::MaterialFile;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::io::Read;
-use serde::{Deserialize, Serialize};
-use game_3l14::engine::asset::AssetTypeId;
-use game_3l14::engine::graphics::assets::Material;
-use game_3l14::engine::graphics::assets::material::MaterialFile;
-use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -29,6 +28,7 @@ impl AssetBuilderMeta for MaterialBuilder
 
     fn format_version() -> VersionStrings
     {
+        // TODO: hash the serialized type layouts
         &[
             b"Initial"
         ]

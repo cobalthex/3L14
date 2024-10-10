@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crate::engine::asset::{Asset, AssetLifecycler, AssetLoadRequest, AssetTypeId};
 use crate::engine::graphics::Renderer;
 use std::error::Error;
@@ -6,8 +7,9 @@ use std::sync::Arc;
 use bitcode::{Decode, Encode};
 use proc_macros_3l14::EnumWithProps;
 use serde::{Deserialize, Serialize};
-use wgpu::ShaderModule;
+use wgpu::{ShaderModule, ShaderModuleDescriptorSpirV};
 use wgpu::ShaderModuleDescriptor;
+use wgpu::util::{make_spirv, make_spirv_raw};
 
 #[derive(Default, Serialize, Deserialize, Encode, Decode, EnumWithProps)]
 pub enum ShaderStage
@@ -76,16 +78,32 @@ impl AssetLifecycler for ShaderLifecycler
     type Asset = Shader;
     fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
     {
+        const LOAD_DIRECT: bool = false; // wgpu requires Features::SPIRV_SHADER_PASSTHROUGH if true
+
         let shader_file: ShaderFile = request.deserialize()?;
 
         let mut module_bytes = Vec::new();
         request.input.read_to_end(&mut module_bytes)?;
 
-        let module = self.renderer.device().create_shader_module(ShaderModuleDescriptor
+        let module = match LOAD_DIRECT
         {
-            label: Some(&format!("{:?}", request.asset_key)),
-            source: wgpu::util::make_spirv(&module_bytes),
-        });
+            true => unsafe 
+            {
+                self.renderer.device().create_shader_module_spirv(&ShaderModuleDescriptorSpirV
+                {
+                    label: Some(&format!("{:?}", request.asset_key)),
+                    source: make_spirv_raw(&module_bytes),
+                })
+            },
+            false =>
+            {
+                self.renderer.device().create_shader_module(ShaderModuleDescriptor
+                {
+                    label: Some(&format!("{:?}", request.asset_key)),
+                    source: make_spirv(&module_bytes),
+                })
+            }
+        };
 
         Ok(Shader
         {

@@ -2,6 +2,7 @@ use super::*;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
+use std::hash::{Hash, Hasher};
 use std::io::{Seek, Write};
 
 pub trait BuildOutputWrite: Write + Seek { }

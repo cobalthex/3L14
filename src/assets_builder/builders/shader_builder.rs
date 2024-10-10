@@ -1,11 +1,11 @@
+use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
+use game_3l14::engine::asset::AssetTypeId;
+use game_3l14::engine::graphics::assets::{ShaderFile, ShaderStage};
+use hassle_rs::{Dxc, DxcIncludeHandler, Dxil, HassleError};
+use serde::{Deserialize, Serialize, Serializer};
 use std::error::Error;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use hassle_rs::{Dxc, DxcIncludeHandler, DxcOperationResult, Dxil, HassleError};
-use serde::{Deserialize, Serialize, Serializer};
-use game_3l14::engine::asset::AssetTypeId;
-use game_3l14::engine::graphics::assets::{ShaderFile, ShaderStage};
-use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -68,6 +68,7 @@ impl AssetBuilderMeta for ShaderBuilder
 
     fn format_version() -> VersionStrings
     {
+        // TODO: hash the serialized type layouts
         &[
             b"Initial"
         ]

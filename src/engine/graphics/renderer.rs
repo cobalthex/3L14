@@ -113,7 +113,8 @@ impl Renderer
                 label: Some("Primary WGPU device"),
                 required_features:
                     Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES |
-                    Features::PUSH_CONSTANTS,
+                    Features::PUSH_CONSTANTS |
+                    Features::SPIRV_SHADER_PASSTHROUGH,
                 // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
                 required_limits: Limits
                 {

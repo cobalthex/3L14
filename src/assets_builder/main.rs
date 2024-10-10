@@ -64,13 +64,13 @@ fn main()
                 match builder.build_source(src_path)
                 {
                     Ok(results) =>
-                        {
-                            eprintln!("Successfully built {src_path:?} into {results:#?}");
-                        }
+                    {
+                        eprintln!("Successfully built {src_path:?} into {results:#?}");
+                    }
                     Err(err) =>
-                        {
-                            eprintln!("Failed to build {src_path:?}: {err:#}");
-                        }
+                    {
+                        eprintln!("Failed to build {src_path:?}: {err:#}");
+                    }
                 }
             }
         }

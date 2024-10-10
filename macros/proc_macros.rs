@@ -1,6 +1,6 @@
-use quote::quote;
 use std::collections::HashMap;
-use syn::{self, parse_macro_input, Data, DeriveInput, LitStr};
+use quote::quote;
+use syn::{parse_macro_input, Data, DeriveInput, LitStr};
 
 #[proc_macro_derive(EnumWithProps, attributes(enum_prop))]
 pub fn enum_props_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream
@@ -30,23 +30,23 @@ pub fn enum_props_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStr
             if !attr.path().is_ident("enum_prop") { continue; }
 
             attr.parse_nested_meta(|meta|
-            {
-                let prop_key = meta.path.get_ident().ok_or(meta.error("Missing property key"))?;
-                let prop_val: LitStr = meta.value()?.parse()?;
+                {
+                    let prop_key = meta.path.get_ident().ok_or(meta.error("Missing property key"))?;
+                    let prop_val: LitStr = meta.value()?.parse()?;
 
-                let method_name = prop_key.clone();
-                let prop = props.entry(method_name).or_insert(Vec::<proc_macro2::TokenStream>::new());
-                prop.push(quote!(Self::#variant_ident => #prop_val).into());
+                    let method_name = prop_key.clone();
+                    let prop = props.entry(method_name).or_insert(Vec::<proc_macro2::TokenStream>::new());
+                    prop.push(quote!(Self::#variant_ident => #prop_val).into());
 
-                Ok(())
-            }).expect("Failed to parse enum_prop");
+                    Ok(())
+                }).expect("Failed to parse enum_prop");
         }
     }
 
     let methods = props.iter().map(|(prop_key, prop_values)|
-    {
-        quote!
         {
+            quote!
+            {
             pub const fn #prop_key(&self) -> &'static str
             {
                 match self
@@ -56,7 +56,7 @@ pub fn enum_props_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStr
                 }
             }
         }
-    });
+        });
 
     // Expand the generated methods
     let expanded = quote!

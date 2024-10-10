@@ -12,6 +12,7 @@ cbuffer World
 
 struct VertexOutput
 {
+    float4 world_position: POSITION;
     float4 clip_position: SV_POSITION;
     float4 normal: NORMAL;
     float2 texcoord: TEXCOORD0;
@@ -36,7 +37,8 @@ VertexOutput vs_main(
     uint color : COLOR0)
 {
     VertexOutput out_vertex;
-    out_vertex.clip_position = mul((ProjView * World), float4(in_position, 1));
+    out_vertex.world_position = mul(World, float4(in_position, 1));
+    out_vertex.clip_position = mul(ProjView, out_vertex.world_position);
     out_vertex.normal = float4(in_normal, 1);
     out_vertex.texcoord = in_texcoord;
     out_vertex.color = UnpackColor(color);

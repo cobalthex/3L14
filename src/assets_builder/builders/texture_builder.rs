@@ -1,4 +1,4 @@
-use crate::core::{AssetBuildConfig, AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
+use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
 use game_3l14::engine::asset::AssetTypeId;
 use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat, MAX_MIP_COUNT};
 use image::{ColorType, EncodableLayout, GenericImageView};
@@ -41,6 +41,7 @@ impl AssetBuilderMeta for TextureBuilder
 
     fn format_version() -> VersionStrings
     {
+        // TODO: hash the serialized type layouts
         &[
             b"Initial"
         ]

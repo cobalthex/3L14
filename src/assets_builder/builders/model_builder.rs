@@ -4,13 +4,12 @@ use game_3l14::engine::graphics::assets::material::{MaterialFile, PbrProps};
 use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat};
 use game_3l14::engine::graphics::{ModelFile, ModelFileMesh, ModelFileMeshIndices, Rgba, VertexPosNormTexCol};
 use game_3l14::engine::AABB;
-use glam::Vec3;
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::io::Write;
-use serde::{Deserialize, Serialize};
 use unicase::UniCase;
 
 #[derive(Debug)]
@@ -51,6 +50,7 @@ impl AssetBuilderMeta for ModelBuilder
 
     fn format_version() -> VersionStrings
     {
+        // TODO: hash the serialized type layouts
         &[
             b"Initial"
         ]
@@ -60,7 +60,7 @@ impl AssetBuilder for ModelBuilder
 {
     type BuildConfig = ModelBuildConfig;
 
-    fn build_assets(&self, config: Self::BuildConfig, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, _config: Self::BuildConfig, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         if input.file_extension() == &UniCase::new("glb") ||
             input.file_extension() == &UniCase::new("gltf")

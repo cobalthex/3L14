@@ -2,11 +2,11 @@ use crate::const_assert;
 use crate::engine::asset::AssetTypeId;
 use bitcode::{Decode, Encode};
 use rand::RngCore;
+use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::hash::Hash;
 use std::path::PathBuf;
-use serde::de::Error;
 
 pub trait Asset: Sync + Send + 'static
 {
