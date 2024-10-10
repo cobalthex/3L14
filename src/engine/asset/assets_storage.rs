@@ -277,7 +277,12 @@ impl Assets
 {
     pub fn new(asset_lifecyclers: AssetLifecyclers, config: AssetsConfig) -> Self
     {
-        let assets_root = Path::new("assets/build").canonicalize().expect("Failed to parse assets_root path");
+        let mut assets_root = std::env::current_exe().expect("Failed to get the bin dir");
+        assets_root.pop();
+        assets_root.push("assets"); // canonicalize?
+        
+        #[cfg(debug_assertions)]
+        eprintln!("Serving assets from {assets_root:?}");
 
         let (send, recv) = unbounded::<AssetLifecycleRequest>();
         let storage = Arc::new(AssetsStorage
