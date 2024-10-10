@@ -5,9 +5,9 @@ pub enum AssetTypeId
 {
     Invalid = 0,
 
-    #[cfg(debug_assertions)]
+    #[cfg(test)]
     Test1 = 1,
-    #[cfg(debug_assertions)]
+    #[cfg(test)]
     Test2 = 2,
     
     Untyped = 3, // non-descript, untyped data

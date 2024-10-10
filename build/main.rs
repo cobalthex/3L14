@@ -24,7 +24,7 @@ fn main()
 
     let mut assets_symlink_target = out_dir.clone();
     assets_symlink_target.push("assets");
-    
+
     let mut assets_symlink_src = project_root.clone();
     assets_symlink_src.push("assets/build");
     match assets_symlink_src.canonicalize() {
@@ -41,7 +41,8 @@ fn main()
 
                 _ => symlink::symlink_dir(assets_symlink_src, assets_symlink_target).expect("! Failed to symlink asset directory"),
             }
-        }
+        },
+        // fail if not in cfg(test) ?
         Err(err) => println!("cargo::warning=Failed to find assets build dir: {err}"),
     }
 
