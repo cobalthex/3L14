@@ -1,5 +1,5 @@
 use sdl2::{*, video::*};
-use crate::AppRun;
+use crate::{AppRun, CliArgs};
 
 pub struct Windows
 {
@@ -7,7 +7,7 @@ pub struct Windows
 }
 impl Windows
 {
-    pub fn new(sdl_video: &VideoSubsystem, app_info: &AppRun) -> Self
+    pub fn new(sdl_video: &VideoSubsystem, app_info: &AppRun<impl CliArgs>) -> Self
     {
         #[cfg(debug_assertions)]
         let window_title = format!(

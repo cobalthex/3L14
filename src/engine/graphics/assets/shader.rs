@@ -78,16 +78,16 @@ impl AssetLifecycler for ShaderLifecycler
     type Asset = Shader;
     fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
     {
-        const LOAD_DIRECT: bool = false; // wgpu requires Features::SPIRV_SHADER_PASSTHROUGH if true
+        const LOAD_DIRECT: bool = false;
 
         let shader_file: ShaderFile = request.deserialize()?;
 
         let mut module_bytes = Vec::new();
         request.input.read_to_end(&mut module_bytes)?;
 
-        let module = match LOAD_DIRECT
+        let module = match LOAD_DIRECT && self.renderer.supports_feature(wgpu::Features::SPIRV_SHADER_PASSTHROUGH)
         {
-            true => unsafe 
+            true => unsafe
             {
                 self.renderer.device().create_shader_module_spirv(&ShaderModuleDescriptorSpirV
                 {

@@ -5,7 +5,7 @@ use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat};
 use game_3l14::engine::graphics::{ModelFile, ModelFileMesh, ModelFileMeshIndices, Rgba, VertexPosNormTexCol};
 use game_3l14::engine::AABB;
 use gltf::image::Format;
-use gltf::mesh::util::ReadIndices;
+use gltf::mesh::util::{ReadIndices, ReadTexCoords};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -31,6 +31,7 @@ impl Error for ModelImportError { }
 #[serde(default)]
 pub struct ModelBuildConfig
 {
+    // optimize (meshoptimizer)
 }
 
 pub struct ModelBuilder;
@@ -105,14 +106,18 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
         let prim_reader = in_prim.reader(|b| Some(&buffers[b.index()]));
         let positions = prim_reader.read_positions().ok_or(ModelImportError::NoPositionData)?;
         let mut normals = prim_reader.read_normals().ok_or(ModelImportError::NoNormalData)?;
-        let mut tex_coords = prim_reader.read_tex_coords(0).ok_or(ModelImportError::NoTexcoordData)?.into_f32();
+        let mut tex_coords = prim_reader.read_tex_coords(0).map(|t| t.into_f32());
         let mut colors = prim_reader.read_colors(0).map(|c| c.into_rgba_u8());
 
         let mut vertices = Vec::new();
         for p in positions.into_iter()
         {
             let n = normals.next().ok_or(ModelImportError::MismatchedVertexCount)?;
-            let tc = tex_coords.next().ok_or(ModelImportError::MismatchedVertexCount)?;
+            let tc = match &mut tex_coords
+            {
+                None => [0.0, 0.0],
+                Some(tc) => tc.next().ok_or(ModelImportError::MismatchedVertexCount)?,
+            };
             let c = match &mut colors
             {
                 Some(c) => c.next().ok_or(ModelImportError::MismatchedVertexCount)?.into(),
@@ -165,14 +170,14 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
                 {
                     Format::R8 => TextureFilePixelFormat::R8,
                     Format::R8G8 => TextureFilePixelFormat::Rg8,
-                    Format::R8G8B8 => todo!(),
+                    Format::R8G8B8 => todo!("R8G8B8 textures"),
                     Format::R8G8B8A8 => TextureFilePixelFormat::Rgba8,
-                    Format::R16 => todo!(),
-                    Format::R16G16 => todo!(),
-                    Format::R16G16B16 => todo!(),
-                    Format::R16G16B16A16 => todo!(),
-                    Format::R32G32B32FLOAT => todo!(),
-                    Format::R32G32B32A32FLOAT => todo!(),
+                    Format::R16 => todo!("R16 textures"),
+                    Format::R16G16 => todo!("R16G16 textures"),
+                    Format::R16G16B16 => todo!("R16G16B16 textures"),
+                    Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
+                    Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
+                    Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
                 }
             })?;
 

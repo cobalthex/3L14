@@ -75,7 +75,7 @@ impl AssetHandleInner
         // (debug) store a TypeId to verify templates match?
 
         #[cfg(feature = "debug_asset_lifetimes")]
-        eprintln!("{:?} storing new payload", self.key());
+        log::debug!("{:?} storing new payload", self.key());
 
         // can maybe get some inspiration from
         // https://vorner.github.io/2020/09/03/performance-cheating.html
@@ -171,7 +171,7 @@ impl UntypedAssetHandle
         };
 
         #[cfg(feature = "debug_asset_lifetimes")]
-        eprintln!("{key:?} alloc");
+        log::debug!("{key:?} alloc");
 
         let layout = Layout::for_value(&inner);
         Self(unsafe
@@ -190,7 +190,7 @@ impl UntypedAssetHandle
         (*self.0).store_payload::<A>(AssetPayload::Pending); // clears the stored payload
 
         #[cfg(feature = "debug_asset_lifetimes")]
-        eprintln!("{:?} de-alloc asset handle", (&*self.0).key);
+        log::debug!("{:?} de-alloc asset handle", (&*self.0).key);
 
         let layout = Layout::for_value(&*self.0);
         std::alloc::dealloc(self.0 as *mut u8, layout);
@@ -293,7 +293,7 @@ impl<A: Asset> AssetHandle<A>
         debug_assert_ne!(old_refs, isize::MAX);
 
         #[cfg(feature = "debug_asset_lifetimes")]
-        eprintln!("{self:?} increment ref to {}", old_refs + 1);
+        log::debug!("{self:?} increment ref to {}", old_refs + 1);
     }
 
     pub(super) fn store_payload(&self, payload: AssetPayload<A>)
@@ -325,7 +325,7 @@ impl<A: Asset> Drop for AssetHandle<A>
         let old_refs = inner.ref_count.fetch_sub(1, Ordering::Release);
 
         #[cfg(feature = "debug_asset_lifetimes")]
-        eprintln!("{self:?} decrement ref to {}", old_refs - 1);
+        log::debug!("{self:?} decrement ref to {}", old_refs - 1);
 
         if old_refs != 1
         {
@@ -334,7 +334,7 @@ impl<A: Asset> Drop for AssetHandle<A>
         }
 
         #[cfg(feature = "debug_asset_lifetimes")]
-        eprintln!("{:?} dropping", self.key());
+        log::debug!("{:?} dropping", self.key());
 
         inner.dropper.send(AssetLifecycleRequest::Drop(UntypedAssetHandle(self.inner))).expect("Failed to drop asset as the drop channel already closed"); // todo: error handling (can just drop it here?)
     }

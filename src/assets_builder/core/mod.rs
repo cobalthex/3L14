@@ -7,4 +7,6 @@ mod asset_meta;
 pub use asset_meta::*;
 
 mod scan;
+mod inline_hash;
+
 pub use scan::*;

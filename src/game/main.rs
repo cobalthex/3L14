@@ -1,6 +1,7 @@
 use std::io::Read;
 use std::ops::Deref;
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::Duration;
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use game_3l14::engine::{*, timing::*, input::*, windows::*, graphics::*, world::*, asset::*};
@@ -12,23 +13,8 @@ use game_3l14::engine::graphics::assets::shader::ShaderLifecycler;
 use game_3l14::engine::graphics::assets::texture::TextureLifecycler;
 use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
 use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
-use game_3l14::engine::graphics::assets::material::MaterialCache;
-
-#[derive(Debug)]
-#[repr(i32)]
-pub enum ExitReason
-{
-    Unset = !1, // this should never be set
-    UserExit = 0,
-    Panic = -99,
-}
-impl std::process::Termination for ExitReason
-{
-    fn report(self) -> ExitCode
-    {
-        (self as u8).into()
-    }
-}
+use game_3l14::engine::graphics::material_cache::MaterialCache;
+use game_3l14::ExitReason;
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -38,30 +24,16 @@ struct CliArgs
     keep_alive_on_panic: bool,
 }
 
-fn shitty_join<I>(separator: &str, iter: I) -> String
-     where I: Iterator,
-           I::Item: std::fmt::Display
-{
-    let mut out = String::new();
-    let mut first = true;
-    for i in iter
-    {
-        match first
-        {
-            true => { first = false; }
-            false => { out.push_str(separator); }
-        };
-        out.push_str(i.to_string().as_str());
-    }
-    out
-}
-
 fn main() -> ExitReason
 {
-    let app_run = game_3l14::AppRun::default();
-
-    println!("Started 3L14 (PID {}) at {} with args {}", app_run.pid, app_run.start_time, shitty_join(" ", std::env::args()));
-    let mut exit_reason = ExitReason::Unset;
+    let app_run = game_3l14::AppRun::<CliArgs>::startup("3L14");
+    {
+        #[cfg(debug_assertions)]
+        let keep_alive = app_run.args.keep_alive_on_panic;
+        #[cfg(not(debug_assertions))]
+        let keep_alive = false;
+        game_3l14::set_panic_hook(keep_alive);
+    }
 
     #[cfg(debug_assertions)]
     let _puffin_server;
@@ -69,39 +41,8 @@ fn main() -> ExitReason
     {
         let server_addr = format!("0.0.0.0:{}", puffin_http::DEFAULT_PORT);
         _puffin_server = puffin_http::Server::new(&server_addr).unwrap();
-        println!("Puffin serving on {server_addr}");
+        log::debug!("Puffin serving on {server_addr}");
         puffin::set_scopes_on(true);
-    }
-
-    let cli_args = CliArgs::parse();
-
-    {
-        let default_panic_hook = std::panic::take_hook();
-
-        #[cfg(debug_assertions)]
-        let keep_alive = cli_args.keep_alive_on_panic;
-        #[cfg(not(debug_assertions))]
-        let keep_alive = false;
-        if keep_alive
-        {
-            std::panic::set_hook(Box::new(move |panic|
-            {
-                default_panic_hook(panic);
-                println!("Ended 3L14 (PID {}) at {} with reason {:?}", app_run.pid, chrono::Local::now(), ExitReason::Panic);
-                println!("<<< Press enter to exit >>>");
-                let _ = std::io::stdin().read(&mut [0u8]); // wait to exit
-                std::process::exit(ExitReason::Panic as i32);
-            }));
-        }
-        else
-        {
-            std::panic::set_hook(Box::new(move |panic|
-            {
-                default_panic_hook(panic);
-                println!("Ended 3L14 (PID {}) at {} with reason {:?}", app_run.pid, chrono::Local::now(), ExitReason::Panic);
-                std::process::exit(ExitReason::Panic as i32);
-            }));
-        }
     }
 
     let mut clock = Clock::new();
@@ -138,8 +79,8 @@ fn main() -> ExitReason
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        let model_key: AssetKey = 0x00700000042f8fe4c6e9839688654c23.into();
-        let mut test_model = assets.load::<Model>(model_key);
+        let model_key: AssetKey = 0x00700020042f8fe4c6e9839688654c23.into();
+        let test_model = assets.load::<Model>(model_key);
 
         let test_vshader_key: AssetKey = 0x00500000351453683a969abaa8a17f8a.into();
         let test_vshader = assets.load::<Shader>(test_vshader_key);
@@ -237,7 +178,7 @@ fn main() -> ExitReason
             label: Some("Camera bind group"),
         });
 
-        let material_cache = MaterialCache::new(&renderer);
+        let material_cache = MaterialCache::new(renderer.clone());
 
         let mut test_pipeline = None;
 
@@ -265,24 +206,23 @@ fn main() -> ExitReason
                     match event
                     {
                         SdlEvent::Quit { .. } =>
-                            {
-                                exit_reason = ExitReason::UserExit;
-                                completion |= CompletionState::Completed;
-                            },
+                        {
+                            completion |= CompletionState::Completed;
+                        },
                         // SizeChanged?
                         SdlEvent::Window { win_event: SdlWindowEvent::Resized(w, h), .. } =>
-                            {
-                                renderer.resize(w as u32, h as u32);
-                            },
+                        {
+                            renderer.resize(w as u32, h as u32);
+                        },
                         SdlEvent::Window { win_event: SdlWindowEvent::DisplayChanged(index), .. } => 'arm:
-                            {
-                                let Ok(wind_index) = windows.main_window().display_index() else { break 'arm };
+                        {
+                            let Ok(wind_index) = windows.main_window().display_index() else { break 'arm };
 
-                                if wind_index == index
-                                {
-                                    // todo: find a way to recalculate refresh rate -- reconfigure surface_config does not work
-                                }
-                            },
+                            if wind_index == index
+                            {
+                                // todo: find a way to recalculate refresh rate -- reconfigure surface_config does not work
+                            }
+                        },
 
                         _ => input.handle_event(event, frame_time.current_time),
                     }
@@ -295,7 +235,6 @@ fn main() -> ExitReason
             if kbd.is_down(KeyCode::Q) &&
                 kbd.has_keymod(KeyMods::CTRL)
             {
-                exit_reason = ExitReason::UserExit;
                 completion = CompletionState::Completed;
             }
 
@@ -373,8 +312,8 @@ fn main() -> ExitReason
 
                 if test_pipeline.is_none()
                 {
-                    let AssetPayload::Available(vsh) = test_vshader.payload() else { continue; };
-                    let AssetPayload::Available(psh) = test_pshader.payload() else { continue; };
+                    let AssetPayload::Available(vsh) = test_vshader.payload() else { renderer.queue().submit([]); continue; };
+                    let AssetPayload::Available(psh) = test_pshader.payload() else { renderer.queue().submit([]); continue; };
 
                     test_pipeline = Some(test_render_pipeline::new(
                         &renderer,
@@ -487,6 +426,5 @@ fn main() -> ExitReason
 
     std::thread::sleep(Duration::from_micros(10)); // allow logs to flush -- TEMP
 
-    eprintln!("Ended 3L14 (PID {}) at {} with reason {:?}", app_run.pid, chrono::Local::now(), exit_reason);
-    exit_reason
+    app_run.get_exit_reason()
 }

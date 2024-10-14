@@ -1,7 +1,7 @@
-[[vk::binding(0, 2)]]
-Texture2D<float4> Tex;
-[[vk::binding(1, 2)]]
-SamplerState Sampler;
+// [[vk::binding(0, 2)]]
+// Texture2D<float4> Tex;
+// [[vk::binding(1, 2)]]
+// SamplerState Sampler;
 
 struct PixelInput
 {
@@ -47,6 +47,7 @@ float4 ps_main(PixelInput in_pixel) : SV_Target
     float3 Lo = 0.1;
     Lo += (kD * albedo / PI + specular) * radiance * NdotL;
 
-    float4 texcol = Tex.Sample(Sampler, in_pixel.texcoord);
+    //float4 texcol = Tex.Sample(Sampler, in_pixel.texcoord);
+    float4 texcol = 1;
     return texcol * float4(Lo, 1) + float4(ambient * albedo * ao, 0);
 }

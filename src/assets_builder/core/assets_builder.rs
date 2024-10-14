@@ -14,6 +14,7 @@ use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use unicase::UniCase;
 use walkdir::WalkDir;
+use crate::core::inline_hash::InlineHash;
 // TODO: split this file out some?
 
 struct AssetBuilderEntry
@@ -26,22 +27,22 @@ struct AssetBuilderEntry
 
 pub struct AssetsBuilderConfig
 {
-    pub source_files_root: PathBuf,
-    pub built_files_root: PathBuf,
+    pub sources_root: PathBuf,
+    pub assets_root: PathBuf,
     builders_version_hash: u64,
     asset_builders: Vec<AssetBuilderEntry>,
     file_ext_to_builder: HashMap<UniCase<&'static str>, usize>,
 }
 impl AssetsBuilderConfig
 {
-    pub const SOURCE_FILE_META_EXTENSION: UniCase<&'static str> = UniCase::unicode("sork");
+    pub const SOURCE_META_FILE_EXTENSION: UniCase<&'static str> = UniCase::unicode("sork");
 
-    pub fn new<P: AsRef<Path>>(source_files_root: P, built_files_root: P) -> Self
+    pub fn new<P: AsRef<Path>>(sources_root: P, assets_root: P) -> Self
     {
         Self
         {
-            source_files_root: PathBuf::from(source_files_root.as_ref()),
-            built_files_root: PathBuf::from(built_files_root.as_ref()),
+            sources_root: PathBuf::from(sources_root.as_ref()),
+            assets_root: PathBuf::from(assets_root.as_ref()),
             builders_version_hash: Self::hash_bstrings(0, &[
                 b"Initial"
             ]),
@@ -73,9 +74,9 @@ impl AssetsBuilderConfig
 
         for ext in B::supported_input_file_extensions()
         {
-            if UniCase::new(ext) == Self::SOURCE_FILE_META_EXTENSION
+            if UniCase::new(ext) == Self::SOURCE_META_FILE_EXTENSION
             {
-                panic!("Cannot register files as {} as that is a reserved extension", Self::SOURCE_FILE_META_EXTENSION);
+                panic!("Cannot register files as {} as that is a reserved extension", Self::SOURCE_META_FILE_EXTENSION);
             }
 
             if let Some(obi) = self.file_ext_to_builder.insert(UniCase::new(ext), b_index)
@@ -96,8 +97,8 @@ impl AssetsBuilder
     pub fn new(config: AssetsBuilderConfig) -> Self
     {
         // print errors?
-        let _ = std::fs::create_dir_all(&config.built_files_root);
-        let _ = std::fs::create_dir_all(&config.source_files_root);
+        let _ = std::fs::create_dir_all(&config.assets_root);
+        let _ = std::fs::create_dir_all(&config.sources_root);
 
         Self
         {
@@ -109,8 +110,14 @@ impl AssetsBuilder
 
     pub fn scan_sources(&self) -> ScanSources
     {
-        let walker = WalkDir::new(&self.config.source_files_root);
+        let walker = WalkDir::new(&self.config.sources_root);
         ScanSources { walk_dir: walker.into_iter() }
+    }
+
+    pub fn scan_assets(&self) -> ScanAssets
+    {
+        let walker = WalkDir::new(&self.config.assets_root);
+        ScanAssets { walk_dir: walker.into_iter() }
     }
 
     // transform a source file into one or more built asset, returns the built count
@@ -120,7 +127,7 @@ impl AssetsBuilder
         {
             if source_path.as_ref().is_relative()
             {
-                self.config.source_files_root.join(source_path.as_ref())
+                self.config.sources_root.join(source_path.as_ref())
             }
             else
             {
@@ -128,7 +135,7 @@ impl AssetsBuilder
             }
         }.canonicalize().map_err(BuildError::SourceIOError)?;
 
-        let rel_path = canonical_path.strip_prefix(&self.config.source_files_root).map_err(|e| BuildError::InvalidSourcePath)?;
+        let rel_path = canonical_path.strip_prefix(&self.config.sources_root).map_err(|e| BuildError::InvalidSourcePath)?;
 
         let file_ext = rel_path.extension().unwrap_or(OsStr::new("")).to_string_lossy();
 
@@ -136,7 +143,7 @@ impl AssetsBuilder
         let builder = self.config.asset_builders.get(*b_index).expect("Had builder ID but no matching builder!");
 
         let source_meta_file_path = canonical_path.with_extension(
-            format!("{}.{}", file_ext.as_ref(), AssetsBuilderConfig::SOURCE_FILE_META_EXTENSION));
+            format!("{}.{}", file_ext.as_ref(), AssetsBuilderConfig::SOURCE_META_FILE_EXTENSION));
 
         let source_meta = match std::fs::File::open(&source_meta_file_path)
         {
@@ -165,19 +172,23 @@ impl AssetsBuilder
             },
             Err(err) =>
             {
-                println!("Failed to open source asset meta-file for reading: {err}");
+                log::warn!("Failed to open source asset meta-file for reading: {err}");
                 return Err(BuildError::SourceMetaIOError(err));
             }
         };
 
-        let source_read = std::fs::File::open(&canonical_path).map_err(BuildError::SourceIOError)?;
+        let source_read =
+        {
+            let fin = std::fs::File::open(&canonical_path).map_err(BuildError::SourceIOError)?;
+            InlineHash::new(Box::new(fin)) // note: seek() makes this hash a bit nondeterministic, but it should be stable as long as the builder/file hasn't changed
+        };
 
         let input = SourceInput
         {
             source_path: rel_path.to_path_buf(),
             file_extension: UniCase::from(file_ext),
             source_id: source_meta.source_id,
-            input: Box::new(source_read),
+            input: source_read,
         };
 
         let mut outputs = BuildOutputs
@@ -185,7 +196,7 @@ impl AssetsBuilder
             source_id: source_meta.source_id,
             timestamp: chrono::Utc::now(),
             rel_source_path: rel_path,
-            abs_output_dir: self.config.built_files_root.as_path(),
+            abs_output_dir: self.config.assets_root.as_path(),
             builder_hash: builder.builder_hash,
             format_hash: builder.format_hash,
             derived_ids: HashMap::new(),
@@ -361,7 +372,7 @@ pub struct SourceInput
     source_path: PathBuf, // Should only be used for debug purposes
     file_extension: UniCase<String>, // does not include .
     source_id: AssetKeySourceId,
-    input: Box<dyn SourceInputRead>,
+    input: InlineHash<Box<dyn Read>>,
 }
 impl SourceInput
 {

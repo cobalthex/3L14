@@ -168,7 +168,7 @@ impl AssetsStorage
     {
         move ||
         {
-            eprintln!("Starting asset worker thread");
+            log::debug!("Starting asset worker thread");
             'worker: loop
             {
                 match request_recv.recv()
@@ -183,7 +183,7 @@ impl AssetsStorage
                         {
                             AssetLifecycleRequest::StopWorkers =>
                             {
-                                eprintln!("Shutting down asset worker thread");
+                                log::debug!("Shutting down asset worker thread");
 
                                 // clean out any final drop requests
                                 while let Ok(final_request) = request_recv.try_recv()
@@ -221,7 +221,7 @@ impl AssetsStorage
                                     Ok(read) => read,
                                     Err(err) =>
                                     {
-                                        eprintln!("Failed to read asset file {:?}: {err}", self.asset_key_to_file_path(inner.key()));
+                                        log::warn!("Failed to read asset file {:?}: {err}", self.asset_key_to_file_path(inner.key()));
                                         lifecycler.error_untyped(untyped_handle, AssetLoadError::Fetch);
                                         return;
                                     }
@@ -244,7 +244,7 @@ impl AssetsStorage
                     },
                     Err(err) =>
                     {
-                        eprintln!("Terminating asset worker thread due to {err}");
+                        log::error!("Terminating asset worker thread due to {err}");
                         break 'worker;
                     }
                 }
@@ -280,9 +280,9 @@ impl Assets
         let mut assets_root = std::env::current_exe().expect("Failed to get the bin dir");
         assets_root.pop();
         assets_root.push("assets"); // canonicalize?
-        
+
         #[cfg(debug_assertions)]
-        eprintln!("Serving assets from {assets_root:?}");
+        log::debug!("Serving assets from {assets_root:?}");
 
         let (send, recv) = unbounded::<AssetLifecycleRequest>();
         let storage = Arc::new(AssetsStorage
@@ -298,7 +298,7 @@ impl Assets
         let fs_watcher = if config.enable_fs_watcher { Self::try_fs_watch(storage.clone()).inspect_err(|err|
         {
             // TODO: print message on successful startup
-            eprintln!("Failed to start fs watcher for hot-reloading, continuing without: {err:?}");
+            log::error!("Failed to start fs watcher for hot-reloading, continuing without: {err:?}");
         }).ok() } else { None };
 
         // hot reload batching?
@@ -364,7 +364,7 @@ impl Assets
                             // track renames?
                         }
                     },
-                    Err(e) => println!("FS watch error: {:?}", e),
+                    Err(e) => log::error!("FS watch error: {:?}", e),
                 }
             })?;
 
@@ -475,10 +475,11 @@ impl Drop for Assets
         let mut handle_bank = self.storage.handles.lock();
         if !handle_bank.is_empty()
         {
-            eprintln!("! Leak detected: {} active asset handle(s):", handle_bank.len());
+            log::error!("! Leak detected: {} active asset handle(s):", handle_bank.len());
+            // multiline log?
             for handle in handle_bank.iter()
             {
-                eprintln!("    {:?}", handle.0);
+                log::error!("    {:?}", handle.0);
             }
             #[cfg(test)]
             panic!("Leaked asset!");

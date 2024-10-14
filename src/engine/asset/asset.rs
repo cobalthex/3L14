@@ -7,6 +7,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::hash::Hash;
 use std::path::PathBuf;
+use unicase::UniCase;
+
+pub const ASSET_FILE_EXTENSION: UniCase<&'static str> = UniCase::unicode("ass");
+pub const ASSET_META_FILE_EXTENSION: UniCase<&'static str> = UniCase::unicode("mass");
 
 pub trait Asset: Sync + Send + 'static
 {
@@ -156,12 +160,12 @@ impl AssetKey
     #[inline]
     pub fn as_file_name(&self) -> PathBuf
     {
-        PathBuf::from(format!("{:032x}.ass", self.0))
+        PathBuf::from(format!("{:032x}.{}", self.0, ASSET_FILE_EXTENSION))
     }
     #[inline]
     pub fn as_meta_file_name(&self) -> PathBuf
     {
-        PathBuf::from(format!("{:032x}.mass", self.0))
+        PathBuf::from(format!("{:032x}.{}", self.0, ASSET_META_FILE_EXTENSION))
     }
 }
 // custom serialize/deserialize b/c TOML doesn't support u128

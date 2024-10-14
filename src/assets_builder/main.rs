@@ -1,9 +1,11 @@
 mod core;
 mod builders;
 
-use crate::core::{AssetsBuilder, AssetsBuilderConfig};
-use std::path::Path;
+use crate::core::{AssetMetadata, AssetsBuilder, AssetsBuilderConfig, ScanError};
+use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
+use log::log;
+use game_3l14::AppRun;
 
 #[derive(Debug, Subcommand)]
 pub enum CliCommands
@@ -18,8 +20,12 @@ pub enum CliCommands
 
         // build IDs ?
     },
-    #[clap(about = "List known source assets and their source ID")]
+    #[clap(about = "List known source files and their source ID")]
     Sources,
+    #[clap(about = "List known assets and info about them")]
+    Assets,
+    
+    // server mode - watch for fs changes and auto build new assets
 }
 
 #[derive(Debug, Parser)]
@@ -35,7 +41,8 @@ struct CliArgs
 
 fn main()
 {
-    let cli_args = <CliArgs as clap::Parser>::parse();
+    let app_run = AppRun::<CliArgs>::startup("Assets Builder");
+    game_3l14::set_panic_hook(false);
 
     let Ok(assets_root) = Path::new("assets").canonicalize() else { return; }; // TODO: error handling
     let src_assets_root = assets_root.join("src");
@@ -49,7 +56,7 @@ fn main()
 
     let builder = AssetsBuilder::new(builder_cfg);
 
-    match cli_args.command
+    match &app_run.args.command
     {
         CliCommands::Build { all: true, .. } =>
         {
@@ -65,11 +72,11 @@ fn main()
                 {
                     Ok(results) =>
                     {
-                        eprintln!("Successfully built {src_path:?} into {results:#?}");
+                        log::info!("Successfully built {src_path:?} into {results:#?}");
                     }
                     Err(err) =>
                     {
-                        eprintln!("Failed to build {src_path:?}: {err:#}");
+                        log::error!("Failed to build {src_path:?}: {err:#}");
                     }
                 }
             }
@@ -79,6 +86,20 @@ fn main()
             for source in builder.scan_sources()
             {
                 println!("{source:?}");
+            }
+        }
+        CliCommands::Assets =>
+        {
+            for asset in builder.scan_assets()
+            {
+                match asset
+                {
+                    Ok(ass) => println!("{:?} {:?} {:?}",
+                        ass.1.key.asset_type(),
+                        ass.1.key,
+                        ass.1.source_path),
+                    Err(err) => println!("{err}"),
+                }
             }
         }
     }

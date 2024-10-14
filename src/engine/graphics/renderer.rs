@@ -77,14 +77,16 @@ impl Renderer
 
         let allow_msaa = true; // should be in some settings somewhere
 
+        let bin_dir = std::env::current_exe().ok().map(|mut p| { p.pop(); p });
+
         let instance = Instance::new(InstanceDescriptor
         {
             backends: Backends::PRIMARY,
             flags: InstanceFlags::from_build_config(),
             dx12_shader_compiler: Dx12Compiler::Dxc
             {
-                dxc_path: Some(PathBuf::from(r"3rdparty/dxc/dxc.exe")),
-                dxil_path: Some(PathBuf::from(r"3rdparty/dxc/dxil.dll")),
+                dxc_path: bin_dir.as_ref().map(|p| p.join("dxcompiler.dll")),
+                dxil_path: bin_dir.as_ref().map(|p| p.join("dxil.dll")),
             },
             gles_minor_version: Gles3MinorVersion::default(),
         });
@@ -111,14 +113,15 @@ impl Renderer
             adapter.request_device(&DeviceDescriptor
             {
                 label: Some("Primary WGPU device"),
-                required_features:
-                    Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES |
-                    Features::PUSH_CONSTANTS |
-                    Features::SPIRV_SHADER_PASSTHROUGH,
+                required_features: Features::empty()
+                    | Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+                    | Features::PUSH_CONSTANTS
+                    //| Features::SPIRV_SHADER_PASSTHROUGH,
+                    ,
                 // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
                 required_limits: Limits
                 {
-                    max_push_constant_size: 256, // doesn't support WebGPU
+                    max_push_constant_size: 128, // doesn't support WebGPU
                     .. Default::default()
                 }.using_resolution(adapter.limits()),
                 memory_hints: MemoryHints::Performance,
@@ -280,6 +283,12 @@ impl Renderer
 
     pub fn device(&self) -> &Device { &self.device }
     pub fn queue(&self) -> &Queue { &self.queue }
+    
+    pub fn supports_feature(&self, feature: Features) -> bool
+    {
+        // cache this?
+        self.device.features().contains(feature)
+    }
 
     pub fn display_size(&self) -> glam::UVec2
     {

@@ -13,3 +13,4 @@ pub use renderer::*;
 pub mod debug_gui;
 
 pub mod assets;
+pub mod material_cache;
