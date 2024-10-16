@@ -177,18 +177,18 @@ impl AssetsBuilder
             }
         };
 
-        let source_read =
+        let mut source_read =
         {
             let fin = std::fs::File::open(&canonical_path).map_err(BuildError::SourceIOError)?;
             InlineHash::new(Box::new(fin)) // note: seek() makes this hash a bit nondeterministic, but it should be stable as long as the builder/file hasn't changed
         };
 
-        let input = SourceInput
+        let mut input = SourceInput
         {
-            source_path: rel_path.to_path_buf(),
+            source_path: rel_path,
             file_extension: UniCase::from(file_ext),
             source_id: source_meta.source_id,
-            input: source_read,
+            input: &mut source_read,
         };
 
         let mut outputs = BuildOutputs
@@ -203,9 +203,13 @@ impl AssetsBuilder
             results: Vec::new(),
         };
 
-        match builder.builder.build_assets(source_meta.build_config, input, &mut outputs)
+        match builder.builder.build_assets(source_meta.build_config, &mut input, &mut outputs)
         {
-            Ok(_) => Ok(outputs.results),
+            Ok(_) =>
+            {
+                let _input_hash = source_read.finish();
+                Ok(outputs.results)
+            },
             Err(err) => Err(BuildError::BuilderError(err)),
         }
     }
@@ -311,13 +315,13 @@ impl<W: BuildOutputWrite> BuildOutput<W>
     }
 }
 
-pub struct BuildOutputs<'a>
+pub struct BuildOutputs<'b>
 {
     source_id: AssetKeySourceId,
     timestamp: chrono::DateTime<chrono::Utc>,
 
-    rel_source_path: &'a Path,
-    abs_output_dir: &'a Path,
+    rel_source_path: &'b Path,
+    abs_output_dir: &'b Path,
 
     builder_hash: BuilderHash,
     format_hash: BuilderHash,
@@ -326,7 +330,7 @@ pub struct BuildOutputs<'a>
 
     results: BuildResults,
 }
-impl<'a> BuildOutputs<'a>
+impl<'b> BuildOutputs<'b>
 {
     // TODO: outputs should be atomic (all or none)
 
@@ -367,23 +371,24 @@ impl<'a> BuildOutputs<'a>
 pub trait SourceInputRead: Read + Seek { }
 impl<T: Read + Seek> SourceInputRead for T { }
 
-pub struct SourceInput
+pub struct SourceInput<'b>
 {
-    source_path: PathBuf, // Should only be used for debug purposes
+    source_path: &'b Path, // Should only be used for debug purposes
     file_extension: UniCase<String>, // does not include .
     source_id: AssetKeySourceId,
-    input: InlineHash<Box<dyn Read>>,
+    input: &'b mut dyn SourceInputRead,
 }
-impl SourceInput
+impl<'b> SourceInput<'b>
 {
     pub fn source_path_string(&self) -> String { self.source_path.to_string_lossy().to_string() }
     pub fn file_extension(&self) -> &UniCase<String> { &self.file_extension }
 }
-impl Read for SourceInput
+impl<'b> Read for SourceInput<'b>
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.input.read(buf) }
 }
-impl Seek for SourceInput
+impl<'b> Seek for SourceInput<'b>
 {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> { self.input.seek(pos) }
 }
+// todo:

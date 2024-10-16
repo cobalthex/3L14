@@ -14,7 +14,7 @@ use std::task::{Context, Poll, Waker};
 
 use super::*;
 
-// tbh, after change, this could probably just be stored as an Arc
+// TODO: name Ash<> ?
 
 #[derive(Debug)]
 #[repr(u16)]

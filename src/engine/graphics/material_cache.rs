@@ -35,8 +35,10 @@ impl MaterialCache
         }
     }
 
-    fn create_bind_group_layout(&mut self, material: &Material) -> &BindGroupLayout
+    fn get_or_create_bind_group_layout(&mut self, material: &Material) -> &BindGroupLayout
     {
+        // assert that all textures have loaded in this call?
+
         //todo: texture arrays
 
         let layout_hash =
@@ -94,7 +96,7 @@ impl MaterialCache
         })
     }
 
-    pub fn get_or_create_bind_group(&self, material_handle: &AssetHandle<Material>, renderer: &Renderer) -> Option<BindGroup>
+    pub fn get_or_create_bind_group(&mut self, material_handle: &AssetHandle<Material>, renderer: &Renderer) -> Option<BindGroup>
     {
         // TODO: placeholder bind groups?
 
@@ -117,6 +119,8 @@ impl MaterialCache
             }
         }
 
+        let layout = self.get_or_create_bind_group_layout(&material);
+
         let mut bind_group_entries = Vec::new();
         bind_group_entries.reserve_exact(texes.len() + 1);
         //
@@ -135,14 +139,12 @@ impl MaterialCache
         //     resource: BindingResource::Sampler(&self.samplers),
         // });
 
-        let bind_group_layout = &self.bind_group_layouts;
-
         // todo: create a bind group layout for missing texture?
 
         Some(renderer.device().create_bind_group(&BindGroupDescriptor
         {
             label: Some("material bind group"),
-            layout: bind_group_layout,
+            layout,
             entries: &bind_group_entries,
         }))
     }

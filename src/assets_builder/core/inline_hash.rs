@@ -30,7 +30,7 @@ impl<TReadOrWrite> InlineHash<TReadOrWrite>
     pub fn finish(self) -> u128
     {
         let (low, high) = self.hasher.finish128();
-        (high << 64) as u128 | low as u128
+        ((high as u128) << 64) | low as u128
     }
 }
 impl<TRead: Read> Read for InlineHash<TRead>

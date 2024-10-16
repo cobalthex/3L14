@@ -61,7 +61,7 @@ impl AssetBuilder for ModelBuilder
 {
     type BuildConfig = ModelBuildConfig;
 
-    fn build_assets(&self, _config: Self::BuildConfig, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, _config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         if input.file_extension() == &UniCase::new("glb") ||
             input.file_extension() == &UniCase::new("gltf")

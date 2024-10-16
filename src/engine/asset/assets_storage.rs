@@ -284,6 +284,8 @@ impl Assets
         #[cfg(debug_assertions)]
         log::debug!("Serving assets from {assets_root:?}");
 
+        // TODO: pqueue
+        
         let (send, recv) = unbounded::<AssetLifecycleRequest>();
         let storage = Arc::new(AssetsStorage
         {

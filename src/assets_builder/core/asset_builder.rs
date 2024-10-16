@@ -26,7 +26,7 @@ pub(super) type ErasedBuildConfig = toml::Value; // leaky abstraction
 pub(super) trait ErasedAssetBuilder // virtual base trait?
 {
     // Build the source data into one or more outputted assets
-    fn build_assets(&self, erased_config: ErasedBuildConfig, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>;
+    fn build_assets(&self, erased_config: ErasedBuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>;
 
     fn default_config(&self) -> ErasedBuildConfig;
 }
@@ -39,11 +39,11 @@ pub trait AssetBuilder
     type BuildConfig: AssetBuildConfig;
 
     // Build the source data into one or more outputted assets
-    fn build_assets(&self, config: Self::BuildConfig, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>;
+    fn build_assets(&self, config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>;
 }
 impl<AB: AssetBuilder<BuildConfig=impl AssetBuildConfig>> ErasedAssetBuilder for AB
 {
-    fn build_assets(&self, erased_config: ErasedBuildConfig, input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, erased_config: ErasedBuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         let config = erased_config.try_into()?;
         AssetBuilder::build_assets(self, config, input, outputs)

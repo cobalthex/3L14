@@ -8,10 +8,19 @@ use std::io::{BufReader, Write};
 use unicase::UniCase;
 
 #[derive(Serialize, Deserialize)]
+pub enum TextureUsage
+{
+    Texture,
+    DetailTexture,
+    Gui,
+}
+
+#[derive(Serialize, Deserialize)]
 #[serde(default)]
 pub struct TextureBuildConfig
 {
     generate_mips: bool,
+    usage: TextureUsage,
 }
 impl Default for TextureBuildConfig
 {
@@ -20,6 +29,7 @@ impl Default for TextureBuildConfig
         Self
         {
             generate_mips: true,
+            usage: TextureUsage::Texture,
         }
     }
 }
@@ -51,7 +61,7 @@ impl AssetBuilder for TextureBuilder
 {
     type BuildConfig = TextureBuildConfig;
 
-    fn build_assets(&self, config: Self::BuildConfig, mut input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         let mut output = outputs.add_output(AssetTypeId::Texture)?;
 

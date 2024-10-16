@@ -78,7 +78,7 @@ impl AssetBuilder for ShaderBuilder
 {
     type BuildConfig = ShaderBuildConfig;
 
-    fn build_assets(&self, config: Self::BuildConfig, mut input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         let mut src_text = String::new();
         input.read_to_string(&mut src_text)?;

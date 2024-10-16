@@ -38,7 +38,7 @@ impl AssetBuilder for MaterialBuilder
 {
     type BuildConfig = MaterialBuildConfig;
 
-    fn build_assets(&self, config: Self::BuildConfig, mut input: SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, config: Self::BuildConfig, mut input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         let mut mtl_source = String::new();
         input.read_to_string(&mut mtl_source)?;
