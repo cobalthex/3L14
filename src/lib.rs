@@ -139,7 +139,7 @@ pub fn set_panic_hook(wait_for_exit: bool)
     std::panic::set_hook(Box::new(move |panic|
     {
         default_panic_hook(panic);
-
+        
         if wait_for_exit
         {
             println!("<<< Press enter to exit >>>");

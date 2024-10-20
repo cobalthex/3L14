@@ -1,5 +1,5 @@
 use crate::engine::graphics::Renderer;
-use crate::format_bytes;
+use crate::{debug_label, format_bytes};
 use bitcode::{Decode, Encode};
 use egui::Ui;
 use std::error::Error;
@@ -45,18 +45,21 @@ pub struct Texture
 {
     pub gpu_tex: wgpu::Texture,
     pub gpu_view: wgpu::TextureView,
-    pub desc: wgpu::TextureDescriptor<'static>, // TODO: might be able to get this from the gpu_tex directly
 }
 impl Texture
 {
     pub fn total_device_bytes(&self) -> i64
     {
         let mut total_size = 0i64;
-        for mip in 0..self.desc.mip_level_count
+        for mip in 0..self.gpu_tex.mip_level_count()
         {
-            let size = self.desc.mip_level_size(mip).unwrap().physical_size(self.desc.format);
+            let size = self.gpu_tex.size()
+                .mip_level_size(mip, self.gpu_tex.dimension())
+                .physical_size(self.gpu_tex.format());
+
             let area = (size.width as i64) * (size.height as i64) * (size.depth_or_array_layers as i64);
-            let block_size = self.desc.format.block_copy_size(Some(TextureAspect::All));
+            let block_size = self.gpu_tex.format().block_copy_size(Some(TextureAspect::All));
+
             total_size += area * block_size.unwrap() as i64;
         }
         total_size
@@ -93,35 +96,34 @@ impl AssetLifecycler for TextureLifecycler
 
         let mut texel_bytes = Vec::new();
         request.input.read_to_end(&mut texel_bytes)?;
-        let dtor = TextureDescriptor
-        {
-            label: None, // TODO
-            size: Extent3d
-            {
-                width: tex_file.width,
-                height: tex_file.height,
-                depth_or_array_layers: tex_file.depth,
-            },
-            mip_level_count: tex_file.mip_count as u32,
-            sample_count: 1,
-            dimension:
-                if tex_file.depth > 1 { TextureDimension::D3 }
-                else if tex_file.height > 1 { TextureDimension::D2 }
-                else { TextureDimension::D1 },
-            format: match tex_file.pixel_format
-            {
-                TextureFilePixelFormat::R8 => TextureFormat::R8Unorm,
-                TextureFilePixelFormat::Rg8 => TextureFormat::Rg8Unorm,
-                TextureFilePixelFormat::Rgba8 => TextureFormat::Rgba8Unorm,
-                TextureFilePixelFormat::Rgba8Srgb => TextureFormat::Rgba8UnormSrgb,
-            },
-            usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        };
 
         let gpu_tex = self.renderer.device().create_texture_with_data(
             self.renderer.queue(),
-            &dtor,
+            &TextureDescriptor
+            {
+                label: debug_label!(&format!("{:?}", request.asset_key)),
+                size: Extent3d
+                {
+                    width: tex_file.width,
+                    height: tex_file.height,
+                    depth_or_array_layers: tex_file.depth,
+                },
+                mip_level_count: tex_file.mip_count as u32,
+                sample_count: 1,
+                dimension:
+                if tex_file.depth > 1 { TextureDimension::D3 }
+                else if tex_file.height > 1 { TextureDimension::D2 }
+                else { TextureDimension::D1 },
+                format: match tex_file.pixel_format
+                {
+                    TextureFilePixelFormat::R8 => TextureFormat::R8Unorm,
+                    TextureFilePixelFormat::Rg8 => TextureFormat::Rg8Unorm,
+                    TextureFilePixelFormat::Rgba8 => TextureFormat::Rgba8Unorm,
+                    TextureFilePixelFormat::Rgba8Srgb => TextureFormat::Rgba8UnormSrgb,
+                },
+                usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
             TextureDataOrder::LayerMajor,
             texel_bytes.as_slice());
 
@@ -141,7 +143,6 @@ impl AssetLifecycler for TextureLifecycler
         {
             gpu_tex,
             gpu_view: view,
-            desc: dtor,
         };
 
         let bytes = tex.total_device_bytes();

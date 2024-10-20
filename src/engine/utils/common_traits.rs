@@ -32,6 +32,35 @@ impl<'a, T> AsU8Slice<'a> for [T]
     }
 }
 
+pub trait IntoU8Box
+{
+    unsafe fn into_u8_box(self) -> Box<[u8]>;
+}
+impl<T> IntoU8Box for Box<[T]>
+{
+    unsafe fn into_u8_box(self) -> Box<[u8]> { Box::from_raw(Box::into_raw(self) as *mut [u8]) }
+}
+impl<T> IntoU8Box for Vec<T>
+{
+    unsafe fn into_u8_box(self) -> Box<[u8]> { Box::from_raw(Box::into_raw(self.into_boxed_slice()) as *mut [u8]) }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use crate::engine::IntoU8Box;
+
+    #[test]
+    fn u8_box()
+    {
+        let u16s = Box::<[u16]>::from([0, 1, 2, 3, 4, 5, 6, 7]);
+        let u16s_size = std::mem::size_of_val(&u16s);
+        let u8s = unsafe { u16s.into_u8_box() };
+        let u8s_size = std::mem::size_of_val(&u8s);
+        assert_eq!(u16s_size, u8s_size);
+    }
+}
+
 pub trait ShortTypeName
 {
     fn short_type_name() -> &'static str;

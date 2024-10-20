@@ -6,13 +6,19 @@ use egui::{Pos2, Rect, Rounding, Stroke, Ui, Visuals};
 use egui_wgpu_backend;
 use parking_lot::{Mutex, RwLock};
 use sdl2::video::Window;
-use std::path::PathBuf;
 use std::sync::Arc;
 #[allow(deprecated)]
 use wgpu::rwh::{HasRawDisplayHandle, HasRawWindowHandle};
 use wgpu::*;
 
 pub const MAX_CONSECUTIVE_FRAMES: usize = 3;
+
+#[macro_export]
+#[cfg(debug_assertions)]
+macro_rules! debug_label { ($label:expr) => { Some($label) }; }
+#[macro_export]
+#[cfg(not(debug_assertions))]
+macro_rules! debug_label { ($label:expr) => { None }; } // check for/mitigate dead code warnings?
 
 struct RenderFrameData
 {
@@ -112,7 +118,7 @@ impl Renderer
         let (device, queue) =
             adapter.request_device(&DeviceDescriptor
             {
-                label: Some("Primary WGPU device"),
+                label: debug_label!("Primary WGPU device"),
                 required_features: Features::empty()
                     | Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
                     | Features::PUSH_CONSTANTS
@@ -180,7 +186,7 @@ impl Renderer
         // todo: recreate on resize
         let depth_buffer_desc = TextureDescriptor
         {
-            label: Some("Depth buffer"),
+            label: debug_label!("Depth buffer"),
             size: Extent3d
             {
                 width: surface_config.width,
@@ -256,7 +262,7 @@ impl Renderer
 
         let depth_buffer_desc = TextureDescriptor
         {
-            label: Some("Depth buffer"),
+            label: debug_label!("Depth buffer"),
             size: Extent3d
             {
                 width: new_width,
@@ -380,7 +386,7 @@ impl Renderer
 
         let mut command_encoder = self.device.create_command_encoder(&CommandEncoderDescriptor
         {
-            label: Some("Debug GUI encoder"),
+            label: debug_label!("Debug GUI encoder"),
         });
         gui_renderer.update_buffers(
             &self.device,
@@ -392,7 +398,7 @@ impl Renderer
         {
             // let mut render_pass = command_encoder.begin_render_pass(&RenderPassDescriptor
             // {
-            //     label: Some("egui render pass"),
+            //     label: debug_label!("egui render pass"),
             //     color_attachments: &[Some(
             //         RenderPassColorAttachment
             //         {
@@ -437,7 +443,7 @@ impl Renderer
             depth_or_array_layers: 1,
         };
         let multisampled_frame_descriptor = &TextureDescriptor {
-            label: Some("MSAA framebuffer texture"),
+            label: debug_label!("MSAA framebuffer texture"),
             size: multisampled_texture_extent,
             mip_level_count: 1,
             sample_count,
@@ -451,7 +457,7 @@ impl Renderer
             .create_texture(multisampled_frame_descriptor)
             .create_view(&TextureViewDescriptor
             {
-                label: Some("MSAA framebuffer view"),
+                label: debug_label!("MSAA framebuffer view"),
                 .. Default::default()
             })
     }

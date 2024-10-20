@@ -20,13 +20,22 @@ pub struct AssetLoadRequest
 }
 impl AssetLoadRequest
 {
-    // TODO: should probably pass in read buf
+    // deserialize a pre-sized type from the stream
     pub fn deserialize<T: DecodeOwned>(&mut self) -> Result<T, Box<dyn Error>>
     {
         let size = varint::decode_from(&mut self.input)?;
-        let mut input = unsafe { alloc_slice_uninit(size as usize) }.unwrap(); // todo: cache this
+        let mut input = unsafe { alloc_slice_uninit(size as usize) }?; // todo: cache this (bitcode Buffer)
         self.input.read_exact(&mut input)?;
         Ok(bitcode::decode::<T>(&input)?)
+    }
+
+    // read a size-prefixed span of bytes, all or nothing
+    pub fn read_sized(&mut self) -> Result<Box<[u8]>, Box<dyn Error>>
+    {
+        let size = varint::decode_from(&mut self.input)?;
+        let mut input = unsafe { alloc_slice_uninit(size as usize) }?; // todo: cache this
+        self.input.read_exact(&mut input)?;
+        Ok(input)
     }
 
     // Load another asset

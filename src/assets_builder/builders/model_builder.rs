@@ -2,15 +2,17 @@ use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, Ver
 use game_3l14::engine::asset::AssetTypeId;
 use game_3l14::engine::graphics::assets::material::{MaterialFile, PbrProps};
 use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat};
-use game_3l14::engine::graphics::{ModelFile, ModelFileMesh, ModelFileMeshIndices, Rgba, VertexPosNormTexCol};
-use game_3l14::engine::AABB;
+use game_3l14::engine::graphics::{ModelFile, ModelFileMesh, ModelFileMeshIndices, ModelFileMeshVertices, Rgba, VertexPosNormTexCol};
+use game_3l14::engine::{AsU8Slice, IntoU8Box, AABB};
 use gltf::image::Format;
-use gltf::mesh::util::{ReadIndices, ReadTexCoords};
+use gltf::mesh::util::{ReadIndices, ReadNormals, ReadTexCoords};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::io::Write;
+use futures::AsyncWriteExt;
 use unicase::UniCase;
+use wgpu::{VertexAttribute, VertexFormat};
 
 #[derive(Debug)]
 pub enum ModelImportError
@@ -104,48 +106,81 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
         model_bounds.union_with(mesh_bounds);
 
         let prim_reader = in_prim.reader(|b| Some(&buffers[b.index()]));
-        let positions = prim_reader.read_positions().ok_or(ModelImportError::NoPositionData)?;
-        let mut normals = prim_reader.read_normals().ok_or(ModelImportError::NoNormalData)?;
+        let positions = prim_reader.read_positions().ok_or(ModelImportError::NoPositionData)?; // not required?
+        let mut normals = prim_reader.read_normals();
+        let mut tangents = prim_reader.read_tangents();
         let mut tex_coords = prim_reader.read_tex_coords(0).map(|t| t.into_f32());
         let mut colors = prim_reader.read_colors(0).map(|c| c.into_rgba_u8());
 
-        let mut vertices = Vec::new();
-        for p in positions.into_iter()
-        {
-            let n = normals.next().ok_or(ModelImportError::MismatchedVertexCount)?;
-            let tc = match &mut tex_coords
-            {
-                None => [0.0, 0.0],
-                Some(tc) => tc.next().ok_or(ModelImportError::MismatchedVertexCount)?,
-            };
-            let c = match &mut colors
-            {
-                Some(c) => c.next().ok_or(ModelImportError::MismatchedVertexCount)?.into(),
-                None => Rgba::from(in_prim.index() as u32 * 10000 + 20000), // TODO: testing
-            };
+        // todo: import settings define which vertex attributes (extra colors/texcoords)
 
-            vertices.push(VertexPosNormTexCol
+        let mut layout = Vec::new();
+        let mut next_offset = 0;
+        let push_attr = |format|
+        {
+            layout.push(VertexAttribute
             {
-                position: p.into(),
-                normal: n.into(),
-                tex_coord: tc.into(),
-                color: c,
+                format,
+                offset: next_offset,
+                shader_location: layout.len() as wgpu::ShaderLocation,
             });
+            next_offset += format.size();
+        };
+        push_attr(VertexFormat::Float32x3);
+        if normals.is_some() { push_attr(VertexFormat::Float32x3) };
+        if tex_coords.is_some() { push_attr(VertexFormat::Float32x2) };
+        if colors.is_some() { push_attr(VertexFormat::Uint32) };
+
+        let mut vertices = Vec::new();
+        let mut vertex_count = 0;
+        for pos in positions.into_iter()
+        {
+            vertex_count += 1; // TODO: test vertex/index count < 2^32
+            // TODO: byte order
+
+            vertices.write_all(unsafe { pos.as_u8_slice() })?;
+
+            // todo: iterate all available attributes?
+
+            if let Some(rn) = &mut normals
+            {
+                let norm = rn.next().ok_or(ModelImportError::MismatchedVertexCount)?;
+                vertices.write_all(unsafe { norm.as_u8_slice() })?;
+            }
+
+            if let Some(rt) = &mut tangents
+            {
+                let tan = rt.next().ok_or(ModelImportError::MismatchedVertexCount)?;
+                vertices.write_all(unsafe { tan.as_u8_slice() })?;
+            }
+
+            if let Some(rtc) = &mut tex_coords
+            {
+                let texcoord = rtc.next().ok_or(ModelImportError::MismatchedVertexCount)?;
+                vertices.write_all(unsafe { texcoord.as_u8_slice() })?;
+            }
+
+            if let Some(cl) = &mut colors
+            {
+                let col = cl.next().ok_or(ModelImportError::MismatchedVertexCount)?;
+                vertices.write_all(unsafe { cl.as_u8_slice() })?;
+            }
         };
 
         let indices = match prim_reader.read_indices().ok_or(ModelImportError::NoIndexData)?
         {
             ReadIndices::U8(u8s) =>
             {
-                ModelFileMeshIndices::U16(u8s.map(|u| u as u16).collect())
+                // TODO: endianness
+                ModelFileMeshIndices::U16(u8s.map(|u| (u as u16).to_le_bytes()).collect())
             },
             ReadIndices::U16(u16s) =>
             {
-                ModelFileMeshIndices::U16(u16s.collect())
+                ModelFileMeshIndices::U16(u16s.map(|u| u.to_le_bytes()).collect())
             },
             ReadIndices::U32(u32s) =>
             {
-                ModelFileMeshIndices::U32(u32s.collect())
+                ModelFileMeshIndices::U32(u32s.map(|u| u.to_le_bytes()).collect())
             },
         };
 
@@ -209,10 +244,15 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
         let mesh_bounds = AABB::new(bb.min.into(), bb.max.into());
         model_bounds.union_with(mesh_bounds);
 
-        // TODO: assert vertex/index count < 2^32
         meshes.push(ModelFileMesh
         {
-            vertices: vertices.into_boxed_slice(),
+            vertices: ModelFileMeshVertices
+            {
+                stride: next_offset,
+                count: vertex_count,
+                layout: unsafe { layout.into_u8_box() },
+                data: vertices.into_boxed_slice(),
+            },
             indices,
             bounds: mesh_bounds,
             material,

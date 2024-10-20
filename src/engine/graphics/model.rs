@@ -1,66 +1,50 @@
-use super::colors::Rgba;
+use crate::debug_label;
 use crate::engine::asset::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadRequest, AssetTypeId};
 use crate::engine::graphics::assets::material::Material;
 use crate::engine::graphics::Renderer;
 use crate::engine::{AsU8Slice, AABB};
 use bitcode::{Decode, Encode};
-use glam::{Vec2, Vec3};
 use std::ops::Range;
 use std::sync::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{vertex_attr_array, BufferSlice, BufferUsages, IndexFormat, VertexBufferLayout};
+use wgpu::{BufferSlice, BufferUsages, IndexFormat, VertexBufferLayout};
 
-pub trait WgpuVertexDecl
+// store in the material/etc?
+#[derive(Encode, Decode)]
+pub struct ModelFileMeshVertices
 {
-    fn layout() -> VertexBufferLayout<'static>;
+    pub stride: u32, // size of one vertex (between array elements)
+    pub count: u32,
+    pub layout: Box<[u8]>, // maps to wgpu::VertexAttribute
+    pub data: Box<[u8]>,
 }
-
-// todo: parametric vertex support
-#[repr(C)]
-#[allow(dead_code)]
-#[derive(Debug, Default, Encode, Decode)]
-pub struct VertexPosNormTexCol
+impl ModelFileMeshVertices
 {
-    pub position: Vec3,
-    pub normal: Vec3,
-    pub tex_coord: Vec2,
-    pub color: Rgba,
-}
-impl VertexPosNormTexCol
-{
-    const LAYOUT: VertexBufferLayout<'static> = VertexBufferLayout
+    pub fn layout(&self) -> wgpu::VertexBufferLayout
     {
-        array_stride: size_of::<Self>() as wgpu::BufferAddress,
-        step_mode: wgpu::VertexStepMode::Vertex,
-        attributes: &vertex_attr_array!
-        [
-            0 => Float32x3,
-            1 => Float32x3,
-            2 => Float32x2,
-            3 => Uint32,
-        ],
-    };
-}
-impl WgpuVertexDecl for VertexPosNormTexCol
-{
-    fn layout() -> VertexBufferLayout<'static> { Self::LAYOUT }
+        VertexBufferLayout
+        {
+            array_stride: self.stride as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: unsafe { std::mem::transmute(self.layout.as_ref()) },
+        }
+    }
 }
 
 #[derive(Encode, Decode)]
 pub enum ModelFileMeshIndices
 {
-    U16(Box<[u16]>),
-    U32(Box<[u32]>),
+    U16(Box<[u8]>),
+    U32(Box<[u8]>),
 }
 
 #[derive(Encode, Decode)]
 pub struct ModelFileMesh
 {
-    pub vertices: Box<[VertexPosNormTexCol]>,
+    pub vertices: ModelFileMeshVertices,
     pub indices: ModelFileMeshIndices,
     pub bounds: AABB,
     pub material: AssetKey,
-    // TODO: materials
 }
 
 #[derive(Encode, Decode)]
@@ -79,7 +63,6 @@ pub struct ModelMesh
     pub index_count: u32,
     pub index_format: IndexFormat,
 
-    // todo: materials
     pub material: AssetHandle<Material>,
 }
 impl ModelMesh
@@ -107,7 +90,6 @@ impl ModelMesh
 
 pub struct Model
 {
-    name: Option<String>, //debug only?
     bounds: AABB, // note; these are untransformed
     meshes: Box<[ModelMesh]>,
 }
@@ -156,19 +138,19 @@ impl AssetLifecycler for ModelLifecycler
         {
             let vbuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
             {
-                label: Some(format!("{:?} vertices", request.asset_key).as_str()),
-                contents: unsafe { mesh.vertices.as_u8_slice() },
+                label: debug_label!(format!("{:?} vertices", request.asset_key).as_str()),
+                contents: mesh.vertices.data.as_ref(),
                 usage: BufferUsages::VERTEX,
             });
 
             let index_count;
             let ibuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
             {
-                label: Some(format!("{:?} indices", request.asset_key).as_str()),
+                label: debug_label!(format!("{:?} indices", request.asset_key).as_str()),
                 contents: match &mesh.indices
                 {
-                    ModelFileMeshIndices::U16(u16s) => unsafe { index_count = u16s.len(); u16s.as_u8_slice() }
-                    ModelFileMeshIndices::U32(u32s) => unsafe { index_count = u32s.len(); u32s.as_u8_slice() }
+                    ModelFileMeshIndices::U16(u16s) => { index_count = u16s.len() / 2; u16s }
+                    ModelFileMeshIndices::U32(u32s) => { index_count = u32s.len() / 4; u32s }
                 },
                 usage: BufferUsages::INDEX,
             });
@@ -177,7 +159,7 @@ impl AssetLifecycler for ModelLifecycler
             {
                 bounds: mesh.bounds,
                 vertices: vbuffer,
-                vertex_count: mesh.vertices.len() as u32,
+                vertex_count: mesh.vertices.count,
                 indices: ibuffer,
                 index_count: index_count as u32,
                 index_format: match mesh.indices
@@ -192,7 +174,6 @@ impl AssetLifecycler for ModelLifecycler
         Ok(Model
         {
             bounds: mf.bounds,
-            name: Some(format!("{:?}", request.asset_key)), // debug name?
             meshes: meshes.collect(),
         })
     }

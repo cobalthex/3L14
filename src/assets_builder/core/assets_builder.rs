@@ -280,12 +280,19 @@ impl<W: BuildOutputWrite> BuildOutput<W>
         self.dependencies.extend_from_slice(dependencies)
     }
 
-    // Serialize some data to the stream using the default serializer
-    pub fn serialize<T: Encode>(&mut self, value: &T) -> Result<usize, impl Error>
+    // Serialize some size-prefixed data to the stream using the default serializer, writes all or nothing
+    pub fn serialize<T: Encode>(&mut self, value: &T) -> Result<(), impl Error>
     {
         let val = bitcode::encode(value);
         varint::encode_into(val.len() as u64, &mut self.writer)?;
-        self.writer.write(val.as_slice())
+        self.writer.write_all(val.as_slice())
+    }
+
+    // write a size-prefixed span of bytes, all or nothing
+    pub fn write_sized(&mut self, buf: &[u8]) -> Result<(), impl Error>
+    {
+        varint::encode_into(buf.len() as u64, &mut self.writer)?;
+        self.writer.write_all(buf)
     }
 
     pub fn finish(mut self) -> Result<AssetKey, BuildError>

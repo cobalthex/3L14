@@ -1,4 +1,6 @@
 use std::alloc::{Layout, LayoutError};
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter};
 use std::ptr;
 
 #[derive(Debug)]
@@ -7,6 +9,11 @@ pub enum AllocError
     Layout(LayoutError),
     Alloc,
 }
+impl Display for AllocError
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { Debug::fmt(self, f) }
+}
+impl Error for AllocError { }
 
 unsafe fn alloc_slice_internal<T>(n: usize) -> Result<(*mut u8, usize), AllocError>
 {

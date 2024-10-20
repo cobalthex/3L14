@@ -15,6 +15,7 @@ pub enum CliCommands
     {
         #[arg(long, exclusive = true)]
         all: bool,
+        // extension/type
         #[arg(long, exclusive = true, value_delimiter = ',', num_args = 1..)]
         source: Vec<String>,
 

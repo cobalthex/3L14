@@ -21,6 +21,11 @@ harness = false
 [features]
 default = []
 debug_asset_lifetimes = []
+debug_gpu_labels = []
+
+# does this work?
+[target.'cfg(debug_assertions)']
+default = ['debug_gpu_labels']
 
 [dependencies]
 proc_macros_3l14 = { path = "macros" }

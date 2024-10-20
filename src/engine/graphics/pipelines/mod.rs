@@ -1,8 +1,10 @@
+use crate::debug_label;
 use crate::engine::graphics::assets::ShaderStage;
-use crate::engine::graphics::{VertexPosNormTexCol, WgpuVertexDecl};
+use crate::engine::graphics::Renderer;
 use metrohash::MetroHash64;
 use std::hash::{Hash, Hasher};
-use wgpu::{BindGroupLayout, BlendState, ColorTargetState, ColorWrites, Face, FragmentState, FrontFace, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipelineDescriptor, ShaderModule, TextureFormat, VertexState};
+use std::sync::Arc;
+use wgpu::*;
 
 #[derive(Hash)]
 pub enum DebugMode
@@ -45,6 +47,8 @@ pub struct PipelineState<'p>
 
 pub struct PipelineCache
 {
+    renderer: Arc<Renderer>,
+    
     camera_layout: BindGroupLayout,
     transform_layout: BindGroupLayout,
 
@@ -57,9 +61,21 @@ pub struct PipelineCache
 }
 impl PipelineCache
 {
-    pub fn new() -> Self
+    pub fn new(renderer: Arc<Renderer>) -> Self
     {
-        todo!()
+        let camera_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
+        {
+            label: debug_label!("Camera layout"),
+            entries: &[], // todo
+        });
+        
+        Self
+        {
+            renderer,
+            camera_layout,
+            transform_layout: todo!(),
+            cached_surface_format: TextureFormat::R8Unorm,
+        }
     }
 
     pub fn get_or_create_pipeline(&self, ps: PipelineState)
@@ -73,16 +89,16 @@ impl PipelineCache
 
         // TODO: check cache
 
-        let (layout, cull_mode) = match ps.class
+        let (placeholder, cull_mode) = match ps.class
         {
             PipelineClass::Static =>
             (
-                VertexPosNormTexCol::layout(),
+                0,
                 Some(Face::Back),
             ),
             PipelineClass::Billboard =>
             (
-                VertexPosNormTexCol::layout(),
+                0,
                 None,
             ),
         };

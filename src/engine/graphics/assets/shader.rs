@@ -10,8 +10,9 @@ use serde::{Deserialize, Serialize};
 use wgpu::{ShaderModule, ShaderModuleDescriptorSpirV};
 use wgpu::ShaderModuleDescriptor;
 use wgpu::util::{make_spirv, make_spirv_raw};
+use crate::debug_label;
 
-#[derive(Default, Serialize, Deserialize, Encode, Decode, EnumWithProps)]
+#[derive(Default, Debug, Serialize, Deserialize, Encode, Decode, EnumWithProps)]
 pub enum ShaderStage
 {
     #[default]
@@ -91,7 +92,7 @@ impl AssetLifecycler for ShaderLifecycler
             {
                 self.renderer.device().create_shader_module_spirv(&ShaderModuleDescriptorSpirV
                 {
-                    label: Some(&format!("{:?}", request.asset_key)),
+                    label: debug_label!(&format!("{:?} ({:?})", request.asset_key, shader_file.stage)),
                     source: make_spirv_raw(&module_bytes),
                 })
             },
@@ -99,7 +100,7 @@ impl AssetLifecycler for ShaderLifecycler
             {
                 self.renderer.device().create_shader_module(ShaderModuleDescriptor
                 {
-                    label: Some(&format!("{:?}", request.asset_key)),
+                    label: debug_label!(&format!("{:?}", request.asset_key)),
                     source: make_spirv(&module_bytes),
                 })
             }
