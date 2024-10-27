@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::engine::graphics::colors;
 
 // todo: HDR support?
-#[repr(packed)]
+#[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct Rgba
 {

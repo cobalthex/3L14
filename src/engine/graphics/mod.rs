@@ -1,7 +1,5 @@
 pub mod render_passes;
-pub mod test_render_pipeline;
-pub mod model;
-pub use model::*;
+pub use assets::model::*;
 
 pub mod colors;
 pub use colors::Rgba;
@@ -13,5 +11,4 @@ pub use renderer::*;
 pub mod debug_gui;
 
 pub mod assets;
-pub mod material_cache;
-mod pipelines;
+pub mod pipeline_cache;

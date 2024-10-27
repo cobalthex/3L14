@@ -1,62 +1,37 @@
-use std::borrow::Cow;
-use crate::engine::asset::{Asset, AssetLifecycler, AssetLoadRequest, AssetTypeId};
-use crate::engine::graphics::Renderer;
-use std::error::Error;
-use std::io::Read;
-use std::sync::Arc;
-use bitcode::{Decode, Encode};
-use proc_macros_3l14::EnumWithProps;
-use serde::{Deserialize, Serialize};
-use wgpu::{ShaderModule, ShaderModuleDescriptorSpirV};
-use wgpu::ShaderModuleDescriptor;
-use wgpu::util::{make_spirv, make_spirv_raw};
 use crate::debug_label;
+use crate::engine::asset::{Asset, AssetKey, AssetLifecycler, AssetLoadRequest, AssetTypeId};
+use crate::engine::graphics::Renderer;
+use bitcode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
+use std::default::Default;
+use std::error::Error;
+use std::sync::Arc;
+use proc_macros_3l14::FancyEnum;
+use wgpu::util::{make_spirv, make_spirv_raw};
+use wgpu::{BufferAddress, FragmentState, MultisampleState, ShaderModule, ShaderModuleDescriptor, ShaderModuleDescriptorSpirV, VertexBufferLayout, VertexState};
 
-#[derive(Default, Debug, Serialize, Deserialize, Encode, Decode, EnumWithProps)]
+#[derive(Default, Debug, Serialize, Deserialize, Encode, Decode, FancyEnum)]
 pub enum ShaderStage
 {
     #[default]
-    // #[enum_prop(prefix = "vs")]
+    #[enum_prop(prefix = "vs", entry_point="vs_main")]
     Vertex,
-    // #[enum_prop(prefix = "ps")]
+    #[enum_prop(prefix = "ps", entry_point="ps_main")]
     Pixel, // fragment
-    // #[enum_prop(prefix = "cs")]
+    #[enum_prop(prefix = "cs", entry_point="cs_main")]
     Compute,
-}
-
-impl ShaderStage
-{
-    pub const fn prefix(&self) -> &'static str
-    {
-        match self
-        {
-            ShaderStage::Vertex => "vs",
-            ShaderStage::Pixel => "ps",
-            ShaderStage::Compute => "cs",
-        }
-    }
-    pub fn entry_point(&self) -> &'static str
-    {
-        match self
-        {
-            ShaderStage::Vertex => "vs_main",
-            ShaderStage::Pixel => "ps_main",
-            ShaderStage::Compute => "cs_main",
-        }
-    }
 }
 
 #[derive(Encode, Decode)]
 pub struct ShaderFile
 {
     pub stage: ShaderStage,
+    pub module_bytes: Box<[u8]>,
 }
-
 
 pub struct Shader
 {
-    pub module: ShaderModule,
-    pub stage: ShaderStage,
+    pub module: wgpu::ShaderModule,
 }
 impl Asset for Shader
 {
@@ -69,6 +44,8 @@ pub struct ShaderLifecycler
 }
 impl ShaderLifecycler
 {
+    const LOAD_SHADERS_DIRECT: bool = false;
+
     pub fn new(renderer: Arc<Renderer>) -> Self
     {
         Self { renderer }
@@ -77,39 +54,31 @@ impl ShaderLifecycler
 impl AssetLifecycler for ShaderLifecycler
 {
     type Asset = Shader;
+    
     fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
     {
-        const LOAD_DIRECT: bool = false;
-
         let shader_file: ShaderFile = request.deserialize()?;
 
-        let mut module_bytes = Vec::new();
-        request.input.read_to_end(&mut module_bytes)?;
-
-        let module = match LOAD_DIRECT && self.renderer.supports_feature(wgpu::Features::SPIRV_SHADER_PASSTHROUGH)
+        let module = match Self::LOAD_SHADERS_DIRECT && self.renderer.supports_feature(wgpu::Features::SPIRV_SHADER_PASSTHROUGH)
         {
             true => unsafe
             {
                 self.renderer.device().create_shader_module_spirv(&ShaderModuleDescriptorSpirV
                 {
                     label: debug_label!(&format!("{:?} ({:?})", request.asset_key, shader_file.stage)),
-                    source: make_spirv_raw(&module_bytes),
+                    source: make_spirv_raw(&shader_file.module_bytes),
                 })
             },
             false =>
             {
                 self.renderer.device().create_shader_module(ShaderModuleDescriptor
                 {
-                    label: debug_label!(&format!("{:?}", request.asset_key)),
-                    source: make_spirv(&module_bytes),
+                    label: debug_label!(&format!("{:?} ({:?})", request.asset_key, shader_file.stage)),
+                    source: make_spirv(&shader_file.module_bytes),
                 })
             }
         };
 
-        Ok(Shader
-        {
-            module,
-            stage: shader_file.stage,
-        })
+        Ok(Shader { module })
     }
 }

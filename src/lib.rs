@@ -1,4 +1,5 @@
 pub mod engine;
+mod macro_tests;
 
 extern crate proc_macros_3l14;
 

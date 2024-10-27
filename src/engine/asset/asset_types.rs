@@ -13,10 +13,11 @@ pub enum AssetTypeId
     Untyped = 3, // non-descript, untyped data
 
     Texture = 4,
-
-    Shader = 5,
+    Geometry = 5,
     RenderMaterial = 6,
+    Shader = 7,
+    Model = 8,
 
-    Model = 7,
-    Scene = 8,
+
+    // ComputePipeline
 }

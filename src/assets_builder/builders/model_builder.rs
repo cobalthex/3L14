@@ -2,7 +2,7 @@ use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, Ver
 use game_3l14::engine::asset::AssetTypeId;
 use game_3l14::engine::graphics::assets::material::{MaterialFile, PbrProps};
 use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat};
-use game_3l14::engine::graphics::{ModelFile, ModelFileMesh, ModelFileMeshIndices, ModelFileMeshVertices, Rgba, VertexPosNormTexCol};
+use game_3l14::engine::graphics::{ModelFile, ModelFileMesh, ModelFileMeshIndices, ModelFileMeshVertices, Rgba};
 use game_3l14::engine::{AsU8Slice, IntoU8Box, AABB};
 use gltf::image::Format;
 use gltf::mesh::util::{ReadIndices, ReadNormals, ReadTexCoords};
@@ -10,9 +10,10 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::io::Write;
-use futures::AsyncWriteExt;
+use std::path::Path;
 use unicase::UniCase;
-use wgpu::{VertexAttribute, VertexFormat};
+use wgpu::{BufferAddress, VertexAttribute, VertexFormat};
+use crate::helpers::shader_compiler::ShaderCompiler;
 
 #[derive(Debug)]
 pub enum ModelImportError
@@ -35,8 +36,20 @@ pub struct ModelBuildConfig
 {
     // optimize (meshoptimizer)
 }
-
-pub struct ModelBuilder;
+pub struct ModelBuilder
+{
+    shader_compiler: ShaderCompiler,
+}
+impl ModelBuilder
+{
+    pub fn new(assets_root: impl AsRef<Path>) -> Self
+    {
+        Self
+        {
+            shader_compiler: ShaderCompiler::new(assets_root.as_ref()).expect("Failed to create shader compiler"), // return error?
+        }
+    }
+}
 impl AssetBuilderMeta for ModelBuilder
 {
     fn supported_input_file_extensions() -> &'static [&'static str]
@@ -163,7 +176,7 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
             if let Some(cl) = &mut colors
             {
                 let col = cl.next().ok_or(ModelImportError::MismatchedVertexCount)?;
-                vertices.write_all(unsafe { cl.as_u8_slice() })?;
+                vertices.write_all(unsafe { col.as_u8_slice() })?;
             }
         };
 
@@ -248,15 +261,16 @@ fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &V
         {
             vertices: ModelFileMeshVertices
             {
-                stride: next_offset,
+                stride: next_offset as u32,
                 count: vertex_count,
                 layout: unsafe { layout.into_u8_box() },
                 data: vertices.into_boxed_slice(),
             },
             indices,
             bounds: mesh_bounds,
-            material,
         });
+
+        // create ModelLook?
     }
 
     Ok(ModelFile

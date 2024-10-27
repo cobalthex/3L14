@@ -500,8 +500,8 @@ mod tests
 
     // TODO: should probably make sure there are no mem leaks in these tests
 
-    const TEST_ASSET_1: AssetKey = AssetKey::new(AssetTypeId::Test1, true, AssetKeyDerivedId::test(), AssetKeySourceId::test(1));
-    const TEST_ASSET_2: AssetKey = AssetKey::new(AssetTypeId::Test2, true, AssetKeyDerivedId::test(), AssetKeySourceId::test(1));
+    const TEST_ASSET_1: AssetKey = AssetKey::unique(AssetTypeId::Test1, AssetKeyDerivedId::test(), AssetKeySourceId::test(1));
+    const TEST_ASSET_2: AssetKey = AssetKey::synthetic(AssetTypeId::Test2, AssetKeySynthHash::test(123));
 
     #[derive(Debug)]
     struct NestedAsset

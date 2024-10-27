@@ -1,6 +1,6 @@
 use super::*;
 use bitcode::Encode;
-use game_3l14::engine::asset::{AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetTypeId};
+use game_3l14::engine::asset::{AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetTypeId};
 use game_3l14::engine::{varint, ShortTypeName};
 use metrohash::MetroHash64;
 use serde::{Deserializer, Serializer};
@@ -222,6 +222,7 @@ impl AssetsBuilder
 pub enum BuildError
 {
     InvalidSourcePath, // lies outside the sources root
+    InvalidSyntheticAssetKey, // asset key was not synthetic
     NoBuilderForSource(String),
     SourceIOError(io::Error),
     SourceMetaIOError(io::Error),
@@ -341,7 +342,8 @@ impl<'b> BuildOutputs<'b>
 {
     // TODO: outputs should be atomic (all or none)
 
-    // Build one or more outputs from a source. Note: generated asset keys are dependent on call order
+    // Produce an output from this build. Assets of the same type have sequential derived IDs
+    #[inline]
     pub fn add_output(&mut self, asset_type: AssetTypeId) -> Result<BuildOutput<impl BuildOutputWrite>, BuildError>
     {
         let derived_id: AssetKeyDerivedId =
@@ -350,8 +352,27 @@ impl<'b> BuildOutputs<'b>
             entry.next().ok_or(BuildError::TooManyDerivedIDs)?
         };
 
-        let asset_key = AssetKey::new(asset_type, false, derived_id, self.source_id);
+        let asset_key = AssetKey::unique(asset_type, derived_id, self.source_id);
+        self.add_asset(asset_key)
+    }
 
+    // Produce an output from ths build that is referenced by a calculable hash. By default, will only return an output if the hash doesn't already exist
+    #[inline]
+    pub fn add_synthetic(&mut self, asset_type: AssetTypeId, asset_hash: AssetKeySynthHash, force_build: bool) -> Result<Option<BuildOutput<impl BuildOutputWrite>>, BuildError>
+    {
+        let asset_key = AssetKey::synthetic(asset_type, asset_hash);
+        
+        let output_path = self.abs_output_dir.join(asset_key.as_file_name()); // todo: shared method w/ below
+        if output_path.exists()
+        {
+            return Ok(None);
+        }
+
+        self.add_asset(asset_key).map(|a| Some(a))
+    }
+
+    fn add_asset(&mut self, asset_key: AssetKey) -> Result<BuildOutput<impl BuildOutputWrite>, BuildError>
+    {
         let output_path = self.abs_output_dir.join(asset_key.as_file_name());
         let output_writer = std::fs::File::create(&output_path).map_err(BuildError::OutputIOError)?;
 

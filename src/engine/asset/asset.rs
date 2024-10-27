@@ -7,6 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::hash::Hash;
 use std::path::PathBuf;
+use metrohash::MetroHash128;
 use unicase::UniCase;
 
 pub const ASSET_FILE_EXTENSION: UniCase<&'static str> = UniCase::unicode("ass");
@@ -97,6 +98,56 @@ impl Debug for AssetKeySourceId
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct AssetKeySynthHash(u128);
+impl AssetKeySynthHash
+{
+    pub fn generate(hashable: impl Hash) -> Self
+    {
+        let mut hasher = MetroHash128::new();
+        hashable.hash(&mut hasher);
+        let (low, high) = hasher.finish128();
+        let n = (low as u128) | ((high as u128) << 64);
+        Self(n & AssetKey::SYNTH_HASH_MAX)
+    }
+
+    #[cfg(test)]
+    pub const fn test(n: u128) -> Self
+    {
+        Self(n)
+    }
+}
+// custom serialize/deserialize b/c TOML doesn't support u128
+impl Serialize for AssetKeySynthHash
+{
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    {
+        format!("{:030x}", self.0).serialize(serializer)
+    }
+}
+impl<'de> Deserialize<'de> for AssetKeySynthHash
+{
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error>
+    {
+        let inp = String::deserialize(deserializer)?;
+        match u128::from_str_radix(&inp, 16)
+        {
+            Ok(u) => Ok(Self(u)),
+            Err(e) => Err(D::Error::custom(e)),
+        }
+    }
+}
+impl Debug for AssetKeySynthHash
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    {
+        f.write_fmt(format_args!("{:030x}", self.0))
+    }
+}
+
+// A unique identifier identifying a built asset
+// It can either be 'synthetic' whereby the ID is a hash of its contents
+// or it can be 'unique' where the ID is composed of a combined unique source and derived ID
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
 pub struct AssetKey(u128);
 impl AssetKey
@@ -104,23 +155,26 @@ impl AssetKey
     // ordered low-high bits
     const SOURCE_KEY_BITS: u8 = 100;
     const DERIVED_KEY_BITS: u8 = 15;
-    const TEMP_FLAG_BITS: u8 = 1;
+    const SYNTH_HASH_BITS: u8 = Self::SOURCE_KEY_BITS + Self::DERIVED_KEY_BITS;
+    const SYNTH_FLAG_BITS: u8 = 1;
     const ASSET_TYPE_BITS: u8 = 12;
 
     const SOURCE_KEY_MAX: u128 = (1 << Self::SOURCE_KEY_BITS) - 1;
     const DERIVED_KEY_MAX: u16 = (1 << Self::DERIVED_KEY_BITS) - 1;
-    const TEMP_FLAG_MAX: u8 = (1 << Self::TEMP_FLAG_BITS) - 1;
+    const SYNTH_HASH_MAX: u128 = (1 << Self::SYNTH_HASH_BITS) - 1;
+    const SYNTH_FLAG_MAX: u8 = (1 << Self::SYNTH_FLAG_BITS) - 1;
     const ASSET_TYPE_MAX: u16 = (1 << Self::ASSET_TYPE_BITS) - 1;
 
     const SOURCE_KEY_SHIFT: u8 = 0;
     const DERIVED_KEY_SHIFT: u8 = Self::SOURCE_KEY_SHIFT + Self::SOURCE_KEY_BITS;
-    const TEMP_FLAG_SHIFT: u8 = Self::DERIVED_KEY_SHIFT + Self::DERIVED_KEY_BITS;
-    const ASSET_TYPE_SHIFT: u8 = Self::TEMP_FLAG_SHIFT + Self::TEMP_FLAG_BITS;
+    const SYNTH_HASH_SHIFT: u8 = 0;
+    const SYNTH_FLAG_SHIFT: u8 = Self::DERIVED_KEY_SHIFT + Self::DERIVED_KEY_BITS;
+    const ASSET_TYPE_SHIFT: u8 = Self::SYNTH_FLAG_SHIFT + Self::SYNTH_FLAG_BITS;
 
-    pub const fn new(asset_type: AssetTypeId, is_temporary: bool, derived_id: AssetKeyDerivedId, source_id: AssetKeySourceId) -> Self
+    pub const fn unique(asset_type: AssetTypeId, derived_id: AssetKeyDerivedId, source_id: AssetKeySourceId) -> Self
     {
         const_assert!(
-            (AssetKey::SOURCE_KEY_BITS + AssetKey::DERIVED_KEY_BITS + AssetKey::TEMP_FLAG_BITS + AssetKey::ASSET_TYPE_BITS) / 8
+            (AssetKey::SOURCE_KEY_BITS + AssetKey::DERIVED_KEY_BITS + AssetKey::SYNTH_FLAG_BITS + AssetKey::ASSET_TYPE_BITS) / 8
             == (size_of::<AssetKey>() as u8)
         );
         const_assert!(size_of::<AssetKey>() == 16);
@@ -131,7 +185,25 @@ impl AssetKey
 
         let mut u: u128 = (source_id.0 & Self::SOURCE_KEY_MAX) << Self::SOURCE_KEY_SHIFT;
         u |= ((derived_id.0 & Self::DERIVED_KEY_MAX) as u128) << Self::DERIVED_KEY_SHIFT;
-        u |= (((is_temporary as u8) & Self::TEMP_FLAG_MAX) as u128) << Self::TEMP_FLAG_SHIFT;
+        // u |= ((0u8 & Self::SYNTH_FLAG_MAX) as u128) << Self::SYNTH_FLAG_SHIFT;
+        u |= (((asset_type as u16) & Self::ASSET_TYPE_MAX) as u128) << Self::ASSET_TYPE_SHIFT;
+        Self(u)
+    }
+
+    #[inline]
+    pub const fn synthetic(asset_type: AssetTypeId, synth_hash: AssetKeySynthHash) -> Self
+    {
+        const_assert!(
+            (AssetKey::SYNTH_HASH_BITS + AssetKey::SYNTH_FLAG_BITS + AssetKey::ASSET_TYPE_BITS) / 8
+            == (size_of::<AssetKey>() as u8)
+        );
+        const_assert!(size_of::<AssetKey>() == 16);
+
+        debug_assert!((asset_type as u16) < Self::ASSET_TYPE_MAX);
+        debug_assert!(synth_hash.0 < Self::SYNTH_HASH_MAX);
+
+        let mut u: u128 = (synth_hash.0 & Self::SYNTH_HASH_MAX) << Self::SYNTH_HASH_SHIFT;
+        u |= ((1u8 & Self::SYNTH_FLAG_MAX) as u128) << Self::SYNTH_FLAG_SHIFT;
         u |= (((asset_type as u16) & Self::ASSET_TYPE_MAX) as u128) << Self::ASSET_TYPE_SHIFT;
         Self(u)
     }
@@ -141,20 +213,32 @@ impl AssetKey
     {
         unsafe { std::mem::transmute((self.0 >> Self::ASSET_TYPE_SHIFT) as u16 & Self::ASSET_TYPE_MAX) }
     }
+    // Get the derived ID for this asset key, returns 0 if synthetic
     #[inline]
     pub const fn derived_id(&self) -> AssetKeyDerivedId
     {
-        AssetKeyDerivedId((self.0 >> Self::DERIVED_KEY_SHIFT) as u16 & Self::DERIVED_KEY_MAX)
+        let u = (self.0 >> Self::DERIVED_KEY_SHIFT) as u16 & Self::DERIVED_KEY_MAX;
+        AssetKeyDerivedId(u * !self.is_synthetic() as u16)
     }
+    // Get the source ID for this asset key, returns 0 if synthetic
     #[inline]
     pub const fn source_id(&self) -> AssetKeySourceId
     {
-        AssetKeySourceId((self.0 >> Self::SOURCE_KEY_SHIFT) & Self::SOURCE_KEY_MAX)
+        let u = (self.0 >> Self::SOURCE_KEY_SHIFT) & Self::SOURCE_KEY_MAX;
+        AssetKeySourceId(u * !self.is_synthetic() as u128)
+    }
+    // Get the synthesized hash for this asset key, returns 0 if unique (not synthetic)
+    #[inline]
+    pub const fn synth_hash(&self) -> AssetKeySynthHash
+    {
+        // TODO: & with !is_synthetic?
+        let u = (self.0 >> Self::SYNTH_HASH_SHIFT) & Self::SYNTH_HASH_MAX;
+        AssetKeySynthHash(u * self.is_synthetic() as u128)
     }
     #[inline]
-    pub const fn is_temporary(&self) -> bool
+    pub const fn is_synthetic(&self) -> bool
     {
-        ((self.0 >> Self::TEMP_FLAG_SHIFT) as u8 & Self::TEMP_FLAG_MAX) == 1
+        ((self.0 >> Self::SYNTH_FLAG_SHIFT) as u8 & Self::SYNTH_FLAG_MAX) == 1
     }
 
     #[inline]
@@ -227,20 +311,41 @@ mod asset_key_tests
     use super::*;
 
     #[test]
-    fn construct_destruct()
+    fn construct_unique()
     {
         let asset_type = AssetTypeId::Test1;
-        let is_temporary = true; // TODO: broken
+        let is_synthetic = false;
         let derived_id = AssetKeyDerivedId(0x33u16);
         let source_id = AssetKeySourceId(0x111111u128);
+        let synth_hash = AssetKeySynthHash(0);
 
-        let k = AssetKey::new(asset_type, is_temporary, derived_id, source_id);
+        let k = AssetKey::unique(asset_type, derived_id, source_id);
         assert_eq!(k.asset_type(), asset_type, "Asset type");
-        assert_eq!(k.is_temporary(), is_temporary, "Is temporary");
+        assert_eq!(k.is_synthetic(), is_synthetic, "Is synthetic");
         assert_eq!(k.derived_id(), derived_id, "Derived ID");
         assert_eq!(k.source_id(), source_id, "Source ID");
+        assert_eq!(k.synth_hash(), synth_hash, "Synth Hash");
 
-        assert_eq!(0x00180330000000000000000000111111u128, k.into());
+        assert_eq!(0x00100330000000000000000000111111u128, k.into());
+    }
+
+    #[test]
+    fn construct_synthetic()
+    {
+        let asset_type = AssetTypeId::Test1;
+        let is_synthetic = true;
+        let derived_id = AssetKeyDerivedId(0);
+        let source_id = AssetKeySourceId(0);
+        let synth_hash = AssetKeySynthHash::test(0x123);
+
+        let k = AssetKey::synthetic(asset_type, synth_hash);
+        assert_eq!(k.asset_type(), asset_type, "Asset type");
+        assert_eq!(k.is_synthetic(), is_synthetic, "Is synthetic");
+        assert_eq!(k.derived_id(), derived_id, "Derived ID");
+        assert_eq!(k.source_id(), source_id, "Source ID");
+        assert_eq!(k.synth_hash(), synth_hash, "Synth Hash");
+
+        assert_eq!(0x00180000000000000000000000000123u128, k.into());
     }
 
     #[test]
@@ -253,14 +358,12 @@ mod asset_key_tests
     #[test]
     fn same_asset_keys_match()
     {
-        let k1 = AssetKey::new(
+        let k1 = AssetKey::unique(
             AssetTypeId::Test1,
-            false,
             AssetKeyDerivedId(0),
             AssetKeySourceId(0x111111111111111111111111));
-        let k2 = AssetKey::new(
+        let k2 = AssetKey::unique(
             AssetTypeId::Test1,
-            false,
             AssetKeyDerivedId(0),
             AssetKeySourceId(0x111111111111111111111111));
 
@@ -270,14 +373,12 @@ mod asset_key_tests
     #[test]
     fn mismatched_asset_type()
     {
-        let k1 = AssetKey::new(
+        let k1 = AssetKey::unique(
             AssetTypeId::Test1,
-            false,
             AssetKeyDerivedId(0),
             AssetKeySourceId(0x111111111111111111111111));
-        let k2 = AssetKey::new(
+        let k2 = AssetKey::unique(
             AssetTypeId::Test2,
-            false,
             AssetKeyDerivedId(0),
             AssetKeySourceId(0x111111111111111111111111));
 
@@ -287,14 +388,12 @@ mod asset_key_tests
     #[test]
     fn mismatched_derived_id()
     {
-        let k1 = AssetKey::new(
+        let k1 = AssetKey::unique(
             AssetTypeId::Test1,
-            false,
             AssetKeyDerivedId(0),
             AssetKeySourceId(0x111111111111111111111111));
-        let k2 = AssetKey::new(
+        let k2 = AssetKey::unique(
             AssetTypeId::Test1,
-            false,
             AssetKeyDerivedId(1),
             AssetKeySourceId(0x111111111111111111111111));
 
@@ -304,14 +403,12 @@ mod asset_key_tests
     #[test]
     fn mismatched_source_id()
     {
-        let k1 = AssetKey::new(
+        let k1 = AssetKey::unique(
             AssetTypeId::Test1,
-            false,
             AssetKeyDerivedId(0),
             AssetKeySourceId(0x111111111111111111111111));
-        let k2 = AssetKey::new(
+        let k2 = AssetKey::unique(
             AssetTypeId::Test1,
-            false,
             AssetKeyDerivedId(0),
             AssetKeySourceId(0x222222222222222222222222));
 

@@ -1,20 +1,20 @@
+use clap::Parser;
+use game_3l14::engine::graphics::assets::render_pipeline::RenderPipelineLifecycler;
+use game_3l14::engine::graphics::assets::texture::TextureLifecycler;
+use game_3l14::engine::graphics::assets::{Material, MaterialLifecycler, ShaderLifecycler};
+use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
+use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
+use game_3l14::engine::graphics::pipeline_cache::PipelineCache;
+use game_3l14::engine::{asset::*, graphics::*, input::*, timing::*, windows::*, world::*, *};
+use game_3l14::ExitReason;
+use glam::{Mat4, Quat, Vec3};
+use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use std::io::Read;
 use std::ops::Deref;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
-use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
-use game_3l14::engine::{*, timing::*, input::*, windows::*, graphics::*, world::*, asset::*};
-use clap::Parser;
-use glam::{Mat4, Quat, Vec3};
 use wgpu::*;
-use game_3l14::engine::graphics::assets::{Material, MaterialLifecycler, Shader};
-use game_3l14::engine::graphics::assets::shader::ShaderLifecycler;
-use game_3l14::engine::graphics::assets::texture::TextureLifecycler;
-use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
-use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
-use game_3l14::engine::graphics::material_cache::MaterialCache;
-use game_3l14::ExitReason;
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -65,7 +65,7 @@ fn main() -> ExitReason
             .add_lifecycler(ModelLifecycler::new(renderer.clone()))
             .add_lifecycler(TextureLifecycler::new(renderer.clone()))
             .add_lifecycler(ShaderLifecycler::new(renderer.clone()))
-            .add_lifecycler(MaterialLifecycler)
+            .add_lifecycler(MaterialLifecycler::new(renderer.clone()))
         , assets_config);
 
     {
@@ -81,12 +81,6 @@ fn main() -> ExitReason
 
         let model_key: AssetKey = 0x00700020042f8fe4c6e9839688654c23.into();
         let test_model = assets.load::<Model>(model_key);
-
-        let test_vshader_key: AssetKey = 0x00500000351453683a969abaa8a17f8a.into();
-        let test_vshader = assets.load::<Shader>(test_vshader_key);
-
-        let test_pshader_key: AssetKey = 0x00500000a6b39c4eecb14a98dc220f6a.into();
-        let test_pshader = assets.load::<Shader>(test_pshader_key);
 
         let mut camera = Camera::new(Some("fp_cam"), renderer.display_aspect_ratio());
         camera.transform.position = Vec3::new(0.0, 2.0, -10.0);
@@ -178,7 +172,7 @@ fn main() -> ExitReason
             label: Some("Camera bind group"),
         });
 
-        let material_cache = MaterialCache::new(renderer.clone());
+        let material_cache = PipelineCache::new(renderer.clone());
 
         let mut test_pipeline = None;
 

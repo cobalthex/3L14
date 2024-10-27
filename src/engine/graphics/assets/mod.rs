@@ -1,9 +1,14 @@
 pub mod texture;
 pub use texture::*;
-pub mod shader;
-pub use shader::*;
+
 pub mod material;
 pub use material::*;
 
+pub mod shader;
+pub use shader::*;
 
-// TODO: should these asset go into the asset folder?
+pub mod model;
+pub use model::*;
+
+pub mod geometry;
+pub use geometry::*;

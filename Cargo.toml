@@ -3,7 +3,7 @@ name = "game_3l14"
 version = "0.1.0"
 edition = "2021"
 autobins = false
-build = "build/main.rs"
+build = "build/build_main.rs"
 publish = false
 
 [[bin]]

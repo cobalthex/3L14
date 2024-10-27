@@ -55,14 +55,20 @@ fn main()
     //     if bin_name == "assets_builder"
     //     {
     // symlink?
-    if let Err(e) = copy_dir_all(Path::new("3rdparty/dxc"), &out_dir, Some(&[OsStr::new("dll")]))
+    if let Ok(thirdparty_dir) = Path::new("3rdparty").canonicalize()
     {
-        println!("cargo::warning=Failed to copy DXC: {e}");
-    }
+        let dxc_path = thirdparty_dir.join("dxc");
+        if let Err(e) = copy_dir_all(Path::new("3rdparty/dxc"), &out_dir, Some(&[OsStr::new("dll")]))
+        {
+            println!("cargo::warning=Failed to copy DXC: {e}");
+        }
 
-    if let Err(e) = copy_dir_all(Path::new("3rdparty/sdl"), &out_dir, Some(&[OsStr::new("dll")]))
-    {
-        println!("cargo::warning=Failed to copy SDL: {e}");
+        let sdl_path = thirdparty_dir.join("sdl");
+        println!(r"cargo:rustc-link-search={}", sdl_path.display());
+        if let Err(e) = copy_dir_all(sdl_path, &out_dir, Some(&[OsStr::new("dll")]))
+        {
+            println!("cargo::warning=Failed to copy SDL: {e}");
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 mod core;
 mod builders;
+mod helpers;
 
 use crate::core::{AssetMetadata, AssetsBuilder, AssetsBuilderConfig, ScanError};
 use std::path::{Path, PathBuf};
@@ -53,7 +54,7 @@ fn main()
     builder_cfg.add_builder(builders::ModelBuilder);
     builder_cfg.add_builder(builders::TextureBuilder);
     builder_cfg.add_builder(builders::MaterialBuilder);
-    builder_cfg.add_builder(builders::ShaderBuilder::new(&src_assets_root));
+    builder_cfg.add_builder(builders::ModelBuilder::new(&src_assets_root));
 
     let builder = AssetsBuilder::new(builder_cfg);
 

@@ -48,7 +48,17 @@ impl<T> IntoU8Box for Vec<T>
 #[cfg(test)]
 mod tests
 {
-    use crate::engine::IntoU8Box;
+    use crate::engine::{AsU8Slice, IntoU8Box};
+
+    #[test]
+    fn u8_slice()
+    {
+        let u16s = Box::<[u16]>::from([0, 1, 2, 3, 4, 5, 6, 7]);
+        let u16s_size = std::mem::size_of_val(&u16s);
+        let u8s = unsafe { u16s.as_u8_slice() };
+        let u8s_size = std::mem::size_of_val(u8s);
+        assert_eq!(u16s_size, u8s_size);
+    }
 
     #[test]
     fn u8_box()
