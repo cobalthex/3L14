@@ -1,13 +1,22 @@
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::hash::Hasher;
+use std::fmt::Debug;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use metrohash::MetroHash64;
-use wgpu::{AddressMode, BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, FilterMode, RenderPipeline, Sampler, SamplerDescriptor, ShaderStages, TextureSampleType, TextureViewDimension};
+use wgpu::{AddressMode, BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState, ColorTargetState, ColorWrites, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerDescriptor, ShaderStages, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
 use crate::engine::asset::{AssetHandle, AssetPayload};
-use crate::engine::graphics::assets::Material;
+use crate::engine::graphics::assets::{Material, ShaderStage};
 use crate::engine::graphics::{Model, Renderer};
 
 type LayoutHash = u64;
+
+#[derive(Debug, Clone, Copy, Hash)]
+pub enum DebugMode // debug only?
+{
+    None,
+    Wireframe,
+}
 
 struct Samplers
 {
@@ -30,49 +39,92 @@ impl PipelineCache
         }
     }
 
-    fn get_or_create_pipeline(&mut self, model: &Model) -> Option<&RenderPipeline> // return DataPayload?
+    // Try getting or creating a render pipeline and applying it to a render pass
+    // Returns false if the pipeline was unable to be created
+    pub fn try_apply(&mut self, render_pass: &mut RenderPass, model: &Model, mode: DebugMode) -> bool
     {
+        // if shaders change their hashes and in turn asset keys should change
         let layout_hash =
         {
             let mut hasher = MetroHash64::default();
             model.layout_hash(&mut hasher);
+            mode.hash(&mut hasher);
             hasher.finish()
         };
 
         if let Some(pipeline) = self.pipelines.get(&layout_hash)
         {
-            return Some(pipeline);
+            render_pass.set_pipeline(pipeline);
+            return true;
         }
 
-        let AssetPayload::Available(geometry) = model.geometry.payload() else { return None; };
-        let AssetPayload::Available(material) = model.material.payload() else { return None; };
+        let AssetPayload::Available(geometry) = model.geometry.payload() else { return false; };
+        let AssetPayload::Available(material) = model.material.payload() else { return false; };
+        let AssetPayload::Available(vshader) = model.vertex_shader.payload() else { return false; };
+        let AssetPayload::Available(pshader) = model.pixel_shader.payload() else { return false; };
 
-        let layout = self.pipelines.entry(layout_hash).or_insert_with(||
+        // move up?
+        puffin::profile_scope!("create render pipeline");
+
+        assert_eq!(vshader.stage, ShaderStage::Vertex);
+        assert_eq!(pshader.stage, ShaderStage::Pixel);
+
+        let layout_dtor = PipelineLayoutDescriptor
         {
-            let mut entries = Vec::new();
-            for tex in &model.material.textures
-            {
-                entries.push(BindGroupLayoutEntry
-                {
-                    binding: entries.len() as u32,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture
-                    {
-                        sample_type: TextureSampleType::Float { filterable: true }, // TODO: material props
-                        view_dimension: TextureViewDimension::D2, // TODO: get from texture
-                        multisampled: false,
-                    },
-                    count: None,
-                });
-            }
+            label: None, // TODO
+            bind_group_layouts: &[],
+            push_constant_ranges: &[],
+        };
+        let layout = self.renderer.device().create_pipeline_layout(&layout_dtor);
 
-            self.renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
+        let desc = RenderPipelineDescriptor
+        {
+            label: None, // TODO
+            layout: Some(&layout), // TODO
+            vertex: VertexState
             {
-                label: Some("TEST -- texture bind group layout"),
-                entries: &entries,
-            })
-        });
-        Some(layout)
+                module: &vshader.module,
+                entry_point: ShaderStage::Vertex.entry_point().expect("Shader stage has no entry-point"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[geometry.vertex_layout.into()],
+            },
+            primitive: PrimitiveState
+            {
+                topology: PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: FrontFace::Cw,
+                cull_mode: Some(Face::Back),
+                unclipped_depth: false,
+                polygon_mode: PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None, // TODO
+            multisample: MultisampleState // TODO
+            {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            fragment: Some(FragmentState
+            {
+                module: &pshader.module,
+                entry_point: ShaderStage::Pixel.entry_point().expect("Shader stage has no entry-point"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState
+                {
+                    format: TextureFormat::Rgba8Unorm, // TODO: based on material, maybe render pass (must match pass)
+                    blend: None, // todo: material settings
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview: None,
+            cache: None, // todo
+        };
+
+        let pipeline = self.renderer.device().create_render_pipeline(&desc);
+        render_pass.set_pipeline(&pipeline);
+        self.pipelines.insert(layout_hash, pipeline);
+        true
     }
 
     // todo

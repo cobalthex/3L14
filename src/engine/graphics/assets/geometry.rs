@@ -3,30 +3,49 @@ use crate::engine::asset::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetL
 use crate::engine::graphics::Renderer;
 use crate::engine::{AsU8Slice, AABB};
 use bitcode::{Decode, Encode};
+use serde::{Serialize, Deserialize};
 use std::ops::Range;
 use std::sync::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{BufferSlice, BufferUsages, IndexFormat, VertexBufferLayout};
+use wgpu::{BufferSlice, BufferUsages, IndexFormat, VertexAttribute, VertexBufferLayout, VertexStepMode};
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
+pub enum VertexLayout
+{
+    StaticSimple,
+}
+impl From<VertexLayout> for wgpu::VertexBufferLayout<'static>
+{
+    fn from(value: VertexLayout) -> Self
+    {
+        match value
+        {
+            VertexLayout::StaticSimple =>
+            {
+                const V_ATTRS: [VertexAttribute; 4] = wgpu::vertex_attr_array!
+                [
+                    0 => Float32x3, // position
+                    1 => Float32x3, // normal
+                    // tangent?
+                    2 => Float32x2, // texcoord 0
+                    3 => Uint32, // color 0
+                ];
+                VertexBufferLayout
+                {
+                    array_stride: V_ATTRS.iter().fold(0, |a, e| a + e.format.size()), // passed in from file?
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &V_ATTRS,
+                }
+            },
+        }
+    }
+}
 
 #[derive(Encode, Decode)]
 pub struct GeometryFileMeshVertices
 {
-    pub stride: u32, // size of one vertex (between array elements)
     pub count: u32,
-    pub layout: Box<[u8]>, // maps to wgpu::VertexAttribute -- TODO: well defined layout
     pub data: Box<[u8]>,
-}
-impl GeometryFileMeshVertices
-{
-    pub fn layout(&self) -> VertexBufferLayout
-    {
-        VertexBufferLayout
-        {
-            array_stride: self.stride as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: unsafe { std::mem::transmute(self.layout.as_ref()) },
-        }
-    }
 }
 
 #[derive(Encode, Decode)]
@@ -48,6 +67,7 @@ pub struct GeometryFileMesh
 pub struct GeometryFile
 {
     pub bounds: AABB,
+    pub vertex_layout: VertexLayout, // does it ever make sense for this to be per-mesh?
     pub meshes: Box<[GeometryFileMesh]>,
 }
 pub struct GeometryMesh
@@ -85,8 +105,9 @@ impl GeometryMesh
 
 pub struct Geometry
 {
-    bounds: AABB, // note; these are untransformed
-    meshes: Box<[GeometryMesh]>,
+    pub bounds: AABB, // note; these are untransformed
+    pub vertex_layout: VertexLayout, // does it ever make sense for this to be per-mesh?
+    pub meshes: Box<[GeometryMesh]>,
 }
 impl Geometry
 {
@@ -160,6 +181,7 @@ impl AssetLifecycler for GeometryLifecycler
         Ok(Geometry
         {
             bounds: mf.bounds,
+            vertex_layout: mf.vertex_layout,
             meshes: meshes.collect(),
         })
     }

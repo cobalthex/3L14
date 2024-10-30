@@ -10,7 +10,7 @@ use proc_macros_3l14::FancyEnum;
 use wgpu::util::{make_spirv, make_spirv_raw};
 use wgpu::{BufferAddress, FragmentState, MultisampleState, ShaderModule, ShaderModuleDescriptor, ShaderModuleDescriptorSpirV, VertexBufferLayout, VertexState};
 
-#[derive(Default, Debug, Serialize, Deserialize, Encode, Decode, FancyEnum)]
+#[derive(Default, Debug, PartialEq, Serialize, Deserialize, Encode, Decode, FancyEnum)]
 pub enum ShaderStage
 {
     #[default]
@@ -31,6 +31,7 @@ pub struct ShaderFile
 
 pub struct Shader
 {
+    pub stage: ShaderStage,
     pub module: wgpu::ShaderModule,
 }
 impl Asset for Shader
@@ -54,7 +55,7 @@ impl ShaderLifecycler
 impl AssetLifecycler for ShaderLifecycler
 {
     type Asset = Shader;
-    
+
     fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
     {
         let shader_file: ShaderFile = request.deserialize()?;
@@ -79,6 +80,10 @@ impl AssetLifecycler for ShaderLifecycler
             }
         };
 
-        Ok(Shader { module })
+        Ok(Shader
+        {
+            stage: shader_file.stage,
+            module
+        })
     }
 }

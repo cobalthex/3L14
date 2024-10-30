@@ -33,12 +33,6 @@ pub struct MSAAConfiguration
     pub current_sample_count: u32, // pipelines and ms-framebuffer will need to be recreated if this is changed
     pub buffer: TextureView,
 }
-
-pub enum DebugRenderMode
-{
-    Wireframe,
-}
-
 pub struct Renderer
 {
     device: Device,
@@ -58,9 +52,6 @@ pub struct Renderer
 
     // todo: this needs to know when a new frame is available before picking one
     render_frames: RwLock<[RenderFrameData; MAX_CONSECUTIVE_FRAMES]>,
-
-    #[cfg(debug_assertions)]
-    debug_render_mode: ArcSwapOption<DebugRenderMode>,
 }
 impl Renderer
 {
@@ -220,8 +211,6 @@ impl Renderer
             debug_gui,
             debug_gui_renderer: Mutex::new(debug_gui_renderer),
             render_frames: RwLock::new(render_frames),
-            #[cfg(debug_assertions)]
-            debug_render_mode: ArcSwapOption::empty(),
         })
     }
 
@@ -289,7 +278,7 @@ impl Renderer
 
     pub fn device(&self) -> &Device { &self.device }
     pub fn queue(&self) -> &Queue { &self.queue }
-    
+
     pub fn supports_feature(&self, feature: Features) -> bool
     {
         // cache this?

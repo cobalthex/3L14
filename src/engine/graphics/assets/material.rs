@@ -11,10 +11,19 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use crate::debug_label;
 use crate::engine::graphics::Renderer;
 
-#[derive(Serialize, Deserialize, Encode, Decode, Debug, FancyEnum)]
+#[derive(PartialEq, Serialize, Deserialize, Encode, Decode, Debug, FancyEnum)]
 pub enum MaterialClass
 {
     SimpleOpaque,
+}
+impl MaterialClass
+{
+    pub fn bind_layout(&self) -> &wgpu::BindGroupLayoutDescriptor
+    {
+        
+        
+        todo!()
+    }
 }
 
 #[repr(C)]

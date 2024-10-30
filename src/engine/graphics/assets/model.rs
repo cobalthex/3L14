@@ -29,6 +29,7 @@ impl Model
         // vertex/pixel shaders must be compatible with geometry and material layouts
         self.vertex_shader.key().hash(state);
         self.pixel_shader.key().hash(state);
+        // todo: validate that this is truly sufficient
     }
 }
 impl Asset for Model
@@ -61,7 +62,7 @@ impl AssetLifecycler for ModelLifecycler
     fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
     {
         let model_file: ModelFile = request.deserialize()?;
-        
+
         Ok(Model
         {
             geometry: request.load_dependency(model_file.geometry),
