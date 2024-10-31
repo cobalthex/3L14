@@ -86,6 +86,11 @@ pub fn fancy_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
                 }
             }
 
+            pub const fn variant_count() -> usize
+            {
+                (#variants_idents).len()
+            }
+
             #(#methods)*
         }
     };

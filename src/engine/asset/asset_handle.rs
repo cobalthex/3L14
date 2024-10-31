@@ -206,6 +206,7 @@ impl AsRef<AssetHandleInner> for UntypedAssetHandle
 unsafe impl Sync for UntypedAssetHandle { }
 unsafe impl Send for UntypedAssetHandle { }
 
+#[repr(transparent)]
 pub struct AssetHandle<A: Asset>
 {
     pub(super) inner: *const AssetHandleInner, // store v-table? (use box), would *maybe* allow calls to virtual methods (test?)

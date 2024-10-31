@@ -65,13 +65,14 @@ rand = "0.8.5"
 metrohash = "1.0.6"
 ddsfile = "0.5.2"
 serde = { version = "1.0.210", features = ["derive"] }
-bitcode = { version = "0.6.3", features = ["glam", "std"] }
+bitcode = { version = "0.6.3", features = ["arrayvec", "glam", "std"] }
 image = "0.25.2"
 hassle-rs = "0.11.0"
 toml = { version = "0.8.19", features = ["parse"] }
 base64 = "0.22.1"
 walkdir = "2.5.0"
 colog = "1.3.0"
+arrayvec = { version = "0.7.6", features = ["serde"] }
 
 [dev-dependencies]
 criterion = { version = "0.5.1" }

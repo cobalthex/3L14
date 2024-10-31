@@ -4,9 +4,10 @@ use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use metrohash::MetroHash64;
-use wgpu::{AddressMode, BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState, ColorTargetState, ColorWrites, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerDescriptor, ShaderStages, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
+use wgpu::{AddressMode, BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
+use crate::debug_label;
 use crate::engine::asset::{AssetHandle, AssetPayload};
-use crate::engine::graphics::assets::{Material, ShaderStage};
+use crate::engine::graphics::assets::{Material, MaterialClass, ShaderStage};
 use crate::engine::graphics::{Model, Renderer};
 
 type LayoutHash = u64;
@@ -58,10 +59,19 @@ impl PipelineCache
             return true;
         }
 
-        let AssetPayload::Available(geometry) = model.geometry.payload() else { return false; };
-        let AssetPayload::Available(material) = model.material.payload() else { return false; };
-        let AssetPayload::Available(vshader) = model.vertex_shader.payload() else { return false; };
-        let AssetPayload::Available(pshader) = model.pixel_shader.payload() else { return false; };
+        let Some(pipeline) = self.create_pipeline(&model, mode) else { return false; };
+
+        render_pass.set_pipeline(&pipeline);
+        self.pipelines.insert(layout_hash, pipeline);
+        true
+    }
+
+    fn create_pipeline(&mut self, model: &Model, mode: DebugMode) -> Option<RenderPipeline>
+    {
+        let AssetPayload::Available(geometry) = model.geometry.payload() else { return None; };
+        let AssetPayload::Available(material) = model.material.payload() else { return None; };
+        let AssetPayload::Available(vshader) = model.vertex_shader.payload() else { return None; };
+        let AssetPayload::Available(pshader) = model.pixel_shader.payload() else { return None; };
 
         // move up?
         puffin::profile_scope!("create render pipeline");
@@ -69,10 +79,30 @@ impl PipelineCache
         assert_eq!(vshader.stage, ShaderStage::Vertex);
         assert_eq!(pshader.stage, ShaderStage::Pixel);
 
+        let mut entries = Vec::new();
+
+        // TODO: these need to be cached
+        let shared_vertex_bind_group = self.renderer.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        {
+            label: debug_label!("Vertex shared uniform bindings"),
+            entries: entries.as_ref(),
+        });
+        entries.clear();
+
+        let shared_pixel_bind_group = self.renderer.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        {
+            label: debug_label!("Pixel shared uniform bindings"),
+            entries: entries.as_ref(),
+        });
+        entries.clear();
+
+        
+        entries.clear();
+
         let layout_dtor = PipelineLayoutDescriptor
         {
             label: None, // TODO
-            bind_group_layouts: &[],
+            bind_group_layouts: &[&shared_vertex_bind_group, &shared_pixel_bind_group, &material.bind_group_layout],
             push_constant_ranges: &[],
         };
         let layout = self.renderer.device().create_pipeline_layout(&layout_dtor);
@@ -122,9 +152,7 @@ impl PipelineCache
         };
 
         let pipeline = self.renderer.device().create_render_pipeline(&desc);
-        render_pass.set_pipeline(&pipeline);
-        self.pipelines.insert(layout_hash, pipeline);
-        true
+        Some(pipeline)
     }
 
     // todo
