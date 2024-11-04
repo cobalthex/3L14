@@ -37,28 +37,35 @@ impl AssetLoadRequest
         self.input.read_exact(&mut input)?;
         Ok(input)
     }
+    // 
+    // // Load another asset, but don't reload this asset if the requested asset is reloaded
+    // #[must_use]
+    // pub fn load_reference<A: Asset>(&self, asset_key: AssetKey) -> AssetHandle<A>
+    // {
+    //     // pattern matches Assets::load()
+    //     self.storage.enqueue_load(asset_key, |h| AssetLifecycleRequest::LoadFileBacked(h))
+    // }
 
-    // Load another asset
-    // Assets/lifecyclers are responsible for tracking/maintaining dependency references
+    // Load another asset and queue this asset for reloading if the requested asset is reloaded
     #[must_use]
     pub fn load_dependency<A: Asset>(&self, asset_key: AssetKey) -> AssetHandle<A>
     {
         // pattern matches Assets::load()
         self.storage.enqueue_load(asset_key, |h| AssetLifecycleRequest::LoadFileBacked(h))
     }
-
-    // Load a reference from a specified source
-    // Assets/lifecyclers are responsible for tracking/maintaining reference references
-    #[must_use]
-    pub fn load_dependency_from<A: Asset, R: AssetRead + 'static>(
-        &self,
-        asset_key: AssetKey,
-        input_data: R // take box?
-    ) -> AssetHandle<A>
-    {
-        // pattern matches Assets::load_from()
-        self.storage.enqueue_load(asset_key, |h| AssetLifecycleRequest::LoadFromMemory(h, Box::new(input_data)))
-    }
+    //
+    // // Load a reference from a specified source
+    // // Assets/lifecyclers are responsible for tracking/maintaining reference references
+    // #[must_use]
+    // pub fn load_dependency_from<A: Asset, R: AssetRead + 'static>(
+    //     &self,
+    //     asset_key: AssetKey,
+    //     input_data: R // take box?
+    // ) -> AssetHandle<A>
+    // {
+    //     // pattern matches Assets::load_from()
+    //     self.storage.enqueue_load(asset_key, |h| AssetLifecycleRequest::LoadFromMemory(h, Box::new(input_data)))
+    // }
 }
 
 pub trait AssetLifecycler: Sync + Send

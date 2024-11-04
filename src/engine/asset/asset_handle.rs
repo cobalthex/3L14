@@ -58,7 +58,6 @@ pub(super) struct AssetHandleInner
     // test only?
     ready_waker: Mutex<Option<Waker>>,
 
-    generation: AtomicU32, // updated <after> storing a payload
     is_reloading: AtomicBool, // cleared before payload is set
 
     payload: AtomicUsize, // if high bit is 1, stores Arc<Asset>
@@ -102,7 +101,6 @@ impl AssetHandleInner
 
         // ideally this entire function should be atomic (RwLock the whole thing?)
         self.is_reloading.store(false, Ordering::Release); // could this just be is_loading() ?
-        self.generation.fetch_add(1, Ordering::AcqRel); // TODO: verify ordering
 
         let mut locked = self.ready_waker.lock();
         if let Some(waker) = locked.take()
@@ -148,9 +146,6 @@ impl AssetHandleInner
     {
         self.ref_count.load(Ordering::Acquire)
     }
-
-    #[inline]
-    pub fn generation(&self) -> u32 { self.generation.load(Ordering::Acquire) }
 }
 
 #[derive(PartialEq, Eq)]
@@ -165,7 +160,6 @@ impl UntypedAssetHandle
             key,
             dropper,
             ready_waker: Mutex::new(None),
-            generation: AtomicU32::new(0),
             is_reloading: AtomicBool::new(false),
             payload: AtomicUsize::new(0), // pending
         };
@@ -275,10 +269,7 @@ impl<A: Asset> AssetHandle<A>
     {
         self.inner().ref_count()
     }
-
-    #[inline]
-    pub fn generation(&self) -> u32 { self.inner().generation() }
-    //
+    
     // // Is this asset + all dependencies loaded
     #[inline]
     pub fn is_loaded_recursive(&self) -> bool

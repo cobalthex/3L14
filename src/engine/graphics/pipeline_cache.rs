@@ -7,7 +7,7 @@ use metrohash::MetroHash64;
 use wgpu::{AddressMode, BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
 use crate::debug_label;
 use crate::engine::asset::{AssetHandle, AssetPayload};
-use crate::engine::graphics::assets::{Material, MaterialClass, ShaderStage};
+use crate::engine::graphics::assets::{Geometry, Material, MaterialClass, Shader, ShaderStage};
 use crate::engine::graphics::{Model, Renderer};
 
 type LayoutHash = u64;
@@ -26,8 +26,10 @@ struct Samplers
 
 pub struct PipelineCache
 {
-    pipelines: HashMap<u64, RenderPipeline>,
     renderer: Arc<Renderer>,
+    pipelines: HashMap<u64, RenderPipeline>,
+
+    // bind group+layout cache
 }
 impl PipelineCache
 {
@@ -35,20 +37,23 @@ impl PipelineCache
     {
         Self
         {
-            pipelines: HashMap::new(),
             renderer,
+            pipelines: HashMap::new(),
         }
     }
 
     // Try getting or creating a render pipeline and applying it to a render pass
     // Returns false if the pipeline was unable to be created
-    pub fn try_apply(&mut self, render_pass: &mut RenderPass, model: &Model, mode: DebugMode) -> bool
+    pub fn try_apply(&mut self, render_pass: &mut RenderPass, model: &Model, mesh: u32, mode: DebugMode) -> bool
     {
+        let model_surf = &model.surfaces[mesh as usize];
+
         // if shaders change their hashes and in turn asset keys should change
         let layout_hash =
         {
             let mut hasher = MetroHash64::default();
-            model.layout_hash(&mut hasher);
+            model_surf.vertex_shader.key().hash(&mut hasher);
+            model_surf.pixel_shader.key().hash(&mut hasher);
             mode.hash(&mut hasher);
             hasher.finish()
         };
@@ -59,19 +64,27 @@ impl PipelineCache
             return true;
         }
 
-        let Some(pipeline) = self.create_pipeline(&model, mode) else { return false; };
+        let AssetPayload::Available(geometry) = model.geometry.payload() else { return false; };
+        let AssetPayload::Available(material) = model_surf.material.payload() else { return false; };
+        let AssetPayload::Available(vshader) = model_surf.vertex_shader.payload() else { return false; };
+        let AssetPayload::Available(pshader) = model_surf.pixel_shader.payload() else { return false; };
+
+        let Some(pipeline) = self.create_pipeline(&geometry, &material, &vshader, &pshader, mode) else { return false; };
 
         render_pass.set_pipeline(&pipeline);
         self.pipelines.insert(layout_hash, pipeline);
         true
     }
 
-    fn create_pipeline(&mut self, model: &Model, mode: DebugMode) -> Option<RenderPipeline>
+    fn create_pipeline(
+        &mut self,
+        geometry: &Geometry,
+        material: &Material,
+        vshader: &Shader,
+        pshader: &Shader,
+        mode: DebugMode) -> Option<RenderPipeline>
     {
-        let AssetPayload::Available(geometry) = model.geometry.payload() else { return None; };
-        let AssetPayload::Available(material) = model.material.payload() else { return None; };
-        let AssetPayload::Available(vshader) = model.vertex_shader.payload() else { return None; };
-        let AssetPayload::Available(pshader) = model.pixel_shader.payload() else { return None; };
+        // TODO: this needs to handle hot-reloads
 
         // move up?
         puffin::profile_scope!("create render pipeline");

@@ -32,4 +32,10 @@ mod tests
         assert_eq!(Some("505"), TestEnum::C{a:1.0,b:true}.foo());
         assert_eq!(None, TestEnum::C{a:1.0,b:true}.bar());
     }
+    
+    #[test]
+    fn variant_count()
+    {
+        assert_eq!(TestEnum::variant_count(), 3);
+    }
 }

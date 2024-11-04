@@ -1,5 +1,4 @@
 use clap::Parser;
-use game_3l14::engine::graphics::assets::render_pipeline::RenderPipelineLifecycler;
 use game_3l14::engine::graphics::assets::texture::TextureLifecycler;
 use game_3l14::engine::graphics::assets::{Material, MaterialLifecycler, ShaderLifecycler};
 use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
@@ -174,8 +173,6 @@ fn main() -> ExitReason
 
         let material_cache = PipelineCache::new(renderer.clone());
 
-        let mut test_pipeline = None;
-
         let mut worlds_buf: [TransformUniform; MAX_ENTRIES_IN_WORLD_BUF] = array_init::array_init(|_| TransformUniform::default());
 
         let mut frame_number = FrameNumber(0);
@@ -304,83 +301,83 @@ fn main() -> ExitReason
             {
                 puffin::profile_scope!("Render frame");
 
-                if test_pipeline.is_none()
-                {
-                    let AssetPayload::Available(vsh) = test_vshader.payload() else { renderer.queue().submit([]); continue; };
-                    let AssetPayload::Available(psh) = test_pshader.payload() else { renderer.queue().submit([]); continue; };
-
-                    test_pipeline = Some(test_render_pipeline::new(
-                        &renderer,
-                        &vsh.module,
-                        &psh.module,
-                        &cam_bind_group_layout,
-                        &world_bind_group_layout,
-                        &material_cache.bind_group_layouts));
-                }
-
-                let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
-                {
-                    match test_model.payload()
-                    {
-                        AssetPayload::Pending =>
-                        {
-                            render_passes::test(
-                                &render_frame,
-                                &mut encoder,
-                                Some(colors::GOOD_PURPLE));
-                        }
-                        AssetPayload::Unavailable(_) =>
-                        {
-                            render_passes::test(
-                                &render_frame,
-                                &mut encoder,
-                                Some(colors::BAD_RED));
-                        }
-                        AssetPayload::Available(model) =>
-                        {
-                            let mut test_pass = render_passes::test(
-                                &render_frame,
-                                &mut encoder,
-                                Some(colors::CORNFLOWER_BLUE));
-
-                            test_pass.set_pipeline(test_pipeline.as_ref().unwrap());
-                            test_pass.set_bind_group(0, &cam_bind_group, &[]);
-
-                            let mut world_index = 0;
-
-                            // todo: use DrawIndirect?
-                            let world_transform = Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0));
-                            worlds_buf[world_index].world = world_transform;
-                            let offset = (world_index * std::mem::size_of::<TransformUniform>()) as u32;
-                            test_pass.set_bind_group(1, &world_bind_group, &[offset]);
-                            world_index += 1;
-
-                            for mesh in model.meshes()
-                            {
-                                test_pass.set_vertex_buffer(0, mesh.vertices());
-                                test_pass.set_index_buffer(mesh.indices(), mesh.index_format);
-
-                                let Some(mtl_bind_group) = material_cache.get_or_create_bind_group(&mesh.material, &renderer)
-                                    else { continue; };
-
-                                test_pass.set_bind_group(2, &mtl_bind_group, &[]);
-
-                                test_pass.draw_indexed(mesh.index_range(), 0, 0..1);
-                            }
-
-                            if world_index >= MAX_ENTRIES_IN_WORLD_BUF
-                            {
-                                world_uform_buf.unmap();
-                                world_index = 0;
-                                break; // testing
-                            }
-                        }
-                    }
-
-                }
-                // todo: only update what was written to
-                renderer.queue().write_buffer(&world_uform_buf, 0, unsafe { worlds_buf.as_u8_slice() });
-                renderer.queue().submit([encoder.finish()]);
+                // if test_pipeline.is_none()
+                // {
+                //     let AssetPayload::Available(vsh) = test_vshader.payload() else { renderer.queue().submit([]); continue; };
+                //     let AssetPayload::Available(psh) = test_pshader.payload() else { renderer.queue().submit([]); continue; };
+                // 
+                //     test_pipeline = Some(test_render_pipeline::new(
+                //         &renderer,
+                //         &vsh.module,
+                //         &psh.module,
+                //         &cam_bind_group_layout,
+                //         &world_bind_group_layout,
+                //         &material_cache.bind_group_layouts));
+                // }
+                // 
+                // let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
+                // {
+                //     match test_model.payload()
+                //     {
+                //         AssetPayload::Pending =>
+                //         {
+                //             render_passes::test(
+                //                 &render_frame,
+                //                 &mut encoder,
+                //                 Some(colors::GOOD_PURPLE));
+                //         }
+                //         AssetPayload::Unavailable(_) =>
+                //         {
+                //             render_passes::test(
+                //                 &render_frame,
+                //                 &mut encoder,
+                //                 Some(colors::BAD_RED));
+                //         }
+                //         AssetPayload::Available(model) =>
+                //         {
+                //             let mut test_pass = render_passes::test(
+                //                 &render_frame,
+                //                 &mut encoder,
+                //                 Some(colors::CORNFLOWER_BLUE));
+                // 
+                //             test_pass.set_pipeline(test_pipeline.as_ref().unwrap());
+                //             test_pass.set_bind_group(0, &cam_bind_group, &[]);
+                // 
+                //             let mut world_index = 0;
+                // 
+                //             // todo: use DrawIndirect?
+                //             let world_transform = Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0));
+                //             worlds_buf[world_index].world = world_transform;
+                //             let offset = (world_index * std::mem::size_of::<TransformUniform>()) as u32;
+                //             test_pass.set_bind_group(1, &world_bind_group, &[offset]);
+                //             world_index += 1;
+                // 
+                //             for mesh in model.meshes()
+                //             {
+                //                 test_pass.set_vertex_buffer(0, mesh.vertices());
+                //                 test_pass.set_index_buffer(mesh.indices(), mesh.index_format);
+                // 
+                //                 let Some(mtl_bind_group) = material_cache.get_or_create_bind_group(&mesh.material, &renderer)
+                //                     else { continue; };
+                // 
+                //                 test_pass.set_bind_group(2, &mtl_bind_group, &[]);
+                // 
+                //                 test_pass.draw_indexed(mesh.index_range(), 0, 0..1);
+                //             }
+                // 
+                //             if world_index >= MAX_ENTRIES_IN_WORLD_BUF
+                //             {
+                //                 world_uform_buf.unmap();
+                //                 world_index = 0;
+                //                 break; // testing
+                //             }
+                //         }
+                //     }
+                // 
+                // }
+                // // todo: only update what was written to
+                // renderer.queue().write_buffer(&world_uform_buf, 0, unsafe { worlds_buf.as_u8_slice() });
+                // renderer.queue().submit([encoder.finish()]);
             }
 
             // TODO: basic app stats can be displayed in release

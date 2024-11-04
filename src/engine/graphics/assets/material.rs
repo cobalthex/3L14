@@ -7,7 +7,7 @@ use std::error::Error;
 use std::sync::Arc;
 use arrayvec::ArrayVec;
 use proc_macros_3l14::FancyEnum;
-use wgpu::{BindGroup, BindGroupLayout, BindGroupLayoutEntry, BindingType, Buffer, BufferBindingType, BufferSize, BufferUsages, SamplerBindingType, ShaderStages};
+use wgpu::{BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferSize, BufferUsages, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use crate::debug_label;
 use crate::engine::graphics::Renderer;
@@ -43,7 +43,6 @@ pub struct Material
     pub props: Buffer,
     pub textures: ArrayVec<AssetHandle<Texture>, MAX_TEXTURE_BINDINGS>,
     pub bind_group_layout: BindGroupLayout,
-    pub bind_group: BindGroup,
 }
 impl Asset for Material
 {
@@ -60,7 +59,10 @@ pub struct MaterialLifecycler
 }
 impl MaterialLifecycler
 {
-    pub fn new(renderer: Arc<Renderer>) -> Self { Self { renderer } }
+    pub fn new(renderer: Arc<Renderer>) -> Self
+    {
+        Self { renderer }
+    }
 }
 impl AssetLifecycler for MaterialLifecycler
 {
@@ -82,11 +84,11 @@ impl AssetLifecycler for MaterialLifecycler
             usage: BufferUsages::UNIFORM,
         });
 
-        let mut entries = Vec::with_capacity(textures.len() + 2);
+        let mut layout_entries = ArrayVec::<_, { MAX_TEXTURE_BINDINGS + 2 }>::new();
 
-        entries.push(BindGroupLayoutEntry
+        layout_entries.push(BindGroupLayoutEntry
         {
-            binding: entries.len() as u32,
+            binding: layout_entries.len() as u32,
             visibility: ShaderStages::FRAGMENT,
             ty: BindingType::Buffer
             {
@@ -99,9 +101,9 @@ impl AssetLifecycler for MaterialLifecycler
 
         if !textures.is_empty()
         {
-            entries.push(BindGroupLayoutEntry
+            layout_entries.push(BindGroupLayoutEntry
             {
-                binding: entries.len() as u32,
+                binding: layout_entries.len() as u32,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Sampler(SamplerBindingType::Filtering),
                 count: None,
@@ -109,9 +111,9 @@ impl AssetLifecycler for MaterialLifecycler
 
             for texture in &textures
             {
-                entries.push(BindGroupLayoutEntry
+                layout_entries.push(BindGroupLayoutEntry
                 {
-                    binding: entries.len() as u32,
+                    binding: layout_entries.len() as u32,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::AccelerationStructure,
                     count: None,
@@ -123,14 +125,7 @@ impl AssetLifecycler for MaterialLifecycler
         let bind_group_layout = self.renderer.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
         {
             label: debug_label!(&format!("{:?} layout", request.asset_key)),
-            entries: entries.as_ref(),
-        });
-
-        let bind_group = self.renderer.device().create_bind_group(&wgpu::BindGroupDescriptor
-        {
-            label: debug_label!(&format!("{:?}", request.asset_key)),
-            layout: &bind_group_layout,
-            entries: &[],
+            entries: layout_entries.as_ref(),
         });
 
         Ok(Material
@@ -139,7 +134,6 @@ impl AssetLifecycler for MaterialLifecycler
             textures,
             props,
             bind_group_layout,
-            bind_group,
         })
     }
 }

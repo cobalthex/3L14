@@ -16,6 +16,11 @@ use std::time::Duration;
 
 type AssetHandleBank = HashMap<AssetKey, UntypedAssetHandle>;
 
+pub enum AssetNotification
+{
+    Reload(AssetKey),
+}
+
 pub(super) struct AssetsStorage
 {
     registered_asset_types: HashMap<AssetTypeId, RegisteredAssetType>,
@@ -23,6 +28,7 @@ pub(super) struct AssetsStorage
 
     handles: Mutex<AssetHandleBank>,
     lifecycle_channel: Sender<AssetLifecycleRequest>,
+    notification_channel: (Sender<AssetNotification>, Receiver<AssetNotification>),
 
     assets_root: PathBuf, // should be absolute
 }
@@ -103,13 +109,21 @@ impl AssetsStorage
         asset_key: AssetKey,
         input_fn: F) -> AssetHandle<A>
     {
-        let (_pre_existed, asset_handle) = self.create_or_update_handle(asset_key);
+        let (pre_existed, asset_handle) = self.create_or_update_handle(asset_key);
 
         // todo: what to do if already queued for load?
 
         if self.lifecyclers.contains_key(&asset_key.asset_type())
         {
             let request = input_fn(unsafe { asset_handle.clone().into_inner() });
+
+            // don't clear payload?
+            asset_handle.store_payload(AssetPayload::Pending);
+            if pre_existed
+            {
+                self.notification_channel.0.send(AssetNotification::Reload(asset_key)).unwrap(); // todo: error handling
+            }
+
             if self.lifecycle_channel.send(request).is_err()
             {
                 asset_handle.store_payload(AssetPayload::Unavailable(AssetLoadError::Shutdown));
@@ -285,14 +299,16 @@ impl Assets
         log::debug!("Serving assets from {assets_root:?}");
 
         // TODO: pqueue
-        
-        let (send, recv) = unbounded::<AssetLifecycleRequest>();
+
+        let (lifecycle_send, lifecycle_recv) = unbounded::<AssetLifecycleRequest>();
         let storage = Arc::new(AssetsStorage
         {
             registered_asset_types: asset_lifecyclers.registered_asset_types,
             lifecyclers: asset_lifecyclers.lifecyclers,
             handles: Mutex::new(AssetHandleBank::new()),
-            lifecycle_channel: send,
+            lifecycle_channel: lifecycle_send,
+            notification_channel: unbounded::<AssetNotification>(),
+
             assets_root,
         });
 
@@ -326,7 +342,7 @@ impl Assets
         {
             let thread = Builder::new()
                 .name(format!("Asset worker thread {}", i))
-                .spawn(AssetsStorage::asset_worker_fn(storage.clone(), recv.clone())).expect("Failed to create asset worker thread");
+                .spawn(AssetsStorage::asset_worker_fn(storage.clone(), lifecycle_recv.clone())).expect("Failed to create asset worker thread");
             Some(thread)
         });
 
@@ -336,6 +352,11 @@ impl Assets
             fs_watcher,
             worker_threads,
         }
+    }
+
+    pub fn subscribe_to_notifications(&self) -> Receiver<AssetNotification>
+    {
+        self.storage.notification_channel.1.clone()
     }
 
     fn try_fs_watch(assets_storage: Arc<AssetsStorage>) -> notify::Result<Debouncer<RecommendedWatcher, FileIdMap>>
@@ -449,7 +470,6 @@ impl<'i, 'a: 'i> DebugGui<'a> for Assets
                                 let inner = untyped_handle.as_ref();
                                 gui.label(format!("{key:#?}")); // right click to copy?
                                 gui.label(format!("{}", inner.ref_count()));
-                                gui.label(format!("{}", inner.generation()));
 
                                 // TODO: query availability
 

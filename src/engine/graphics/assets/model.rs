@@ -1,36 +1,39 @@
 use std::error::Error;
 use std::hash::{Hash, Hasher};
+use std::ops::Range;
 use std::sync::Arc;
 use bitcode::{Decode, Encode};
+use wgpu::BufferSlice;
 use crate::engine::asset::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadRequest, AssetPayload, AssetTypeId};
 use crate::engine::graphics::Renderer;
 use super::{Geometry, Material, Shader};
 
 #[derive(Encode, Decode)]
-pub struct ModelFile
+struct ModelFileSurface
 {
-    pub geometry: AssetKey,
     pub material: AssetKey,
     pub vertex_shader: AssetKey,
     pub pixel_shader: AssetKey,
 }
 
-pub struct Model
+#[derive(Encode, Decode)]
+pub struct ModelFile
 {
-    pub geometry: AssetHandle<Geometry>,
+    pub geometry: AssetKey,
+    pub surfaces: Box<[ModelFileSurface]>,
+}
+
+pub struct Surface
+{
     pub material: AssetHandle<Material>,
     pub vertex_shader: AssetHandle<Shader>,
     pub pixel_shader: AssetHandle<Shader>,
 }
-impl Model
+
+pub struct Model
 {
-    pub fn layout_hash(&self, state: &mut impl Hasher)
-    {
-        // vertex/pixel shaders must be compatible with geometry and material layouts
-        self.vertex_shader.key().hash(state);
-        self.pixel_shader.key().hash(state);
-        // todo: validate that this is truly sufficient
-    }
+    pub geometry: AssetHandle<Geometry>,
+    pub surfaces: Box<[Surface]>,
 }
 impl Asset for Model
 {
@@ -38,9 +41,12 @@ impl Asset for Model
     fn all_dependencies_loaded(&self) -> bool
     {
         self.geometry.is_loaded_recursive() &&
-        self.material.is_loaded_recursive() &&
-        self.vertex_shader.is_loaded_recursive() &&
-        self.pixel_shader.is_loaded_recursive()
+        self.surfaces.iter().all(|s|
+            {
+                s.material.is_loaded_recursive() &&
+                s.vertex_shader.is_loaded_recursive() &&
+                s.pixel_shader.is_loaded_recursive()
+            })
     }
 }
 
@@ -66,9 +72,15 @@ impl AssetLifecycler for ModelLifecycler
         Ok(Model
         {
             geometry: request.load_dependency(model_file.geometry),
-            material: request.load_dependency(model_file.material),
-            vertex_shader: request.load_dependency(model_file.vertex_shader),
-            pixel_shader: request.load_dependency(model_file.pixel_shader),
+            surfaces: model_file.surfaces.iter().map(|s|
+            {
+                Surface
+                {
+                    material: request.load_dependency(s.material),
+                    vertex_shader: request.load_dependency(s.vertex_shader),
+                    pixel_shader: request.load_dependency(s.pixel_shader),
+                }
+            }).collect(),
         })
     }
 }
