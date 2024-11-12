@@ -69,6 +69,12 @@ impl std::process::Termination for ExitReason
 pub trait CliArgs: clap::Parser + Debug { }
 impl<T: clap::Parser + Debug> CliArgs for T { }
 
+fn crate_name<T>() -> &'static str // hacky
+{
+    let name = std::any::type_name::<T>();
+    &name[0..name.find("::").unwrap()]
+}
+
 #[derive(Debug)]
 pub struct AppRun<TCliArgs: CliArgs>
 {
@@ -86,7 +92,15 @@ impl<TCliArgs: CliArgs> AppRun<TCliArgs>
 {
     pub fn startup(app_name: &'static str) -> Self
     {
-        colog::init();
+        #[cfg(debug_assertions)]
+        let default_log_levels = (log::LevelFilter::Warn, log::LevelFilter::Debug);
+        #[cfg(not(debug_assertions))]
+        let default_log_levels = (log::LevelFilter::Warn, log::LevelFilter::Info);
+        colog::basic_builder()
+            .filter_level(default_log_levels.0)
+            .filter_module(crate_name::<TCliArgs>(), default_log_levels.1)
+            .parse_default_env()
+            .init();
 
         let app_run = Self
         {

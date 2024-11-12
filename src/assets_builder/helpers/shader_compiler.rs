@@ -2,13 +2,13 @@ use std::error::Error;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use hassle_rs::{Dxc, DxcCompiler, DxcIncludeHandler, DxcLibrary, DxcValidator, Dxil, HassleError};
+use parking_lot::Mutex;
 use game_3l14::engine::graphics::assets::ShaderStage;
 
 pub struct ShaderCompilation<'s>
 {
-    pub source: &'s str,
-    pub filename: &'s str,
-    pub include_root: &'s Path,
+    pub source_text: &'s str,
+    pub filename: &'s Path,
     pub stage: ShaderStage,
     pub debug: bool,
     pub emit_symbols: bool,
@@ -18,39 +18,66 @@ pub struct ShaderCompilation<'s>
 // shader feature flags (turn into constants)
 // pre-defined vertex layouts
 
+struct Includer
+{
+    pub shaders_root: PathBuf,
+}
+impl DxcIncludeHandler for Includer
+{
+    fn load_source(&mut self, filename: String) -> Option<String>
+    {
+        match std::fs::File::open(self.shaders_root.join(filename))
+        {
+            Ok(mut f) =>
+                {
+                    let mut content = String::new();
+                    f.read_to_string(&mut content).ok()?;
+                    Some(content)
+                }
+            Err(_) => None,
+        }
+    }
+}
+
+
 pub struct ShaderCompiler
 {
-    shaders_root: PathBuf,
+    includer: Mutex<Includer>,
     dxc_compiler: DxcCompiler,
     dxc_library: DxcLibrary,
     dxc_validator: DxcValidator,
+    // these must be at the end b/c ^ don't correctly lifetime these
+    dxc: Dxc,
+    dxil: Dxil,
 }
 impl ShaderCompiler
 {
-    pub fn new(shaders_root: impl AsRef<Path>) -> Result<Self, impl Error>
+    pub fn new(shaders_root: impl AsRef<Path>, dxc_dir: Option<PathBuf>) -> Result<Self, Box<dyn Error>>
     {
-        let dxc = Dxc::new(None)?; // TODO: specify path
+        let dxc = Dxc::new(dxc_dir.clone())?;
         let dxc_compiler = dxc.create_compiler()?;
         let dxc_library = dxc.create_library()?;
 
-        let dxil = Dxil::new(None)?; // TODO: specify path
+        let dxil = Dxil::new(dxc_dir)?;
         let dxc_validator = dxil.create_validator()?;
 
         Ok(Self
         {
-            shaders_root: shaders_root.as_ref().to_path_buf(),
+            includer: Mutex::new(Includer { shaders_root: shaders_root.as_ref().to_path_buf() }),
+            dxc,
+            dxil,
             dxc_compiler,
             dxc_library,
             dxc_validator,
         })
     }
 
-    pub fn compile_hlsl(&mut self, output: &mut impl Write, compilation: ShaderCompilation) -> Result<usize, Box<dyn Error>>
+    pub fn compile_hlsl(&self, output: &mut impl Write, compilation: ShaderCompilation) -> Result<usize, Box<dyn Error>>
     {
         // note: mut self only needed for include header, can split out if necessary
 
         let entry_point = compilation.stage.entry_point();
-        let profile = format!("{}_6_0", compilation.stage.prefix());
+        let profile = format!("{}_6_0", compilation.stage.prefix().expect("Shader stage does not have a profile prefix!"));
 
         let mut defines = compilation.defines;
 
@@ -79,15 +106,16 @@ impl ShaderCompiler
 
         // matrix ordering? (Zpc vs Zpr for col vs row)
 
-        let blob = self.dxc_library.create_blob_with_encoding_from_str(compilation.source)?;
+        let blob = self.dxc_library.create_blob_with_encoding_from_str(compilation.source_text)?;
 
+        let mut includer = self.includer.lock();
         let spirv = match self.dxc_compiler.compile(
             &blob,
-            compilation.filename,
-            &entry_point,
+            compilation.filename.to_string_lossy().as_ref(),
+            &entry_point.expect("Shader stage does not have a entry point!"),
             &profile,
             &dxc_args,
-            Some(&mut self),
+            Some(&mut *includer),
             &defines,
         )
         {
@@ -123,19 +151,36 @@ impl ShaderCompiler
         Ok(module.len())
     }
 }
-impl DxcIncludeHandler for ShaderCompiler
+
+#[cfg(test)]
+mod tests
 {
-    fn load_source(&mut self, filename: String) -> Option<String>
+    use std::path::Path;
+    use super::*;
+
+    #[test]
+    pub fn compile_vertex_shader()
     {
-        match std::fs::File::open(self.shaders_root.join(filename))
+        let shader_source = r#"
+        float4 vs_main(float3 in_position : POSITION) : SV_POSITION
         {
-            Ok(mut f) =>
-                {
-                    let mut content = String::new();
-                    f.read_to_string(&mut content).ok()?;
-                    Some(content)
-                }
-            Err(_) => None,
+            return float4(in_position, 1.0);
         }
+        "#;
+
+        let dxc_dir = "3rdparty/dxc"; // hacky
+
+        let compiler = ShaderCompiler::new("$$ INVALID $$", Some(dxc_dir.into())).unwrap();
+
+        let mut output = Vec::new();
+        compiler.compile_hlsl(&mut output, ShaderCompilation
+        {
+            source_text: shader_source,
+            filename: Path::new("TEST_FILE.vs.hlsl"),
+            stage: ShaderStage::Vertex,
+            debug: false,
+            emit_symbols: false,
+            defines: vec![],
+        }).unwrap();
     }
 }

@@ -1,26 +1,45 @@
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
-use game_3l14::engine::asset::AssetTypeId;
+use crate::helpers::shader_compiler::{ShaderCompilation, ShaderCompiler};
+use arrayvec::ArrayVec;
+use game_3l14::engine::alloc_slice::alloc_u8_slice;
+use game_3l14::engine::asset::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use game_3l14::engine::graphics::assets::material::{MaterialFile, PbrProps};
-use game_3l14::engine::graphics::assets::{TextureFile, TextureFilePixelFormat};
-use game_3l14::engine::graphics::{ModelFile, ModelFileMesh, ModelFileMeshIndices, ModelFileMeshVertices, Rgba};
-use game_3l14::engine::{AsU8Slice, IntoU8Box, AABB};
+use game_3l14::engine::graphics::assets::{GeometryFile, GeometryMesh, IndexFormat, MaterialClass, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat, VertexLayout};
+use game_3l14::engine::graphics::{ModelFile, ModelFileSurface, Surface};
+use game_3l14::engine::{as_u8_array, AABB};
 use gltf::image::Format;
-use gltf::mesh::util::{ReadIndices, ReadNormals, ReadTexCoords};
+use gltf::mesh::util::ReadIndices;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::io::Write;
-use std::path::Path;
+use std::mem;
+use std::path::{Path, PathBuf};
 use unicase::UniCase;
-use wgpu::{BufferAddress, VertexAttribute, VertexFormat};
-use crate::helpers::shader_compiler::ShaderCompiler;
+
+#[derive(Hash)]
+struct ShaderHash
+{
+    stage: ShaderStage,
+    material_class: MaterialClass,
+    vertex_layout: VertexLayout,
+    // custom file name
+}
+
+#[repr(C)]
+struct StaticSimpleVertex
+{
+    position: [f32; 3],
+    normal: [f32; 3],
+    tex_coord: [f32; 2],
+    color: [u8; 4],
+}
 
 #[derive(Debug)]
 pub enum ModelImportError
 {
     NoPositionData,
     NoNormalData,
-    NoTexcoordData,
     NoIndexData,
     MismatchedVertexCount,
 }
@@ -39,14 +58,17 @@ pub struct ModelBuildConfig
 pub struct ModelBuilder
 {
     shader_compiler: ShaderCompiler,
+    shaders_root: PathBuf,
 }
 impl ModelBuilder
 {
     pub fn new(assets_root: impl AsRef<Path>) -> Self
     {
+        let shaders_root = assets_root.as_ref().join("shaders");
         Self
         {
-            shader_compiler: ShaderCompiler::new(assets_root.as_ref()).expect("Failed to create shader compiler"), // return error?
+            shader_compiler: ShaderCompiler::new(assets_root.as_ref(), None).expect("Failed to create shader compiler"), // return error?
+            shaders_root,
         }
     }
 }
@@ -88,194 +110,279 @@ impl AssetBuilder for ModelBuilder
 
             for gltf_mesh in document.meshes()
             {
-                let model = parse_gltf(gltf_mesh, &buffers, &images, outputs)?;
-                let mut model_output = outputs.add_output(AssetTypeId::Model)?;
-
-                for mesh in &model.meshes
-                {
-                    model_output.depends_on(mesh.material);
-                }
-
-                model_output.serialize(&model)?;
-                model_output.finish()?;
+                self.parse_gltf(gltf_mesh, &buffers, &images, outputs)?;
             }
         }
 
         Ok(())
     }
 }
-
-
-fn parse_gltf(in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &Vec<gltf::image::Data>, outputs: &mut BuildOutputs) -> Result<ModelFile, Box<dyn Error>>
+impl ModelBuilder
 {
-    let mut meshes: Vec<ModelFileMesh> = Vec::new();
-    let mut model_bounds = AABB::max_min();
-
-    // todo: iter.map() ?
-    for in_prim in in_mesh.primitives()
+    fn parse_gltf(&self, in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &Vec<gltf::image::Data>, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
-        let bb = in_prim.bounding_box();
-        let mesh_bounds = AABB::new(bb.min.into(), bb.max.into());
-        model_bounds.union_with(mesh_bounds);
+        let mut model_output = outputs.add_output(AssetTypeId::Model)?;
 
-        let prim_reader = in_prim.reader(|b| Some(&buffers[b.index()]));
-        let positions = prim_reader.read_positions().ok_or(ModelImportError::NoPositionData)?; // not required?
-        let mut normals = prim_reader.read_normals();
-        let mut tangents = prim_reader.read_tangents();
-        let mut tex_coords = prim_reader.read_tex_coords(0).map(|t| t.into_f32());
-        let mut colors = prim_reader.read_colors(0).map(|c| c.into_rgba_u8());
+        let mut meshes: Vec<GeometryMesh> = Vec::new();
+        let mut surfaces: Vec<ModelFileSurface> = Vec::new();
+        let mut model_bounds = AABB::max_min();
 
-        // todo: import settings define which vertex attributes (extra colors/texcoords)
-
-        let mut layout = Vec::new();
-        let mut next_offset = 0;
-        let push_attr = |format|
-        {
-            layout.push(VertexAttribute
-            {
-                format,
-                offset: next_offset,
-                shader_location: layout.len() as wgpu::ShaderLocation,
-            });
-            next_offset += format.size();
-        };
-        push_attr(VertexFormat::Float32x3);
-        if normals.is_some() { push_attr(VertexFormat::Float32x3) };
-        if tex_coords.is_some() { push_attr(VertexFormat::Float32x2) };
-        if colors.is_some() { push_attr(VertexFormat::Uint32) };
-
-        let mut vertices = Vec::new();
         let mut vertex_count = 0;
-        for pos in positions.into_iter()
+        let mut vertex_layout = VertexLayout::StaticSimple;
+        let mut vertices = Vec::new();
+        let mut index_count = 0;
+        let mut index_format = IndexFormat::U16;
+        let mut indices = Vec::new();
+
+        // todo: iter.map() ?
+        for in_prim in in_mesh.primitives()
         {
-            vertex_count += 1; // TODO: test vertex/index count < 2^32
-            // TODO: byte order
+            let bb = in_prim.bounding_box();
+            let mesh_bounds = AABB::new(bb.min.into(), bb.max.into());
+            model_bounds.union_with(mesh_bounds);
 
-            vertices.write_all(unsafe { pos.as_u8_slice() })?;
+            let prim_reader = in_prim.reader(|b| Some(&buffers[b.index()]));
+            let positions = prim_reader.read_positions().ok_or(ModelImportError::NoPositionData)?; // not required?
+            let mut normals = prim_reader.read_normals();
+            let mut tangents = prim_reader.read_tangents();
+            let mut tex_coords = prim_reader.read_tex_coords(0).map(|t| t.into_f32());
+            let mut colors = prim_reader.read_colors(0).map(|c| c.into_rgba_u8());
 
-            // todo: iterate all available attributes?
-
-            if let Some(rn) = &mut normals
+            let mut mesh_vertex_count = 0;
+            let mut mesh_index_count = 0;
+            for pos in positions.into_iter()
             {
-                let norm = rn.next().ok_or(ModelImportError::MismatchedVertexCount)?;
-                vertices.write_all(unsafe { norm.as_u8_slice() })?;
-            }
+                mesh_vertex_count += 1;
+                // TODO: byte order
 
-            if let Some(rt) = &mut tangents
-            {
-                let tan = rt.next().ok_or(ModelImportError::MismatchedVertexCount)?;
-                vertices.write_all(unsafe { tan.as_u8_slice() })?;
-            }
-
-            if let Some(rtc) = &mut tex_coords
-            {
-                let texcoord = rtc.next().ok_or(ModelImportError::MismatchedVertexCount)?;
-                vertices.write_all(unsafe { texcoord.as_u8_slice() })?;
-            }
-
-            if let Some(cl) = &mut colors
-            {
-                let col = cl.next().ok_or(ModelImportError::MismatchedVertexCount)?;
-                vertices.write_all(unsafe { col.as_u8_slice() })?;
-            }
-        };
-
-        let indices = match prim_reader.read_indices().ok_or(ModelImportError::NoIndexData)?
-        {
-            ReadIndices::U8(u8s) =>
-            {
-                // TODO: endianness
-                ModelFileMeshIndices::U16(u8s.map(|u| (u as u16).to_le_bytes()).collect())
-            },
-            ReadIndices::U16(u16s) =>
-            {
-                ModelFileMeshIndices::U16(u16s.map(|u| u.to_le_bytes()).collect())
-            },
-            ReadIndices::U32(u32s) =>
-            {
-                ModelFileMeshIndices::U32(u32s.map(|u| u.to_le_bytes()).collect())
-            },
-        };
-
-        let mut textures = Vec::new();
-
-        let pbr = in_prim.material().pbr_metallic_roughness();
-        if let Some(tex) = pbr.base_color_texture()
-        {
-            let tex_index = tex.texture().source().index();
-            let tex_data = &images[tex_index];
-
-            let mut tex_output = outputs.add_output(AssetTypeId::Texture)?;
-
-            tex_output.serialize(&TextureFile
-            {
-                width: tex_data.width,
-                height: tex_data.height,
-                depth: 1,
-                mip_count: 1,
-                mip_offsets: Default::default(),
-                pixel_format: match tex_data.format
+                let vertex = StaticSimpleVertex
                 {
-                    Format::R8 => TextureFilePixelFormat::R8,
-                    Format::R8G8 => TextureFilePixelFormat::Rg8,
-                    Format::R8G8B8 => todo!("R8G8B8 textures"),
-                    Format::R8G8B8A8 => TextureFilePixelFormat::Rgba8,
-                    Format::R16 => todo!("R16 textures"),
-                    Format::R16G16 => todo!("R16G16 textures"),
-                    Format::R16G16B16 => todo!("R16G16B16 textures"),
-                    Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
-                    Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
-                    Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
-                }
-            })?;
+                    position: pos,
+                    normal: normals.as_mut().and_then(|mut r| r.next()).unwrap_or([0.0, 0.0, 1.0]),
+                    tex_coord: tex_coords.as_mut().and_then(|mut r| r.next()).unwrap_or([0.0, 0.0]),
+                    color: colors.as_mut().and_then(|mut r| r.next()).unwrap_or([u8::MAX, u8::MAX, u8::MAX, u8::MAX]),
+                };
 
-            tex_output.write_all(&tex_data.pixels)?;
+                vertices.write_all(unsafe { as_u8_array(&vertex) })?;
+            };
 
-            textures.push(tex_output.finish()?);
+            // TODO: create indices if missing
+
+            match prim_reader.read_indices()
+            {
+                None => todo!("Need to add create-index fallback support"),
+                Some(in_indices) =>
+                    {
+                        match in_indices
+                        {
+                            ReadIndices::U8(u8s) => todo!("is this common?"),
+                            ReadIndices::U16(u16s) =>
+                            {
+                                if let IndexFormat::U32 = index_format
+                                {
+                                    for i in u16s
+                                    {
+                                        indices.write_all(&(i as u32).to_le_bytes())?;
+                                        mesh_index_count += 1;
+                                    }
+                                } else {
+                                    for i in u16s
+                                    {
+                                        indices.write_all(&i.to_le_bytes())?;
+                                        mesh_index_count += 1;
+                                    }
+                                }
+                            }
+                            ReadIndices::U32(u32s) =>
+                            {
+                                if let IndexFormat::U16 = index_format
+                                {
+                                    let mut upsized = Vec::new();
+                                    for u in indices
+                                        .chunks(mem::size_of::<u16>())
+                                        .map(|c| (u16::from_le_bytes(c.try_into().unwrap()) as u32).to_le_bytes())
+                                    {
+                                        upsized.write_all(&u)?;
+                                    }
+                                    mem::swap(&mut indices, &mut upsized);
+                                    index_format = IndexFormat::U32;
+                                }
+                                for i in u32s
+                                {
+                                    indices.write_all(&i.to_le_bytes())?;
+                                }
+                            }
+                        };
+                    }
+            }
+
+            let mut textures = ArrayVec::new();
+
+            let pbr = in_prim.material().pbr_metallic_roughness();
+            if let Some(tex) = pbr.base_color_texture()
+            {
+                let tex_index = tex.texture().source().index();
+                let tex_data = &images[tex_index];
+
+                let mut tex_output = outputs.add_output(AssetTypeId::Texture)?;
+
+                tex_output.serialize(&TextureFile
+                {
+                    width: tex_data.width,
+                    height: tex_data.height,
+                    depth: 1,
+                    mip_count: 1,
+                    mip_offsets: Default::default(),
+                    pixel_format: match tex_data.format
+                    {
+                        Format::R8 => TextureFilePixelFormat::R8,
+                        Format::R8G8 => TextureFilePixelFormat::Rg8,
+                        Format::R8G8B8 => todo!("R8G8B8 textures"),
+                        Format::R8G8B8A8 => TextureFilePixelFormat::Rgba8,
+                        Format::R16 => todo!("R16 textures"),
+                        Format::R16G16 => todo!("R16G16 textures"),
+                        Format::R16G16B16 => todo!("R16G16B16 textures"),
+                        Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
+                        Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
+                        Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
+                    }
+                })?;
+
+                tex_output.write_all(&tex_data.pixels)?;
+
+                let tex = tex_output.finish()?;
+                textures.try_push(tex)?;
+                model_output.depends_on(tex);
+            }
+
+            let material_class = MaterialClass::SimpleOpaque; // TODO
+            let material =
+            {
+                // call into MaterialBuilder?
+                let mut mtl_output = outputs.add_output(AssetTypeId::RenderMaterial)?;
+
+                mtl_output.depends_on_multiple(&textures);
+
+                mtl_output.serialize(&MaterialFile
+                {
+                    class: material_class,
+                    textures,
+                    props: alloc_u8_slice(PbrProps
+                    {
+                        albedo_color: pbr.base_color_factor().into(),
+                        metallicity: pbr.metallic_factor(),
+                        roughness: pbr.roughness_factor(),
+                    })?,
+                })?;
+                mtl_output.finish()?
+            };
+
+            let vertex_shader_key = AssetKeySynthHash::generate(ShaderHash
+            {
+                stage: ShaderStage::Vertex,
+                material_class,
+                vertex_layout,
+            });
+            const FORCE_BUILD_SHADERS: bool = true;
+            if let Some(mut vshader_output) = outputs.add_synthetic(AssetTypeId::Shader, vertex_shader_key, FORCE_BUILD_SHADERS)?
+            {
+                log::debug!("Compiling vertex shader {:?}", vshader_output.asset_key());
+
+                let shader_file = self.shaders_root.join(format!("{material_class:?}.vs.hlsl"));
+
+                let shader_source = std::fs::read_to_string(&shader_file)?;
+                let mut shader_module = Vec::new();
+                let vshader = self.shader_compiler.compile_hlsl(&mut shader_module, ShaderCompilation
+                {
+                    source_text: &shader_source,
+                    filename: &shader_file, // todo: for debugging, use asset key?
+                    stage: ShaderStage::Vertex,
+                    debug: true,
+                    emit_symbols: false,
+                    defines: vec![],
+                })?;
+                vshader_output.serialize(&ShaderFile
+                {
+                    stage: ShaderStage::Vertex,
+                    module_bytes: shader_module.into_boxed_slice(),
+                })?;
+                vshader_output.finish()?;
+            }
+
+            let pixel_shader_key = AssetKeySynthHash::generate(ShaderHash
+            {
+                stage: ShaderStage::Pixel,
+                material_class,
+                vertex_layout,
+            });
+            if let Some(mut pshader_output) = outputs.add_synthetic(AssetTypeId::Shader, pixel_shader_key, FORCE_BUILD_SHADERS)?
+            {
+                log::debug!("Compiling pixel shader {:?}", pshader_output.asset_key());
+
+                let shader_file = self.shaders_root.join(format!("{material_class:?}.ps.hlsl"));
+
+                let shader_source = std::fs::read_to_string(&shader_file)?;
+                let mut shader_module = Vec::new();
+                let _ = self.shader_compiler.compile_hlsl(&mut shader_module, ShaderCompilation
+                {
+                    source_text: &shader_source,
+                    filename: &shader_file, // todo: for debugging, use asset key?
+                    stage: ShaderStage::Pixel,
+                    debug: true,
+                    emit_symbols: false,
+                    defines: vec![], // TODO
+                })?;
+                pshader_output.serialize(&ShaderFile
+                {
+                    stage: ShaderStage::Pixel,
+                    module_bytes: shader_module.into_boxed_slice(),
+                })?;
+                pshader_output.finish()?;
+            }
+
+            let mesh_bounds = AABB::new(bb.min.into(), bb.max.into());
+            model_bounds.union_with(mesh_bounds);
+
+            meshes.push(GeometryMesh
+            {
+                bounds: mesh_bounds,
+                vertex_range: (vertex_count, vertex_count + mesh_vertex_count),
+                index_range: (index_count, index_count + mesh_index_count),
+            });
+
+            surfaces.push(ModelFileSurface
+            {
+                material,
+                vertex_shader: AssetKey::synthetic(AssetTypeId::Shader, vertex_shader_key),
+                pixel_shader: AssetKey::synthetic(AssetTypeId::Shader, pixel_shader_key),
+            });
+
+            vertex_count += mesh_vertex_count;
+            index_count += mesh_index_count;
         }
 
-        let material =
+        let geometry =
         {
-            // call into MaterialBuilder?
-            let mut mtl_output = outputs.add_output(AssetTypeId::RenderMaterial)?;
+            let mut geom_output = outputs.add_output(AssetTypeId::Geometry)?;
 
-            mtl_output.depends_on_multiple(&textures);
-
-            mtl_output.serialize(&MaterialFile
+            geom_output.serialize(&GeometryFile
             {
-                textures: textures.into_boxed_slice(),
-                pbr_props: PbrProps
-                {
-                    albedo_color: pbr.base_color_factor().into(),
-                    metallicity: pbr.metallic_factor(),
-                    roughness: pbr.roughness_factor(),
-                },
+                bounds: model_bounds,
+                vertex_layout,
+                vertices: vertices.into_boxed_slice(),
+                index_format,
+                indices: indices.into_boxed_slice(),
+                meshes: meshes.into_boxed_slice(),
             })?;
-            mtl_output.finish()?
+            geom_output.finish()?
         };
 
-        let mesh_bounds = AABB::new(bb.min.into(), bb.max.into());
-        model_bounds.union_with(mesh_bounds);
-
-        meshes.push(ModelFileMesh
+        model_output.serialize(&ModelFile
         {
-            vertices: ModelFileMeshVertices
-            {
-                stride: next_offset as u32,
-                count: vertex_count,
-                layout: unsafe { layout.into_u8_box() },
-                data: vertices.into_boxed_slice(),
-            },
-            indices,
-            bounds: mesh_bounds,
-        });
-
-        // create ModelLook?
+            geometry,
+            surfaces: surfaces.into_boxed_slice(),
+        })?;
+        model_output.finish()?;
+        Ok(())
     }
-
-    Ok(ModelFile
-    {
-        bounds: model_bounds,
-        meshes: meshes.into_boxed_slice(),
-    })
 }

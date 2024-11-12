@@ -31,11 +31,7 @@ unsafe fn alloc_slice_internal<T>(n: usize) -> Result<(*mut u8, usize), AllocErr
 /// It is up to the caller to safely initialize the data before it is dropped
 pub unsafe fn alloc_slice_uninit<T>(n: usize) -> Result<Box<[T]>, AllocError>
 {
-    let alloc = match alloc_slice_internal::<T>(n)
-    {
-        Ok(a) => a,
-        Err(e) => return Err(e),
-    };
+    let alloc = alloc_slice_internal::<T>(n)?;
 
     // necessary? (allocator may do already)
     #[cfg(debug_assertions)]
@@ -52,12 +48,7 @@ pub fn alloc_slice_default<T: Default>(n: usize) -> Result<Box<[T]>, AllocError>
 {
     unsafe
     {
-        let alloc = match alloc_slice_internal::<T>(n)
-        {
-            Ok(a) => a,
-            Err(e) => return Err(e),
-        };
-
+        let alloc = alloc_slice_internal::<T>(n)?;
         let t_ptr: *mut T = alloc.0.cast();
         for i in 0..n
         {
@@ -71,12 +62,7 @@ pub fn alloc_slice_copy<T: Copy>(n: usize, val: T) -> Result<Box<[T]>, AllocErro
 {
     unsafe
     {
-        let alloc = match alloc_slice_internal::<T>(n)
-        {
-            Ok(a) => a,
-            Err(e) => return Err(e),
-        };
-
+        let alloc = alloc_slice_internal::<T>(n)?;
         let t_ptr: *mut T = alloc.0.cast();
         for i in 0..n
         {
@@ -90,17 +76,23 @@ pub fn alloc_slice_fn<T, F: Fn(usize) -> T>(n: usize, create_fn: F) -> Result<Bo
 {
     unsafe
     {
-        let alloc = match alloc_slice_internal::<T>(n)
-        {
-            Ok(a) => a,
-            Err(e) => return Err(e),
-        };
-
+        let alloc = alloc_slice_internal::<T>(n)?;
         let t_ptr: *mut T = alloc.0.cast();
         for i in 0..n
         {
             ptr::write(t_ptr.add(i), create_fn(i));
         }
         Ok(Box::from_raw(std::slice::from_raw_parts_mut(t_ptr, n)))
+    }
+}
+
+pub fn alloc_u8_slice<T>(t: T) -> Result<Box<[u8]>, AllocError>
+{
+    unsafe
+    {
+        let alloc = alloc_slice_internal::<T>(1)?;
+        let t_ptr: *mut T = alloc.0.cast();
+        ptr::write(t_ptr, t);
+        Ok(Box::from_raw(std::slice::from_raw_parts_mut(alloc.0, alloc.1)))
     }
 }

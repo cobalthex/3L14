@@ -7,14 +7,14 @@ use std::error::Error;
 use std::sync::Arc;
 use arrayvec::ArrayVec;
 use proc_macros_3l14::FancyEnum;
-use wgpu::{BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferSize, BufferUsages, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages};
+use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferSize, BufferUsages, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, TextureSampleType, TextureViewDimension};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use crate::debug_label;
 use crate::engine::graphics::Renderer;
 
-pub const MAX_TEXTURE_BINDINGS: usize = 16;
+pub const MAX_MATERIAL_TEXTURE_BINDINGS: usize = 16;
 
-#[derive(PartialEq, Serialize, Deserialize, Encode, Decode, Debug, FancyEnum)]
+#[derive(PartialEq, Eq, Serialize, Deserialize, Encode, Decode, Debug, FancyEnum, Hash, Clone, Copy)]
 pub enum MaterialClass
 {
     SimpleOpaque,
@@ -33,7 +33,7 @@ pub struct PbrProps
 pub struct MaterialFile
 {
     pub class: MaterialClass,
-    pub textures: ArrayVec<AssetKey, MAX_TEXTURE_BINDINGS>,
+    pub textures: ArrayVec<AssetKey, MAX_MATERIAL_TEXTURE_BINDINGS>,
     pub props: Box<[u8]>,
 }
 
@@ -41,8 +41,8 @@ pub struct Material
 {
     pub class: MaterialClass,
     pub props: Buffer,
-    pub textures: ArrayVec<AssetHandle<Texture>, MAX_TEXTURE_BINDINGS>,
-    pub bind_group_layout: BindGroupLayout,
+    pub bind_layout: BindGroupLayout,
+    pub textures: ArrayVec<AssetHandle<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS>,
 }
 impl Asset for Material
 {
@@ -72,7 +72,7 @@ impl AssetLifecycler for MaterialLifecycler
     {
         let mtl_file: MaterialFile = request.deserialize()?;
 
-        let textures: ArrayVec<AssetHandle<Texture>, MAX_TEXTURE_BINDINGS> = mtl_file.textures.iter().map(|t|
+        let textures: ArrayVec<AssetHandle<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS> = mtl_file.textures.iter().map(|t|
         {
            request.load_dependency(*t)
         }).collect();
@@ -84,20 +84,26 @@ impl AssetLifecycler for MaterialLifecycler
             usage: BufferUsages::UNIFORM,
         });
 
-        let mut layout_entries = ArrayVec::<_, { MAX_TEXTURE_BINDINGS + 2 }>::new();
+        let mut layout_entries = Vec::new();
 
-        layout_entries.push(BindGroupLayoutEntry
+        match mtl_file.class
         {
-            binding: layout_entries.len() as u32,
-            visibility: ShaderStages::FRAGMENT,
-            ty: BindingType::Buffer
+            MaterialClass::SimpleOpaque =>
             {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: BufferSize::new(props.size()),
-            },
-            count: None,
-        });
+                layout_entries.push(BindGroupLayoutEntry
+                {
+                    binding: layout_entries.len() as u32,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer
+                    {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: BufferSize::new(props.size()),
+                    },
+                    count: None,
+                });
+            }
+        }
 
         if !textures.is_empty()
         {
@@ -115,17 +121,22 @@ impl AssetLifecycler for MaterialLifecycler
                 {
                     binding: layout_entries.len() as u32,
                     visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::AccelerationStructure,
-                    count: None,
+                    ty: BindingType::Texture
+                    {
+                        // TODO, this needs to come from the material class or the textures directly
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None, // TODO: this is probably easier
                 });
             }
         }
 
-        // TODO: this should be stored on the lifecycler, one per material class
-        let bind_group_layout = self.renderer.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        let bind_layout = self.renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
         {
             label: debug_label!(&format!("{:?} layout", request.asset_key)),
-            entries: layout_entries.as_ref(),
+            entries: &layout_entries,
         });
 
         Ok(Material
@@ -133,7 +144,7 @@ impl AssetLifecycler for MaterialLifecycler
             class: mtl_file.class,
             textures,
             props,
-            bind_group_layout,
+            bind_layout,
         })
     }
 }

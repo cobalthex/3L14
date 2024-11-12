@@ -1,16 +1,14 @@
-use std::collections::hash_map::Entry;
+use crate::debug_label;
+use crate::engine::asset::AssetPayload;
+use crate::engine::graphics::assets::{Geometry, Material, MaterialClass, Shader, ShaderStage};
+use crate::engine::graphics::{Model, Renderer};
+use metrohash::MetroHash64;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use metrohash::MetroHash64;
-use wgpu::{AddressMode, BindGroup, BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
-use crate::debug_label;
-use crate::engine::asset::{AssetHandle, AssetPayload};
-use crate::engine::graphics::assets::{Geometry, Material, MaterialClass, Shader, ShaderStage};
-use crate::engine::graphics::{Model, Renderer};
-
-type LayoutHash = u64;
+use wgpu::{AddressMode, BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
 
 #[derive(Debug, Clone, Copy, Hash)]
 pub enum DebugMode // debug only?
@@ -19,26 +17,82 @@ pub enum DebugMode // debug only?
     Wireframe,
 }
 
-struct Samplers
+pub struct CommonBindLayouts
 {
-    default: Sampler, // 'quality-backed' sampler
+    pub camera: BindGroupLayout,
+    pub world_transform: BindGroupLayout,
 }
 
 pub struct PipelineCache
 {
     renderer: Arc<Renderer>,
-    pipelines: HashMap<u64, RenderPipeline>,
 
-    // bind group+layout cache
+    // Todo: better threading solve? (Reference tracking makes this a pain)
+
+    pipeline_layouts: Mutex<HashMap<u64, PipelineLayout>>,
+    pipelines: Mutex<HashMap<u64, RenderPipeline>>,
+
+    common_bind_layouts: CommonBindLayouts, // TODO: don't hard-code ?
+
+    bind_groups: Mutex<HashMap<u64, BindGroup>>,
 }
 impl PipelineCache
 {
+    // todo: this differently
+    pub fn common_layouts(&self) -> &CommonBindLayouts { &self.common_bind_layouts }
+
     pub fn new(renderer: Arc<Renderer>) -> Self
     {
+        let common_bind_layouts = CommonBindLayouts
+        {
+            camera: renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
+            {
+                entries:
+                &[
+                    wgpu::BindGroupLayoutEntry
+                    {
+                        binding: 0,
+                        visibility: ShaderStages::VERTEX,
+                        ty: BindingType::Buffer
+                        {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }
+                ],
+                label: debug_label!("Camera vsh bind layout"),
+            }),
+
+            world_transform: renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
+            {
+                entries:
+                &[
+                    BindGroupLayoutEntry
+                    {
+                        binding: 0,
+                        visibility: ShaderStages::VERTEX,
+                        ty: BindingType::Buffer
+                        {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: true,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }
+                ],
+                label: debug_label!("World transform vsh bind layout"),
+            }),
+        };
+
         Self
         {
             renderer,
-            pipelines: HashMap::new(),
+            pipeline_layouts: Mutex::default(),
+            pipelines: Mutex::default(),
+            common_bind_layouts,
+            bind_groups: Mutex::default(),
         }
     }
 
@@ -49,16 +103,17 @@ impl PipelineCache
         let model_surf = &model.surfaces[mesh as usize];
 
         // if shaders change their hashes and in turn asset keys should change
-        let layout_hash =
+        let pipeline_hash =
         {
             let mut hasher = MetroHash64::default();
             model_surf.vertex_shader.key().hash(&mut hasher);
             model_surf.pixel_shader.key().hash(&mut hasher);
-            mode.hash(&mut hasher);
+            // mode.hash(&mut hasher); // TODO
             hasher.finish()
         };
 
-        if let Some(pipeline) = self.pipelines.get(&layout_hash)
+        let mut pipelines = self.pipelines.lock();
+        if let Some(pipeline) = pipelines.get(&pipeline_hash)
         {
             render_pass.set_pipeline(pipeline);
             return true;
@@ -72,58 +127,56 @@ impl PipelineCache
         let Some(pipeline) = self.create_pipeline(&geometry, &material, &vshader, &pshader, mode) else { return false; };
 
         render_pass.set_pipeline(&pipeline);
-        self.pipelines.insert(layout_hash, pipeline);
+        pipelines.insert(pipeline_hash, pipeline);
+
         true
     }
 
     fn create_pipeline(
-        &mut self,
+        &self,
         geometry: &Geometry,
         material: &Material,
         vshader: &Shader,
         pshader: &Shader,
         mode: DebugMode) -> Option<RenderPipeline>
     {
-        // TODO: this needs to handle hot-reloads
-
         // move up?
         puffin::profile_scope!("create render pipeline");
 
         assert_eq!(vshader.stage, ShaderStage::Vertex);
         assert_eq!(pshader.stage, ShaderStage::Pixel);
 
-        let mut entries = Vec::new();
-
-        // TODO: these need to be cached
-        let shared_vertex_bind_group = self.renderer.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
+        let layout_hash =
         {
-            label: debug_label!("Vertex shared uniform bindings"),
-            entries: entries.as_ref(),
-        });
-        entries.clear();
-
-        let shared_pixel_bind_group = self.renderer.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor
-        {
-            label: debug_label!("Pixel shared uniform bindings"),
-            entries: entries.as_ref(),
-        });
-        entries.clear();
-
-        
-        entries.clear();
-
-        let layout_dtor = PipelineLayoutDescriptor
-        {
-            label: None, // TODO
-            bind_group_layouts: &[&shared_vertex_bind_group, &shared_pixel_bind_group, &material.bind_group_layout],
-            push_constant_ranges: &[],
+            let mut hasher = MetroHash64::default();
+            material.class.hash(&mut hasher);
+            material.textures.len().hash(&mut hasher); // TODO: this needs to use the actual texture formats
+            hasher.finish()
         };
-        let layout = self.renderer.device().create_pipeline_layout(&layout_dtor);
+
+        let mut pipeline_layouts = self.pipeline_layouts.lock();
+        let pipeline_layout = pipeline_layouts.entry(layout_hash).or_insert_with(||
+        {
+            self.renderer.device().create_pipeline_layout(&PipelineLayoutDescriptor
+            {
+                label: debug_label!(&format!("{:?}+{} tex pipeline layout", material.class, material.textures.len())),
+                bind_group_layouts: &[
+                    &self.common_bind_layouts.camera,
+                    &self.common_bind_layouts.world_transform,
+                    &material.bind_layout,
+                ],
+                push_constant_ranges: &[],
+            })
+        });
+
+        // todo: if these update, this will invalidate the pipeline
+        let renderer_surface_config = self.renderer.surface_format();
+        let renderer_msaa_count = self.renderer.msaa_max_sample_count();
 
         let desc = RenderPipelineDescriptor
         {
-            label: None, // TODO
-            layout: Some(&layout), // TODO
+            label: Some("TODO RenderPass Name"), // TODO
+            layout: Some(pipeline_layout),
             vertex: VertexState
             {
                 module: &vshader.module,
@@ -141,10 +194,19 @@ impl PipelineCache
                 polygon_mode: PolygonMode::Fill,
                 conservative: false,
             },
-            depth_stencil: None, // TODO
-            multisample: MultisampleState // TODO
+            // TODO: fetch from renderer surface config + material params
+            depth_stencil: Some(DepthStencilState
             {
-                count: 1,
+                format: TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: CompareFunction::Less,
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
+            // TODO
+            multisample: MultisampleState
+            {
+                count: renderer_msaa_count,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
@@ -155,7 +217,7 @@ impl PipelineCache
                 compilation_options: PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState
                 {
-                    format: TextureFormat::Rgba8Unorm, // TODO: based on material, maybe render pass (must match pass)
+                    format: TextureFormat::Bgra8UnormSrgb, // TODO: based on material, maybe render pass (must match pass), or get from renderer surface format
                     blend: None, // todo: material settings
                     write_mask: ColorWrites::ALL,
                 })],

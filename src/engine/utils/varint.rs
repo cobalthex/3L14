@@ -1,6 +1,7 @@
 // based on EBML (Matroska)'s varint impl
 
 use std::io;
+use std::io::Read;
 
 pub const fn encode(n: u64) -> (u8, [u8;8])
 {
@@ -64,7 +65,7 @@ pub const fn decode(bytes: &[u8]) -> u64
 pub fn decode_from<R: io::Read>(reader: &mut R) -> io::Result<u64>
 {
     let mut be_bytes = [0u8; 8];
-    reader.read(&mut be_bytes[0..1])?;
+    reader.read_exact(&mut be_bytes[0..1])?;
 
     let more = more_length(be_bytes[0]);
     reader.read_exact(&mut be_bytes[1..=more as usize])?;

@@ -342,6 +342,9 @@ impl<'b> BuildOutputs<'b>
 {
     // TODO: outputs should be atomic (all or none)
 
+    #[inline]
+    pub fn source_path(&self) -> &Path { self.rel_source_path }
+
     // Produce an output from this build. Assets of the same type have sequential derived IDs
     #[inline]
     pub fn add_output(&mut self, asset_type: AssetTypeId) -> Result<BuildOutput<impl BuildOutputWrite>, BuildError>
@@ -363,8 +366,9 @@ impl<'b> BuildOutputs<'b>
         let asset_key = AssetKey::synthetic(asset_type, asset_hash);
         
         let output_path = self.abs_output_dir.join(asset_key.as_file_name()); // todo: shared method w/ below
-        if output_path.exists()
+        if !force_build && output_path.exists()
         {
+            self.results.push(asset_key); // TODO: only do if successful?
             return Ok(None);
         }
 

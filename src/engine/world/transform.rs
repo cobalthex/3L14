@@ -71,7 +71,7 @@ impl From<Mat4> for Transform
 }
 
 #[derive(Default)]
-#[repr(C, align(256))]
+#[repr(C, align(16))]
 pub struct TransformUniform
 {
     pub world: Mat4,

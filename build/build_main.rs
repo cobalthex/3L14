@@ -27,7 +27,8 @@ fn main()
     
     let mut assets_symlink_src = project_root.clone();
     assets_symlink_src.push("assets/build");
-    match assets_symlink_src.canonicalize() {
+    match assets_symlink_src.canonicalize()
+    {
         Ok(src_path) =>
         {
             // TODO: copy in release builds

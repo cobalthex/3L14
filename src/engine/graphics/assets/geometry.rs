@@ -9,7 +9,7 @@ use std::sync::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{Buffer, BufferSlice, BufferUsages, VertexAttribute, VertexBufferLayout, VertexStepMode};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode, Hash)]
 pub enum VertexLayout
 {
     StaticSimple,
@@ -64,8 +64,8 @@ pub struct GeometryFile
 pub struct GeometryMesh
 {
     pub bounds: AABB, // note; these are untransformed
-    pub vertex_range: (u32, u32),
-    pub index_range: (u32, u32),
+    pub vertex_range: (u32, u32), // start, end
+    pub index_range: (u32, u32), // start, end
 }
 
 pub struct GeometrySlice<'g>

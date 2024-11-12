@@ -9,7 +9,7 @@ use crate::engine::graphics::Renderer;
 use super::{Geometry, Material, Shader};
 
 #[derive(Encode, Decode)]
-struct ModelFileSurface
+pub struct ModelFileSurface
 {
     pub material: AssetKey,
     pub vertex_shader: AssetKey,
@@ -32,6 +32,7 @@ pub struct Surface
 
 pub struct Model
 {
+    pub mesh_count: u32,
     pub geometry: AssetHandle<Geometry>,
     pub surfaces: Box<[Surface]>,
 }
@@ -71,6 +72,7 @@ impl AssetLifecycler for ModelLifecycler
 
         Ok(Model
         {
+            mesh_count: model_file.surfaces.len() as u32, // store explicitly in file?
             geometry: request.load_dependency(model_file.geometry),
             surfaces: model_file.surfaces.iter().map(|s|
             {

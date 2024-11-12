@@ -10,7 +10,7 @@ use proc_macros_3l14::FancyEnum;
 use wgpu::util::{make_spirv, make_spirv_raw};
 use wgpu::{BufferAddress, FragmentState, MultisampleState, ShaderModule, ShaderModuleDescriptor, ShaderModuleDescriptorSpirV, VertexBufferLayout, VertexState};
 
-#[derive(Default, Debug, PartialEq, Serialize, Deserialize, Encode, Decode, FancyEnum)]
+#[derive(Default, Debug, PartialEq, Hash, Clone, Copy, Serialize, Deserialize, Encode, Decode, FancyEnum)]
 pub enum ShaderStage
 {
     #[default]

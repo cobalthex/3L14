@@ -31,6 +31,10 @@ impl<'a, T> AsU8Slice<'a> for [T]
         std::slice::from_raw_parts(self.as_ptr() as *const u8, std::mem::size_of_val(self))
     }
 }
+pub const unsafe fn as_u8_array<T>(t: &T) -> &[u8]
+{
+    std::slice::from_raw_parts(t as *const T as *const u8, std::mem::size_of::<T>())
+}
 
 pub trait IntoU8Box
 {

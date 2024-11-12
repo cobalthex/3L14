@@ -69,7 +69,7 @@ impl<'n> DebugGui<'n> for Camera
     }
 }
 
-#[repr(packed(16))]
+#[repr(C, align(16))]
 pub struct CameraUniform
 {
     pub proj_view: Mat4,

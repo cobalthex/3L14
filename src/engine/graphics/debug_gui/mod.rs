@@ -44,7 +44,7 @@ impl<'n> DebugGuiBase<'n> for FrameProfiler
     {
         if *is_active
         {
-            *is_active = puffin_egui::profiler_window(&debug_gui);
+            *is_active = puffin_egui::profiler_window(debug_gui);
             // note: can also call profiler_ui
         }
     }

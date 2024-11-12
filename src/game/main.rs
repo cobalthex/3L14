@@ -1,11 +1,12 @@
+use arrayvec::ArrayVec;
 use clap::Parser;
 use game_3l14::engine::graphics::assets::texture::TextureLifecycler;
-use game_3l14::engine::graphics::assets::{Material, MaterialLifecycler, ShaderLifecycler};
+use game_3l14::engine::graphics::assets::{material, Geometry, GeometryLifecycler, Material, MaterialLifecycler, Shader, ShaderLifecycler, Texture};
 use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
 use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
-use game_3l14::engine::graphics::pipeline_cache::PipelineCache;
+use game_3l14::engine::graphics::pipeline_cache::{DebugMode, PipelineCache};
 use game_3l14::engine::{asset::*, graphics::*, input::*, timing::*, windows::*, world::*, *};
-use game_3l14::ExitReason;
+use game_3l14::{debug_label, ExitReason};
 use glam::{Mat4, Quat, Vec3};
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use std::io::Read;
@@ -13,7 +14,7 @@ use std::ops::Deref;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
-use wgpu::*;
+use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -65,6 +66,7 @@ fn main() -> ExitReason
             .add_lifecycler(TextureLifecycler::new(renderer.clone()))
             .add_lifecycler(ShaderLifecycler::new(renderer.clone()))
             .add_lifecycler(MaterialLifecycler::new(renderer.clone()))
+            .add_lifecycler(GeometryLifecycler::new(renderer.clone()))
         , assets_config);
 
     {
@@ -78,12 +80,14 @@ fn main() -> ExitReason
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        let model_key: AssetKey = 0x00700020042f8fe4c6e9839688654c23.into();
+        let model_key: AssetKey = 0x008000006fb97dc88facbdcfcece790a.into();
         let test_model = assets.load::<Model>(model_key);
 
         let mut camera = Camera::new(Some("fp_cam"), renderer.display_aspect_ratio());
         camera.transform.position = Vec3::new(0.0, 2.0, -10.0);
         camera.update_view();
+
+        let mut pipeline_cache = PipelineCache::new(renderer.clone());
 
         const MAX_ENTRIES_IN_WORLD_BUF: usize = 64;
         let world_uform_buf = renderer.device().create_buffer(&BufferDescriptor
@@ -93,28 +97,9 @@ fn main() -> ExitReason
             usage: BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let world_bind_group_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
-        {
-            entries:
-            &[
-                wgpu::BindGroupLayoutEntry
-                {
-                    binding: 0,
-                    visibility: ShaderStages::VERTEX,
-                    ty: BindingType::Buffer
-                    {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }
-            ],
-            label: Some("World bind group layout"),
-        });
         let world_bind_group = renderer.device().create_bind_group(&BindGroupDescriptor
         {
-            layout: &world_bind_group_layout,
+            layout: &pipeline_cache.common_layouts().world_transform,
             entries:
             &[
                 BindGroupEntry
@@ -131,6 +116,8 @@ fn main() -> ExitReason
             label: Some("World bind group"),
         });
 
+        // ꙮ
+
         let cam_uform_buf = renderer.device().create_buffer(&BufferDescriptor
         {
             label: Some("Camera uniform buffer"),
@@ -138,28 +125,9 @@ fn main() -> ExitReason
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let cam_bind_group_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
-        {
-            entries:
-            &[
-                BindGroupLayoutEntry
-                {
-                    binding: 0,
-                    visibility: ShaderStages::VERTEX,
-                    ty: BindingType::Buffer
-                    {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }
-            ],
-            label: Some("Camera bind group layout"),
-        });
         let cam_bind_group = renderer.device().create_bind_group(&BindGroupDescriptor
         {
-            layout: &cam_bind_group_layout,
+            layout: &pipeline_cache.common_layouts().camera,
             entries:
             &[
                 BindGroupEntry
@@ -301,83 +269,84 @@ fn main() -> ExitReason
             {
                 puffin::profile_scope!("Render frame");
 
-                // if test_pipeline.is_none()
-                // {
-                //     let AssetPayload::Available(vsh) = test_vshader.payload() else { renderer.queue().submit([]); continue; };
-                //     let AssetPayload::Available(psh) = test_pshader.payload() else { renderer.queue().submit([]); continue; };
-                // 
-                //     test_pipeline = Some(test_render_pipeline::new(
-                //         &renderer,
-                //         &vsh.module,
-                //         &psh.module,
-                //         &cam_bind_group_layout,
-                //         &world_bind_group_layout,
-                //         &material_cache.bind_group_layouts));
-                // }
-                // 
-                // let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
-                // {
-                //     match test_model.payload()
-                //     {
-                //         AssetPayload::Pending =>
-                //         {
-                //             render_passes::test(
-                //                 &render_frame,
-                //                 &mut encoder,
-                //                 Some(colors::GOOD_PURPLE));
-                //         }
-                //         AssetPayload::Unavailable(_) =>
-                //         {
-                //             render_passes::test(
-                //                 &render_frame,
-                //                 &mut encoder,
-                //                 Some(colors::BAD_RED));
-                //         }
-                //         AssetPayload::Available(model) =>
-                //         {
-                //             let mut test_pass = render_passes::test(
-                //                 &render_frame,
-                //                 &mut encoder,
-                //                 Some(colors::CORNFLOWER_BLUE));
-                // 
-                //             test_pass.set_pipeline(test_pipeline.as_ref().unwrap());
-                //             test_pass.set_bind_group(0, &cam_bind_group, &[]);
-                // 
-                //             let mut world_index = 0;
-                // 
-                //             // todo: use DrawIndirect?
-                //             let world_transform = Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0));
-                //             worlds_buf[world_index].world = world_transform;
-                //             let offset = (world_index * std::mem::size_of::<TransformUniform>()) as u32;
-                //             test_pass.set_bind_group(1, &world_bind_group, &[offset]);
-                //             world_index += 1;
-                // 
-                //             for mesh in model.meshes()
-                //             {
-                //                 test_pass.set_vertex_buffer(0, mesh.vertices());
-                //                 test_pass.set_index_buffer(mesh.indices(), mesh.index_format);
-                // 
-                //                 let Some(mtl_bind_group) = material_cache.get_or_create_bind_group(&mesh.material, &renderer)
-                //                     else { continue; };
-                // 
-                //                 test_pass.set_bind_group(2, &mtl_bind_group, &[]);
-                // 
-                //                 test_pass.draw_indexed(mesh.index_range(), 0, 0..1);
-                //             }
-                // 
-                //             if world_index >= MAX_ENTRIES_IN_WORLD_BUF
-                //             {
-                //                 world_uform_buf.unmap();
-                //                 world_index = 0;
-                //                 break; // testing
-                //             }
-                //         }
-                //     }
-                // 
-                // }
-                // // todo: only update what was written to
-                // renderer.queue().write_buffer(&world_uform_buf, 0, unsafe { worlds_buf.as_u8_slice() });
-                // renderer.queue().submit([encoder.finish()]);
+                let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
+                {
+                    fn get_model_mesh(model: &Model, mesh: u32) -> Option<(Arc<Geometry>, Arc<Material>, Arc<Shader>, Arc<Shader>)>
+                    {
+                        let AssetPayload::Available(geometry) = model.geometry.payload() else { return None; };
+                        let AssetPayload::Available(material) = model.surfaces[mesh as usize].material.payload() else { return None; };
+                        let AssetPayload::Available(vshader) = model.surfaces[mesh as usize].vertex_shader.payload() else { return None; };
+                        let AssetPayload::Available(pshader) = model.surfaces[mesh as usize].pixel_shader.payload() else { return None; };
+                        Some((geometry, material, vshader, pshader))
+                    }
+
+                    let mut test_pass = render_passes::test(
+                        &render_frame,
+                        &mut encoder,
+                        Some(colors::CORNFLOWER_BLUE));
+
+                    if let AssetPayload::Available(model) = test_model.payload()
+                    {
+                        let mut world_index = 0;
+                        'mesh_loop: for i in 0..model.mesh_count
+                        {
+                            if let Some((geom, mtl, vs, ps)) = get_model_mesh(&model, i)
+                            {
+                                let mut textures = ArrayVec::<_, 16/* stupid rust - material::MAX_MATERIAL_TEXTURE_BINDINGS*/>::new();
+                                for tex_handle in &mtl.textures
+                                {
+                                    let AssetPayload::Available(tex) = tex_handle.payload() else { continue 'mesh_loop; };
+                                    textures.push(tex);
+                                }
+
+                                if pipeline_cache.try_apply(&mut test_pass, &model, i, DebugMode::None)
+                                {
+                                    test_pass.set_bind_group(0, &cam_bind_group, &[]);
+
+                                    // todo: use DrawIndirect?
+                                    let world_transform = Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0));
+                                    worlds_buf[world_index].world = world_transform;
+                                    let offset = (world_index * std::mem::size_of::<TransformUniform>()) as u32;
+                                    test_pass.set_bind_group(1, &world_bind_group, &[offset]);
+                                    world_index += 1;
+
+                                    let geom_slice = geom.mesh(i);
+                                    test_pass.set_vertex_buffer(0, geom.vertices.slice(0..));
+                                    test_pass.set_index_buffer(geom.indices.slice(0..), geom.index_format);
+
+                                    let mut bge = ArrayVec::<_, 17>::new();
+                                    bge.push(BindGroupEntry
+                                    {
+                                        binding: bge.len() as u32,
+                                        resource: mtl.props.as_entire_binding(),
+                                    });
+                                    for tex in &textures
+                                    {
+                                        bge.push(BindGroupEntry
+                                        {
+                                            binding: bge.len() as u32,
+                                            resource: BindingResource::TextureView(&tex.gpu_view),
+                                        })
+                                    }
+
+                                    let bind_group = renderer.device().create_bind_group(&BindGroupDescriptor
+                                    {
+                                        label: debug_label!("TODO mtl bind group"), // TODO
+                                        layout: &mtl.bind_layout,
+                                        entries: &bge,
+                                    });
+
+                                    test_pass.set_bind_group(2, &bind_group, &[]);
+
+                                    test_pass.draw_indexed(geom_slice.index_range, 0, 0..1);
+                                }
+                            }
+                        }
+                    }
+                }
+                // todo: only update what was written to
+                renderer.queue().write_buffer(&world_uform_buf, 0, unsafe { worlds_buf.as_u8_slice() });
+                renderer.queue().submit([encoder.finish()]);
             }
 
             // TODO: basic app stats can be displayed in release
