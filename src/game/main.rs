@@ -80,7 +80,7 @@ fn main() -> ExitReason
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        let model_key: AssetKey = 0x008000006fb97dc88facbdcfcece790a.into();
+        let model_key: AssetKey = 0x00800000042f8fe4c6e9839688654c23.into();
         let test_model = assets.load::<Model>(model_key);
 
         let mut camera = Camera::new(Some("fp_cam"), renderer.display_aspect_ratio());
@@ -314,19 +314,27 @@ fn main() -> ExitReason
                                     test_pass.set_vertex_buffer(0, geom.vertices.slice(0..));
                                     test_pass.set_index_buffer(geom.indices.slice(0..), geom.index_format);
 
-                                    let mut bge = ArrayVec::<_, 17>::new();
+                                    let mut bge = ArrayVec::<_, 18>::new();
                                     bge.push(BindGroupEntry
                                     {
                                         binding: bge.len() as u32,
                                         resource: mtl.props.as_entire_binding(),
                                     });
-                                    for tex in &textures
+                                    if !textures.is_empty()
                                     {
                                         bge.push(BindGroupEntry
                                         {
                                             binding: bge.len() as u32,
-                                            resource: BindingResource::TextureView(&tex.gpu_view),
-                                        })
+                                            resource: BindingResource::Sampler(pipeline_cache.default_sampler())
+                                        });
+                                        for tex in &textures
+                                        {
+                                            bge.push(BindGroupEntry
+                                            {
+                                                binding: bge.len() as u32,
+                                                resource: BindingResource::TextureView(&tex.gpu_view),
+                                            })
+                                        }
                                     }
 
                                     let bind_group = renderer.device().create_bind_group(&BindGroupDescriptor

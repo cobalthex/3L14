@@ -35,11 +35,14 @@ pub struct PipelineCache
     common_bind_layouts: CommonBindLayouts, // TODO: don't hard-code ?
 
     bind_groups: Mutex<HashMap<u64, BindGroup>>,
+    default_sampler: Sampler,
 }
 impl PipelineCache
 {
     // todo: this differently
     pub fn common_layouts(&self) -> &CommonBindLayouts { &self.common_bind_layouts }
+    
+    pub fn default_sampler(&self) -> &Sampler { &self.default_sampler }
 
     pub fn new(renderer: Arc<Renderer>) -> Self
     {
@@ -86,6 +89,8 @@ impl PipelineCache
             }),
         };
 
+        let default_sampler = Self::create_sampler(&renderer);
+        
         Self
         {
             renderer,
@@ -93,6 +98,7 @@ impl PipelineCache
             pipelines: Mutex::default(),
             common_bind_layouts,
             bind_groups: Mutex::default(),
+            default_sampler,
         }
     }
 
