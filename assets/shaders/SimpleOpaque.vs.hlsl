@@ -1,3 +1,5 @@
+#include "Colors.hlsli"
+
 [[vk::binding(0, 0)]]
 cbuffer Camera
 {
@@ -18,16 +20,6 @@ struct VertexOutput
     float2 texcoord: TEXCOORD0;
     float4 color: COLOR0;
 };
-
-float4 UnpackColor(uint packed)
-{
-    uint r = packed & 0xff;
-    uint g = (packed >> 8) & 0xff;
-    uint b = (packed >> 16) & 0xff;
-    uint a = (packed >> 24) & 0xff;
-
-    return float4(r, g, b, a) / 255.0;
-}
 
 VertexOutput vs_main(
     float3 in_position : POSITION,

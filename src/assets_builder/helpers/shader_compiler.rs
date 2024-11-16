@@ -29,11 +29,11 @@ impl DxcIncludeHandler for Includer
         match std::fs::File::open(self.shaders_root.join(filename))
         {
             Ok(mut f) =>
-                {
-                    let mut content = String::new();
-                    f.read_to_string(&mut content).ok()?;
-                    Some(content)
-                }
+            {
+                let mut content = String::new();
+                f.read_to_string(&mut content).ok()?;
+                Some(content)
+            }
             Err(_) => None,
         }
     }
