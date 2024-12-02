@@ -36,12 +36,13 @@ fn main() -> ExitReason
     }
 
     #[cfg(debug_assertions)]
-    let _puffin_server;
-    #[cfg(debug_assertions)]
     {
         let server_addr = format!("0.0.0.0:{}", puffin_http::DEFAULT_PORT);
-        _puffin_server = puffin_http::Server::new(&server_addr).unwrap();
-        log::debug!("Puffin serving on {server_addr}");
+        match puffin_http::Server::new(&server_addr)
+        {
+            Ok(_) => log::debug!("Puffin serving on {server_addr}"),
+            Err(e) => log::warn!("Failed to start puffin server on {server_addr}: {e}"),
+        }
         puffin::set_scopes_on(true);
     }
 
@@ -142,6 +143,8 @@ fn main() -> ExitReason
         let material_cache = PipelineCache::new(renderer.clone());
 
         let mut worlds_buf: [TransformUniform; MAX_ENTRIES_IN_WORLD_BUF] = array_init::array_init(|_| TransformUniform::default());
+
+        let mut obj_rot = Quat::IDENTITY;
 
         let mut frame_number = FrameNumber(0);
         let mut fps_sparkline = Sparkline::<100>::new(); // todo: use
@@ -249,6 +252,8 @@ fn main() -> ExitReason
             }
             camera.update_view();
 
+            obj_rot *= Quat::from_rotation_y(0.5 * frame_time.delta_time.as_secs_f32());
+
             #[cfg(debug_assertions)]
             if kbd.is_press(KeyCode::F1)
             {
@@ -304,15 +309,14 @@ fn main() -> ExitReason
                                     test_pass.set_bind_group(0, &cam_bind_group, &[]);
 
                                     // todo: use DrawIndirect?
-                                    let world_transform = Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0));
-                                    worlds_buf[world_index].world = world_transform;
+                                    worlds_buf[world_index].world = Mat4::from_rotation_translation(obj_rot, Vec3::new(3.0, 0.0, 0.0));
                                     let offset = (world_index * std::mem::size_of::<TransformUniform>()) as u32;
                                     test_pass.set_bind_group(1, &world_bind_group, &[offset]);
                                     world_index += 1;
 
-                                    let geom_slice = geom.mesh(i);
-                                    test_pass.set_vertex_buffer(0, geom.vertices.slice(0..));
-                                    test_pass.set_index_buffer(geom.indices.slice(0..), geom.index_format);
+                                    let mesh = &geom.meshes[i as usize];
+                                    test_pass.set_vertex_buffer(0, mesh.vertices.slice(0..));
+                                    test_pass.set_index_buffer(mesh.indices.slice(0..), mesh.index_format);
 
                                     let mut bge = ArrayVec::<_, 18>::new();
                                     bge.push(BindGroupEntry
@@ -346,7 +350,7 @@ fn main() -> ExitReason
 
                                     test_pass.set_bind_group(2, &bind_group, &[]);
 
-                                    test_pass.draw_indexed(geom_slice.index_range, 0, 0..1);
+                                    test_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
                                 }
                             }
                         }

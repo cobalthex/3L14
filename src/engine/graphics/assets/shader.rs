@@ -9,6 +9,8 @@ use std::sync::Arc;
 use proc_macros_3l14::FancyEnum;
 use wgpu::util::{make_spirv, make_spirv_raw};
 use wgpu::{BufferAddress, FragmentState, MultisampleState, ShaderModule, ShaderModuleDescriptor, ShaderModuleDescriptorSpirV, VertexBufferLayout, VertexState};
+use crate::engine::graphics::assets::MaterialLifecycler;
+use crate::engine::graphics::debug_gui::DebugGui;
 
 #[derive(Default, Debug, PartialEq, Hash, Clone, Copy, Serialize, Deserialize, Encode, Decode, FancyEnum)]
 pub enum ShaderStage
@@ -86,4 +88,9 @@ impl AssetLifecycler for ShaderLifecycler
             module
         })
     }
+}
+impl DebugGui for ShaderLifecycler
+{
+    fn name(&self) -> &str { "Shaders" }
+    fn debug_gui(&self, ui: &mut egui::Ui) { }
 }

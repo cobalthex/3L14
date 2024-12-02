@@ -88,7 +88,6 @@ impl Renderer
             gles_minor_version: Gles3MinorVersion::default(),
         });
 
-
         let surface = unsafe { instance.create_surface_unsafe(window_handle).expect("Failed to create swap-chain") };
 
         // enumerate adapters?
@@ -323,10 +322,9 @@ impl Renderer
             let render_frames = self.render_frames.read();
 
             let rf_data = &render_frames[frame_number.0 as usize % render_frames.len()];
-            match &rf_data.last_submission
+            if let Some(i) = &rf_data.last_submission
             {
-                Some(i) => { self.device.poll(Maintain::WaitForSubmissionIndex(i.clone())); }, // not web-gpu compatible
-                None => {},
+                self.device.poll(Maintain::WaitForSubmissionIndex(i.clone()));
             };
             depth_buffer_view = rf_data.depth_buffer.create_view(&TextureViewDescriptor::default());
         }
@@ -451,11 +449,11 @@ impl Renderer
             })
     }
 }
-impl<'a> DebugGui<'a> for Renderer
+impl DebugGui for Renderer
 {
-    fn name(&'a self) -> &'a str { "Renderer" }
+    fn name(&self) -> &str { "Renderer" }
 
-    fn debug_gui(&'a self, ui: &mut Ui)
+    fn debug_gui(&self, ui: &mut Ui)
     {
         ui.label("TODO");
     }

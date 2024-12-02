@@ -1,28 +1,28 @@
 use egui::{Context, Ui, Window};
 use crate::engine::FrameNumber;
 
-pub trait DebugGuiBase<'a>
+pub trait DebugGuiBase
 {
     // This should be a unique name
-    fn name(&'a self) -> &'a str;
+    fn name(&self) -> &str;
 
-    fn debug_gui_base(&'a self, is_active: &mut bool, debug_gui: &egui::Context);
+    fn debug_gui_base(&self, is_active: &mut bool, debug_gui: &egui::Context);
 }
 
-pub trait DebugGui<'a> // TODO: get rid of lifetime param
+pub trait DebugGui // TODO: get rid of lifetime param
 {
     // This should be a unique name
-    fn name(&'a self) -> &'a str;
+    fn name(&self) -> &str;
 
-    fn debug_gui(&'a self, ui: &mut Ui);
+    fn debug_gui(&self, ui: &mut Ui);
 }
-impl<'a, T: DebugGui<'a>> DebugGuiBase<'a> for T
+impl<T: DebugGui> DebugGuiBase for T
 {
-    fn name(&'a self) -> &'a str {
+    fn name(&self) -> &str {
         self.name()
     }
 
-    fn debug_gui_base(&'a self, is_active: &mut bool, debug_gui: &Context)
+    fn debug_gui_base(&self, is_active: &mut bool, debug_gui: &Context)
     {
         Window::new(self.name())
             .movable(true)
@@ -36,9 +36,9 @@ pub mod debug_menu;
 pub mod sparkline;
 
 pub struct FrameProfiler;
-impl<'n> DebugGuiBase<'n> for FrameProfiler
+impl DebugGuiBase for FrameProfiler
 {
-    fn name(&self) -> &'n str { "Frame Profiler" }
+    fn name(&self) -> &str { "Frame Profiler" }
 
     fn debug_gui_base(&self, is_active: &mut bool, debug_gui: &Context)
     {
@@ -59,9 +59,9 @@ pub struct AppStats
     pub main_window_size: (u32, u32),
     pub viewport_size: (u32, u32),
 }
-impl<'n> DebugGuiBase<'n> for AppStats
+impl DebugGuiBase for AppStats
 {
-    fn name(&self) -> &'n str { "App Stats" }
+    fn name(&self) -> &str { "App Stats" }
 
     fn debug_gui_base(&self, is_active: &mut bool, debug_gui: &Context)
     {

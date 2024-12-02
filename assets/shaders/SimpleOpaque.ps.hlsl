@@ -52,6 +52,6 @@ float4 ps_main(PixelInput in_pixel) : SV_Target
     float3 Lo = 0.1;
     Lo += (kD * albedo / PI + specular) * radiance * n_dot_l;
 
-    float4 texcol = Tex.Sample(Sampler, in_pixel.tex_coord);
-    return texcol * float4(Lo, 1) + float4(ambient * albedo * ao, 0);
+    float4 tex_col = Tex.Sample(Sampler, in_pixel.tex_coord);
+    return tex_col * float4(Lo, 1) + float4(ambient * albedo * ao, 0);
 }

@@ -5,8 +5,9 @@ use std::sync::Arc;
 use bitcode::{Decode, Encode};
 use wgpu::BufferSlice;
 use crate::engine::asset::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadRequest, AssetPayload, AssetTypeId};
+use crate::engine::graphics::debug_gui::DebugGui;
 use crate::engine::graphics::Renderer;
-use super::{Geometry, Material, Shader};
+use super::{Geometry, Material, MaterialLifecycler, Shader};
 
 #[derive(Encode, Decode)]
 pub struct ModelFileSurface
@@ -85,4 +86,9 @@ impl AssetLifecycler for ModelLifecycler
             }).collect(),
         })
     }
+}
+impl DebugGui for ModelLifecycler
+{
+    fn name(&self) -> &str { "Models" }
+    fn debug_gui(&self, ui: &mut egui::Ui) { }
 }

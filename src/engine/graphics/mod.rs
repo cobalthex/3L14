@@ -12,3 +12,4 @@ pub mod debug_gui;
 
 pub mod assets;
 pub mod pipeline_cache;
+mod passes;

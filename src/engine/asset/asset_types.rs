@@ -18,6 +18,7 @@ pub enum AssetTypeId
     Shader = 7,
     Model = 8,
 
-
+    Scene = 9,
+    
     // ComputePipeline
 }

@@ -5,4 +5,6 @@ pub mod texture_builder;
 pub use texture_builder::*;
 
 pub mod material_builder;
+mod scene_builder;
+
 pub use material_builder::*;

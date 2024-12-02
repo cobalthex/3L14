@@ -1,6 +1,6 @@
 use crate::debug_label;
 use crate::engine::asset::AssetPayload;
-use crate::engine::graphics::assets::{Geometry, Material, MaterialClass, Shader, ShaderStage};
+use crate::engine::graphics::assets::{Geometry, GeometryMesh, Material, MaterialClass, Shader, ShaderStage};
 use crate::engine::graphics::{Model, Renderer};
 use metrohash::MetroHash64;
 use parking_lot::Mutex;
@@ -130,7 +130,7 @@ impl PipelineCache
         let AssetPayload::Available(vshader) = model_surf.vertex_shader.payload() else { return false; };
         let AssetPayload::Available(pshader) = model_surf.pixel_shader.payload() else { return false; };
 
-        let Some(pipeline) = self.create_pipeline(&geometry, &material, &vshader, &pshader, mode) else { return false; };
+        let Some(pipeline) = self.create_pipeline(&geometry.meshes[mesh as usize], &material, &vshader, &pshader, mode) else { return false; };
 
         render_pass.set_pipeline(&pipeline);
         pipelines.insert(pipeline_hash, pipeline);
@@ -140,7 +140,7 @@ impl PipelineCache
 
     fn create_pipeline(
         &self,
-        geometry: &Geometry,
+        geometry: &GeometryMesh,
         material: &Material,
         vshader: &Shader,
         pshader: &Shader,

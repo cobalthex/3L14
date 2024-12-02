@@ -1116,6 +1116,7 @@ dependencies = [
  "hassle-rs",
  "image",
  "indexmap",
+ "intel_tex",
  "is-root",
  "jobsys",
  "log",
@@ -1479,6 +1480,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "intel_tex"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6924b204284457a03f68f1fc1e6175317c004233560b932bda173af6fc06b486"
+dependencies = [
+ "ispc_rt",
+]
+
+[[package]]
 name = "interpolate_name"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1515,6 +1525,16 @@ name = "is_terminal_polyfill"
 version = "1.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7943c866cc5cd64cbc25b2e01621d07fa8eb2a1a23160ee81ce38704e97b8ecf"
+
+[[package]]
+name = "ispc_rt"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a742565b79ad4e9147f37fc929af92f875601bf40e829aac667aa1c9a374213e"
+dependencies = [
+ "libc",
+ "num_cpus",
+]
 
 [[package]]
 name = "itertools"

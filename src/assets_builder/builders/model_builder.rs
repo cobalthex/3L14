@@ -4,7 +4,7 @@ use arrayvec::ArrayVec;
 use game_3l14::engine::alloc_slice::alloc_u8_slice;
 use game_3l14::engine::asset::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use game_3l14::engine::graphics::assets::material::{MaterialFile, PbrProps};
-use game_3l14::engine::graphics::assets::{GeometryFile, GeometryMesh, IndexFormat, MaterialClass, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat, VertexLayout};
+use game_3l14::engine::graphics::assets::{GeometryFile, GeometryFileMesh, GeometryMesh, IndexFormat, MaterialClass, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat, VertexLayout};
 use game_3l14::engine::graphics::{ModelFile, ModelFileSurface, Surface};
 use game_3l14::engine::{as_u8_array, AABB};
 use gltf::image::Format;
@@ -123,16 +123,11 @@ impl ModelBuilder
     {
         let mut model_output = outputs.add_output(AssetTypeId::Model)?;
 
-        let mut meshes: Vec<GeometryMesh> = Vec::new();
-        let mut surfaces: Vec<ModelFileSurface> = Vec::new();
+        let mut meshes = Vec::new();
+        let mut surfaces = Vec::new();
         let mut model_bounds = AABB::max_min();
 
-        let mut vertex_count = 0;
-        let mut vertex_layout = VertexLayout::StaticSimple;
-        let mut vertices = Vec::new();
-        let mut index_count = 0;
-        let mut index_format = IndexFormat::U16;
-        let mut indices = Vec::new();
+        let vertex_layout = VertexLayout::StaticSimple; // TODO: figure out from model
 
         // todo: iter.map() ?
         for in_prim in in_mesh.primitives()
@@ -148,13 +143,10 @@ impl ModelBuilder
             let mut tex_coords = prim_reader.read_tex_coords(0).map(|t| t.into_f32());
             let mut colors = prim_reader.read_colors(0).map(|c| c.into_rgba_u8());
 
-            let mut mesh_vertex_count = 0;
-            let mut mesh_index_count = 0;
+            let mut vertex_count = 0;
+            let mut vertices = Vec::new();
             for pos in positions.into_iter()
             {
-                mesh_vertex_count += 1;
-                // TODO: byte order
-
                 let vertex = StaticSimpleVertex
                 {
                     position: pos,
@@ -163,57 +155,44 @@ impl ModelBuilder
                     color: colors.as_mut().and_then(|mut r| r.next()).unwrap_or([u8::MAX, u8::MAX, u8::MAX, u8::MAX]),
                 };
 
+                // TODO: byte order
                 vertices.write_all(unsafe { as_u8_array(&vertex) })?;
+                vertex_count += 1;
             };
 
             // TODO: create indices if missing
 
+            let index_format;
+            let mut index_count = 0;
+            let mut indices = Vec::new();
             match prim_reader.read_indices()
             {
                 None => todo!("Need to add create-index fallback support"),
                 Some(in_indices) =>
+                {
+                    match in_indices
                     {
-                        match in_indices
+                        ReadIndices::U8(u8s) => todo!("is this common?"),
+                        ReadIndices::U16(u16s) =>
                         {
-                            ReadIndices::U8(u8s) => todo!("is this common?"),
-                            ReadIndices::U16(u16s) =>
+                            index_format = IndexFormat::U16;
+                            for i in u16s
                             {
-                                if let IndexFormat::U32 = index_format
-                                {
-                                    for i in u16s
-                                    {
-                                        indices.write_all(&(i as u32).to_le_bytes())?;
-                                        mesh_index_count += 1;
-                                    }
-                                } else {
-                                    for i in u16s
-                                    {
-                                        indices.write_all(&i.to_le_bytes())?;
-                                        mesh_index_count += 1;
-                                    }
-                                }
+                                indices.write_all(&i.to_le_bytes())?;
+                                index_count += 1;
                             }
-                            ReadIndices::U32(u32s) =>
+                        }
+                        ReadIndices::U32(u32s) =>
+                        {
+                            index_format = IndexFormat::U32;
+                            for i in u32s
                             {
-                                if let IndexFormat::U16 = index_format
-                                {
-                                    let mut upsized = Vec::new();
-                                    for u in indices
-                                        .chunks(mem::size_of::<u16>())
-                                        .map(|c| (u16::from_le_bytes(c.try_into().unwrap()) as u32).to_le_bytes())
-                                    {
-                                        upsized.write_all(&u)?;
-                                    }
-                                    mem::swap(&mut indices, &mut upsized);
-                                    index_format = IndexFormat::U32;
-                                }
-                                for i in u32s
-                                {
-                                    indices.write_all(&i.to_le_bytes())?;
-                                }
+                                indices.write_all(&i.to_le_bytes())?;
+                                index_count += 1;
                             }
-                        };
-                    }
+                        }
+                    };
+                }
             }
 
             let mut textures = ArrayVec::new();
@@ -343,11 +322,15 @@ impl ModelBuilder
             let mesh_bounds = AABB::new(bb.min.into(), bb.max.into());
             model_bounds.union_with(mesh_bounds);
 
-            meshes.push(GeometryMesh
+            meshes.push(GeometryFileMesh
             {
                 bounds: mesh_bounds,
-                vertex_range: (vertex_count, vertex_count + mesh_vertex_count),
-                index_range: (index_count, index_count + mesh_index_count),
+                vertex_layout,
+                index_format,
+                vertex_count,
+                index_count,
+                vertices: vertices.into_boxed_slice(),
+                indices: indices.into_boxed_slice(),
             });
 
             surfaces.push(ModelFileSurface
@@ -356,9 +339,6 @@ impl ModelBuilder
                 vertex_shader: AssetKey::synthetic(AssetTypeId::Shader, vertex_shader_key),
                 pixel_shader: AssetKey::synthetic(AssetTypeId::Shader, pixel_shader_key),
             });
-
-            vertex_count += mesh_vertex_count;
-            index_count += mesh_index_count;
         }
 
         let geometry =
@@ -368,10 +348,6 @@ impl ModelBuilder
             geom_output.serialize(&GeometryFile
             {
                 bounds: model_bounds,
-                vertex_layout,
-                vertices: vertices.into_boxed_slice(),
-                index_format,
-                indices: indices.into_boxed_slice(),
                 meshes: meshes.into_boxed_slice(),
             })?;
             geom_output.finish()?

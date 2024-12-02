@@ -55,9 +55,9 @@ impl Camera
         self.projection
     }
 }
-impl<'n> DebugGui<'n> for Camera
+impl DebugGui for Camera
 {
-    fn name(&self) -> &'n str { "Camera" } // TODO { format!("Camera '{}'", self.name.as_ref().map_or("", |n| n.as_str())) }
+    fn name(&self) -> &str { "Camera" } // TODO { format!("Camera '{}'", self.name.as_ref().map_or("", |n| n.as_str())) }
 
     fn debug_gui(&self, ui: &mut Ui)
     {

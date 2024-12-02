@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::io::{Read, Seek};
 use std::sync::Arc;
+use egui::Ui;
+use crate::engine::graphics::debug_gui::{DebugGui, DebugGuiBase};
 
 pub struct AssetLoadRequest
 {
@@ -68,7 +70,7 @@ impl AssetLoadRequest
     // }
 }
 
-pub trait AssetLifecycler: Sync + Send
+pub trait AssetLifecycler: Sync + Send + DebugGui
 {
     type Asset: Asset;
 
@@ -78,13 +80,13 @@ pub trait AssetLifecycler: Sync + Send
 }
 
 // only for use internally in the asset system, mostly just utility methods for interacting with generics
-pub(super) trait UntypedAssetLifecycler: Sync + Send
+pub(super) trait UntypedAssetLifecycler: Sync + Send + DebugGui
 {
     fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedAssetHandle, input: Box<dyn AssetRead>);
 
     fn error_untyped(&self, untyped_handle: UntypedAssetHandle, error: AssetLoadError);
 }
-impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
+impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler for L
 {
     fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedAssetHandle, input: Box<dyn AssetRead>)
     {
@@ -134,7 +136,7 @@ pub struct AssetLifecyclers
 }
 impl AssetLifecyclers
 {
-    pub fn add_lifecycler<A: Asset, L: AssetLifecycler<Asset=A> + UntypedAssetLifecycler + 'static>(mut self, lifecycler: L) -> Self
+    pub fn add_lifecycler<A: Asset, L: AssetLifecycler<Asset=A> + UntypedAssetLifecycler + DebugGui + 'static>(mut self, lifecycler: L) -> Self
     {
         // warn/fail on duplicates?
         self.lifecyclers.insert(A::asset_type(), Box::new(lifecycler));

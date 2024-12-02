@@ -3,7 +3,6 @@ mod macro_tests;
 
 extern crate proc_macros_3l14;
 
-use std::env::Args;
 use std::fmt::Debug;
 use std::io::Read;
 use std::process::ExitCode;

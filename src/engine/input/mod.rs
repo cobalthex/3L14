@@ -220,9 +220,9 @@ impl From<&Input> for RawInput
     }
 }
 
-impl<'n> super::graphics::debug_gui::DebugGui<'n> for Input
+impl super::graphics::debug_gui::DebugGui for Input
 {
-    fn name(&self) -> &'n str { "Input state" }
+    fn name(&self) -> &str { "Input state" }
     fn debug_gui(&self, ui: &mut Ui)
     {
         ui.horizontal_top(|hui|

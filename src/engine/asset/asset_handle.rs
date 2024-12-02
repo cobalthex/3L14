@@ -122,7 +122,7 @@ impl AssetHandleInner
     }
 
     #[inline]
-    pub fn payload<A: Asset>(&self) -> AssetPayload<A>
+    pub fn payload<A: Asset>(&self) -> AssetPayload<A> // TODO: this should return a non-cloneable refcount ptr (Guard obj)
     {
         debug_assert_eq!(A::asset_type(), self.asset_type());
         let ptr = self.payload.load(Ordering::Acquire);

@@ -10,6 +10,7 @@ use proc_macros_3l14::FancyEnum;
 use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferSize, BufferUsages, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, TextureSampleType, TextureViewDimension};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use crate::debug_label;
+use crate::engine::graphics::debug_gui::DebugGui;
 use crate::engine::graphics::Renderer;
 
 pub const MAX_MATERIAL_TEXTURE_BINDINGS: usize = 16;
@@ -18,6 +19,13 @@ pub const MAX_MATERIAL_TEXTURE_BINDINGS: usize = 16;
 pub enum MaterialClass
 {
     SimpleOpaque,
+}
+
+#[repr(u64)]
+pub enum MaterialFeatureFlags
+{
+    None = 0b0000000000000000,
+    
 }
 
 #[repr(C)]
@@ -147,4 +155,9 @@ impl AssetLifecycler for MaterialLifecycler
             bind_layout,
         })
     }
+}
+impl DebugGui for MaterialLifecycler
+{
+    fn name(&self) -> &str { "Materials" }
+    fn debug_gui(&self, ui: &mut egui::Ui) { }
 }

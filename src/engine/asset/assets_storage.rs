@@ -1,7 +1,7 @@
 use super::*;
-use crate::engine::graphics::debug_gui::DebugGui;
+use crate::engine::graphics::debug_gui::{DebugGui, DebugGuiBase};
 use crossbeam::channel::{unbounded, Receiver, Sender};
-use egui::Ui;
+use egui::{Id, Ui};
 use notify::event::ModifyKind;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use notify_debouncer_full::{Debouncer, FileIdMap};
@@ -10,6 +10,7 @@ use std::any::TypeId;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::thread::{Builder, JoinHandle};
 use std::time::Duration;
 // TODO: probably don't pass around UniCase publicly
@@ -214,7 +215,7 @@ impl AssetsStorage
                                         AssetLifecycleRequest::LoadFileBacked(untyped_handle) =>
                                         {
                                             let asset_type = untyped_handle.as_ref().asset_type();
-                                            let lifecycler = self.lifecyclers.get(&asset_type)
+                                            let lifecycler = &self.lifecyclers.get(&asset_type)
                                                 .expect("Unsupported asset type!"); // this should fail in load()
 
                                             lifecycler.error_untyped(untyped_handle, AssetLoadError::Shutdown);
@@ -227,7 +228,7 @@ impl AssetsStorage
                             AssetLifecycleRequest::LoadFileBacked(untyped_handle) =>
                             {
                                 let inner = untyped_handle.as_ref();
-                                let lifecycler = self.lifecyclers.get(&inner.asset_type())
+                                let lifecycler = &self.lifecyclers.get(&inner.asset_type())
                                     .expect("Unsupported asset type!"); // this should fail in load()
 
                                 let asset_file_path = self.asset_key_to_file_path(inner.key());
@@ -246,7 +247,7 @@ impl AssetsStorage
                             },
                             AssetLifecycleRequest::LoadFromMemory(untyped_handle, reader) =>
                             {
-                                let lifecycler = self.lifecyclers.get(&untyped_handle.as_ref().asset_type())
+                                let lifecycler = &self.lifecyclers.get(&untyped_handle.as_ref().asset_type())
                                     .expect("Unsupported asset type!"); // this should fail in load()
 
                                 lifecycler.load_untyped(self.clone(), untyped_handle, reader);
@@ -281,12 +282,29 @@ impl AssetsConfig
     }
 }
 
+struct AssetsDebugState
+{
+    inspected_lifecycler: AssetTypeId,
+}
+impl Default for AssetsDebugState
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            inspected_lifecycler: AssetTypeId::Invalid,
+        }
+    }
+}
+
 const NUM_ASSET_JOB_THREADS: usize = 1;
 pub struct Assets
 {
     storage: Arc<AssetsStorage>,
     fs_watcher: Option<Debouncer<RecommendedWatcher, FileIdMap>>,
     worker_threads: [Option<JoinHandle<()>>; NUM_ASSET_JOB_THREADS],
+
+    debug_state: Mutex<AssetsDebugState>, // only one place ever calls this (MAKE SURE OF THIS)
 }
 impl Assets
 {
@@ -352,6 +370,8 @@ impl Assets
             storage,
             fs_watcher,
             worker_threads,
+
+            debug_state: Mutex::new(AssetsDebugState::default()),
         }
     }
 
@@ -439,23 +459,32 @@ impl Assets
         let _ = self.storage.lifecycle_channel.send(AssetLifecycleRequest::StopWorkers); // will error if already closed
     }
 }
-impl<'i, 'a: 'i> DebugGui<'a> for Assets
+impl DebugGui for Assets
 {
-    fn name(&self) -> &'a str
+    fn name(&self) -> &str
     {
         "Assets"
     }
-    fn debug_gui(&'a self, ui: &mut Ui)
+    fn debug_gui(&self, ui: &mut Ui)
     {
-        // for (_, lifecycler) in self.storage.lifecyclers
-        // {
-        //     egui::CollapsingHeader::new(lifecycler.name())
-        //         .default_open(true)
-        //         .show(ui, |cui|
-        //         {
-        //             lifecycler.debug_gui(cui);
-        //         });
-        // }
+        let mut debug_state = self.debug_state.lock();
+
+        let inspected_lifecycler = self.storage.lifecyclers.get(&debug_state.inspected_lifecycler);
+
+        egui::ComboBox::from_label("Lifecyclers")
+            .selected_text(inspected_lifecycler.map_or("(None)", |l| l.name()))
+            .show_ui(ui, |cui|
+            {
+                for (asset_type, lifecycler) in &self.storage.lifecyclers
+                {
+                    cui.selectable_value(&mut debug_state.inspected_lifecycler, *asset_type, lifecycler.name());
+                }
+            });
+
+        if let Some(lifecycler) = inspected_lifecycler
+        {
+            ui.group(|gui| { lifecycler.debug_gui(gui) });
+        }
 
         let mut has_fswatcher = self.fs_watcher.is_some();
         ui.checkbox(&mut has_fswatcher, "FS watcher enabled");
@@ -613,6 +642,11 @@ mod tests
             self.passthru.lock().as_ref().map(|p| p.call_count)
         }
     }
+    impl DebugGui for TestAssetLifecycler
+    {
+        fn name(&self) -> &str { "TestAssetLifecycle" }
+        fn debug_gui(&self, ui: &mut Ui) { }
+    }
 
     #[derive(Default)]
     struct NestedAssetLifecycler
@@ -647,6 +681,11 @@ mod tests
         {
             self.passthru.lock().as_ref().map(|p| p.call_count)
         }
+    }
+    impl DebugGui for NestedAssetLifecycler
+    {
+        fn name(&self) -> &str { "NestedAssetLifecycle" }
+        fn debug_gui(&self, ui: &mut Ui) { }
     }
 
     fn set_passthru<A: Asset, L: TestLifecycler<Asset = A>>(assets: &Assets, passthru_fn: Option<fn(AssetLoadRequest) -> Result<A, Box<dyn Error>>>)

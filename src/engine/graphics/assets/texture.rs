@@ -1,5 +1,5 @@
 use crate::engine::graphics::Renderer;
-use crate::{debug_label, format_bytes};
+use crate::{debug_label, format_binary};
 use bitcode::{Decode, Encode};
 use egui::Ui;
 use std::error::Error;
@@ -152,12 +152,12 @@ impl AssetLifecycler for TextureLifecycler
     }
 }
 
-impl<'a> DebugGui<'a> for TextureLifecycler
+impl DebugGui for TextureLifecycler
 {
-    fn name(&self) -> &'a str { "Textures" }
+    fn name(&self) -> &str { "Textures" }
 
     fn debug_gui(&self, ui: &mut Ui)
     {
-        ui.label(format!("Total device bytes: {:.1}", format_bytes!(self.device_bytes.load(Ordering::Relaxed))));
+        ui.label(format!("Total device bytes: {:#.2}B", format_binary!(self.device_bytes.load(Ordering::Relaxed))));
     }
 }
