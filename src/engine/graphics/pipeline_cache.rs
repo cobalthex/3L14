@@ -1,14 +1,14 @@
 use crate::debug_label;
 use crate::engine::asset::AssetPayload;
-use crate::engine::graphics::assets::{Geometry, GeometryMesh, Material, MaterialClass, Shader, ShaderStage};
-use crate::engine::graphics::{Model, Renderer};
+use crate::engine::graphics::assets::{GeometryMesh, Material, MaterialClass, Model, Shader, ShaderStage};
+use crate::engine::graphics::Renderer;
 use metrohash::MetroHash64;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use wgpu::{AddressMode, BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
+use wgpu::{AddressMode, BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
 
 #[derive(Debug, Clone, Copy, Hash)]
 pub enum DebugMode // debug only?
@@ -16,6 +16,9 @@ pub enum DebugMode // debug only?
     None,
     Wireframe,
 }
+
+#[derive(Hash, PartialEq, Eq, Copy, Clone)]
+pub struct PipelineHash(u64);
 
 pub struct CommonBindLayouts
 {
@@ -30,7 +33,7 @@ pub struct PipelineCache
     // Todo: better threading solve? (Reference tracking makes this a pain)
 
     pipeline_layouts: Mutex<HashMap<u64, PipelineLayout>>,
-    pipelines: Mutex<HashMap<u64, RenderPipeline>>,
+    pipelines: RwLock<HashMap<PipelineHash, RenderPipeline>>,
 
     common_bind_layouts: CommonBindLayouts, // TODO: don't hard-code ?
 
@@ -89,68 +92,77 @@ impl PipelineCache
             }),
         };
 
+
+
         let default_sampler = Self::create_sampler(&renderer);
         
         Self
         {
             renderer,
             pipeline_layouts: Mutex::default(),
-            pipelines: Mutex::default(),
+            pipelines: RwLock::default(),
             common_bind_layouts,
             bind_groups: Mutex::default(),
             default_sampler,
         }
     }
 
-    // Try getting or creating a render pipeline and applying it to a render pass
-    // Returns false if the pipeline was unable to be created
-    pub fn try_apply(&mut self, render_pass: &mut RenderPass, model: &Model, mesh: u32, mode: DebugMode) -> bool
+    pub fn try_apply(&self, render_pass: &mut RenderPass, pipeline_hash: PipelineHash) -> bool
     {
-        let model_surf = &model.surfaces[mesh as usize];
+        let pipelines = self.pipelines.read(); // recursive?
+        let Some(pipeline) = pipelines.get(&pipeline_hash) else { return false; };
+        render_pass.set_pipeline(pipeline);
+        true
+    }
 
+    pub fn get_or_create(
+        &self,
+        geometry: &GeometryMesh,
+        material: &Material,
+        vertex_shader: &Shader,
+        pixel_shader: &Shader,
+        mode: DebugMode) -> PipelineHash
+    {
         // if shaders change their hashes and in turn asset keys should change
         let pipeline_hash =
         {
             let mut hasher = MetroHash64::default();
-            model_surf.vertex_shader.key().hash(&mut hasher);
-            model_surf.pixel_shader.key().hash(&mut hasher);
-            // mode.hash(&mut hasher); // TODO
-            hasher.finish()
+            // TODO: there may be some material properties that can affect this
+            material.class.hash(&mut hasher);
+            vertex_shader.module_hash.hash(&mut hasher); // will have a unique vertex layout
+            pixel_shader.module_hash.hash(&mut hasher);
+            mode.hash(&mut hasher); // TODO
+            PipelineHash(hasher.finish())
         };
 
-        let mut pipelines = self.pipelines.lock();
+        let mut pipelines = self.pipelines.upgradable_read();
         if let Some(pipeline) = pipelines.get(&pipeline_hash)
         {
-            render_pass.set_pipeline(pipeline);
-            return true;
+            return pipeline_hash;
         }
 
-        let AssetPayload::Available(geometry) = model.geometry.payload() else { return false; };
-        let AssetPayload::Available(material) = model_surf.material.payload() else { return false; };
-        let AssetPayload::Available(vshader) = model_surf.vertex_shader.payload() else { return false; };
-        let AssetPayload::Available(pshader) = model_surf.pixel_shader.payload() else { return false; };
+        pipelines.with_upgraded(|p|
+        {
+            let pipeline = self.create_pipeline(geometry, material, vertex_shader, pixel_shader, mode);
+            p.insert(pipeline_hash, pipeline);
+        });
 
-        let Some(pipeline) = self.create_pipeline(&geometry.meshes[mesh as usize], &material, &vshader, &pshader, mode) else { return false; };
-
-        render_pass.set_pipeline(&pipeline);
-        pipelines.insert(pipeline_hash, pipeline);
-
-        true
+        pipeline_hash
     }
 
     fn create_pipeline(
         &self,
         geometry: &GeometryMesh,
         material: &Material,
-        vshader: &Shader,
-        pshader: &Shader,
-        mode: DebugMode) -> Option<RenderPipeline>
+        vertex_shader: &Shader,
+        pixel_shader: &Shader,
+        mode: DebugMode) -> RenderPipeline
     {
         // move up?
         puffin::profile_scope!("create render pipeline");
 
-        assert_eq!(vshader.stage, ShaderStage::Vertex);
-        assert_eq!(pshader.stage, ShaderStage::Pixel);
+        assert_eq!(vertex_shader.stage, ShaderStage::Vertex);
+        assert_eq!(pixel_shader.stage, ShaderStage::Pixel);
 
         let layout_hash =
         {
@@ -181,11 +193,11 @@ impl PipelineCache
 
         let desc = RenderPipelineDescriptor
         {
-            label: Some("TODO RenderPass Name"), // TODO
+            label: Some("TODO RenderPipeline Name"), // TODO
             layout: Some(pipeline_layout),
             vertex: VertexState
             {
-                module: &vshader.module,
+                module: &vertex_shader.module,
                 entry_point: ShaderStage::Vertex.entry_point().expect("Shader stage has no entry-point"),
                 compilation_options: PipelineCompilationOptions::default(),
                 buffers: &[geometry.vertex_layout.into()],
@@ -218,7 +230,7 @@ impl PipelineCache
             },
             fragment: Some(FragmentState
             {
-                module: &pshader.module,
+                module: &pixel_shader.module,
                 entry_point: ShaderStage::Pixel.entry_point().expect("Shader stage has no entry-point"),
                 compilation_options: PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState
@@ -233,7 +245,7 @@ impl PipelineCache
         };
 
         let pipeline = self.renderer.device().create_render_pipeline(&desc);
-        Some(pipeline)
+        pipeline
     }
 
     // todo

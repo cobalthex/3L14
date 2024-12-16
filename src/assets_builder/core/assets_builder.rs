@@ -14,7 +14,7 @@ use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use unicase::UniCase;
 use walkdir::WalkDir;
-use crate::core::inline_hash::InlineHash;
+use game_3l14::engine::utils::inline_hash::InlineWriteHash;
 // TODO: split this file out some?
 
 struct AssetBuilderEntry
@@ -180,7 +180,7 @@ impl AssetsBuilder
         let mut source_read =
         {
             let fin = std::fs::File::open(&canonical_path).map_err(BuildError::SourceIOError)?;
-            InlineHash::new(Box::new(fin)) // note: seek() makes this hash a bit nondeterministic, but it should be stable as long as the builder/file hasn't changed
+            InlineWriteHash::<MetroHash64, _>::new(Box::new(fin)) // note: seek() makes this hash a bit nondeterministic, but it should be stable as long as the builder/file hasn't changed
         };
 
         let mut input = SourceInput

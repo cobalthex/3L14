@@ -29,12 +29,14 @@ pub struct ShaderFile
 {
     pub stage: ShaderStage,
     pub module_bytes: Box<[u8]>,
+    pub module_hash: u64,
 }
 
 pub struct Shader
 {
     pub stage: ShaderStage,
     pub module: wgpu::ShaderModule,
+    pub module_hash: u64, // likely duplicates asset key but oh well
 }
 impl Asset for Shader
 {
@@ -85,7 +87,8 @@ impl AssetLifecycler for ShaderLifecycler
         Ok(Shader
         {
             stage: shader_file.stage,
-            module
+            module,
+            module_hash: shader_file.module_hash,
         })
     }
 }

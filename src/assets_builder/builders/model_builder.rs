@@ -12,10 +12,13 @@ use gltf::mesh::util::ReadIndices;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::mem;
 use std::path::{Path, PathBuf};
+use metrohash::MetroHash64;
 use unicase::UniCase;
+use game_3l14::engine::inline_hash::InlineWriteHash;
 
 #[derive(Hash)]
 struct ShaderHash
@@ -256,6 +259,7 @@ impl ModelBuilder
                 mtl_output.finish()?
             };
 
+            // todo: better asset key
             let vertex_shader_key = AssetKeySynthHash::generate(ShaderHash
             {
                 stage: ShaderStage::Vertex,
@@ -270,7 +274,7 @@ impl ModelBuilder
                 let shader_file = self.shaders_root.join(format!("{material_class:?}.vs.hlsl"));
 
                 let shader_source = std::fs::read_to_string(&shader_file)?;
-                let mut shader_module = Vec::new();
+                let mut shader_module = InlineWriteHash::<MetroHash64, _>::new(Vec::new());
                 let vshader = self.shader_compiler.compile_hlsl(&mut shader_module, ShaderCompilation
                 {
                     source_text: &shader_source,
@@ -280,14 +284,17 @@ impl ModelBuilder
                     emit_symbols: false,
                     defines: vec![],
                 })?;
+                let (module_hash, module_bytes) = shader_module.finish()?;
                 vshader_output.serialize(&ShaderFile
                 {
                     stage: ShaderStage::Vertex,
-                    module_bytes: shader_module.into_boxed_slice(),
+                    module_bytes: module_bytes.into_boxed_slice(),
+                    module_hash,
                 })?;
                 vshader_output.finish()?;
             }
 
+            // todo: better asset key
             let pixel_shader_key = AssetKeySynthHash::generate(ShaderHash
             {
                 stage: ShaderStage::Pixel,
@@ -301,7 +308,7 @@ impl ModelBuilder
                 let shader_file = self.shaders_root.join(format!("{material_class:?}.ps.hlsl"));
 
                 let shader_source = std::fs::read_to_string(&shader_file)?;
-                let mut shader_module = Vec::new();
+                let mut shader_module = InlineWriteHash::<MetroHash64, _>::new(Vec::new());
                 let _ = self.shader_compiler.compile_hlsl(&mut shader_module, ShaderCompilation
                 {
                     source_text: &shader_source,
@@ -311,10 +318,12 @@ impl ModelBuilder
                     emit_symbols: false,
                     defines: vec![], // TODO
                 })?;
+                let (module_hash, module_bytes) = shader_module.finish()?;
                 pshader_output.serialize(&ShaderFile
                 {
                     stage: ShaderStage::Pixel,
-                    module_bytes: shader_module.into_boxed_slice(),
+                    module_bytes: module_bytes.into_boxed_slice(),
+                    module_hash,
                 })?;
                 pshader_output.finish()?;
             }

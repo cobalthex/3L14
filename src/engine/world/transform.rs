@@ -1,6 +1,13 @@
 use glam::{Mat4, Quat, Vec3};
 use crate::engine::world::{WORLD_FORWARD, WORLD_RIGHT, WORLD_UP};
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ViewMtx(pub Mat4);
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WorldMtx(pub Mat4);
+
+// TODO: Vec3A?
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Transform
 {
@@ -37,16 +44,16 @@ impl Transform
         self.rotation = Quat::normalize(yaw_quat * self.rotation * pitch_quat * roll_quat);
     }
 
-    pub fn to_view(&self) -> Mat4
+    pub fn to_view(&self) -> ViewMtx
     {
         let rotation = Mat4::from_quat(self.rotation.inverse());
         let translation = Mat4::from_translation(-self.position);
-        rotation * translation
+        ViewMtx(rotation * translation)
     }
 
-    pub fn to_world(&self) -> Mat4
+    pub fn to_world(&self) -> WorldMtx
     {
-        Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position)
+        WorldMtx(Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position))
     }
 }
 
@@ -57,20 +64,20 @@ impl From<(Vec3, Quat, Vec3)> for Transform
         Transform { position, rotation, scale }
     }
 }
-impl From<Transform> for Mat4
+impl From<Transform> for WorldMtx
 {
     fn from(t: Transform) -> Self { t.to_world() }
 }
-impl From<Mat4> for Transform
+impl From<WorldMtx> for Transform
 {
-    fn from(m: Mat4) -> Self
+    fn from(m: WorldMtx) -> Self
     {
-        let (scale, rotation, position) = m.to_scale_rotation_translation();
+        let (scale, rotation, position) = m.0.to_scale_rotation_translation();
         Transform { position, rotation, scale }
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 #[repr(C, align(16))]
 pub struct TransformUniform
 {
@@ -82,7 +89,7 @@ impl From<Transform> for TransformUniform
     {
         Self
         {
-            world: transform.into()
+            world: transform.to_world().0
         }
     }
 }

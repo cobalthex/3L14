@@ -8,7 +8,7 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::mem::swap;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 
@@ -43,6 +43,15 @@ impl<A: Asset> AssetPayload<A>
         {
             Self::Available(a) => a.all_dependencies_loaded(),
             _ => false,
+        }
+    }
+
+    pub fn unwrap(&self) -> Arc<A>
+    {
+        match self
+        {
+            AssetPayload::Available(a) => a.clone(),
+            _ => panic!("Asset of type {:?} is not available", A::asset_type()),
         }
     }
 }

@@ -1,7 +1,7 @@
 use arrayvec::ArrayVec;
 use clap::Parser;
 use game_3l14::engine::graphics::assets::texture::TextureLifecycler;
-use game_3l14::engine::graphics::assets::{material, Geometry, GeometryLifecycler, Material, MaterialLifecycler, Shader, ShaderLifecycler, Texture};
+use game_3l14::engine::graphics::assets::{material, Geometry, GeometryLifecycler, Material, MaterialLifecycler, Model, ModelLifecycler, Shader, ShaderLifecycler, Texture};
 use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
 use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
 use game_3l14::engine::graphics::pipeline_cache::{DebugMode, PipelineCache};
@@ -15,6 +15,9 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
+use game_3l14::engine::graphics::pipeline_sorter::PipelineSorter;
+use game_3l14::engine::graphics::uniforms_pool::UniformsPool;
+use game_3l14::engine::graphics::view::View;
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -84,7 +87,11 @@ fn main() -> ExitReason
         let model_key: AssetKey = 0x00800000042f8fe4c6e9839688654c23.into();
         let test_model = assets.load::<Model>(model_key);
 
-        let mut camera = Camera::new(Some("fp_cam"), renderer.display_aspect_ratio());
+        let mut camera = Camera::new(Some("fp_cam"), CameraProjection::Perspective
+        {
+            aspect_ratio: renderer.display_aspect_ratio(),
+            fov: Degrees(59.0).into()
+        });
         camera.transform.position = Vec3::new(0.0, 2.0, -10.0);
         camera.update_view();
 
@@ -140,9 +147,7 @@ fn main() -> ExitReason
             label: Some("Camera bind group"),
         });
 
-        let material_cache = PipelineCache::new(renderer.clone());
-
-        let mut worlds_buf: [TransformUniform; MAX_ENTRIES_IN_WORLD_BUF] = array_init::array_init(|_| TransformUniform::default());
+        let uniforms_pool = UniformsPool::new(renderer.clone());
 
         let mut obj_rot = Quat::IDENTITY;
 
@@ -290,74 +295,66 @@ fn main() -> ExitReason
                         &mut encoder,
                         Some(colors::CORNFLOWER_BLUE));
 
+                    let mut view = View::new(&renderer, &camera, &pipeline_cache, &uniforms_pool);
+
                     if let AssetPayload::Available(model) = test_model.payload()
                     {
-                        let mut world_index = 0;
-                        'mesh_loop: for i in 0..model.mesh_count
-                        {
-                            if let Some((geom, mtl, vs, ps)) = get_model_mesh(&model, i)
-                            {
-                                let mut textures = ArrayVec::<_, 16/* stupid rust - material::MAX_MATERIAL_TEXTURE_BINDINGS*/>::new();
-                                for tex_handle in &mtl.textures
-                                {
-                                    let AssetPayload::Available(tex) = tex_handle.payload() else { continue 'mesh_loop; };
-                                    textures.push(tex);
-                                }
-
-                                if pipeline_cache.try_apply(&mut test_pass, &model, i, DebugMode::None)
-                                {
-                                    test_pass.set_bind_group(0, &cam_bind_group, &[]);
-
-                                    // todo: use DrawIndirect?
-                                    worlds_buf[world_index].world = Mat4::from_rotation_translation(obj_rot, Vec3::new(3.0, 0.0, 0.0));
-                                    let offset = (world_index * std::mem::size_of::<TransformUniform>()) as u32;
-                                    test_pass.set_bind_group(1, &world_bind_group, &[offset]);
-                                    world_index += 1;
-
-                                    let mesh = &geom.meshes[i as usize];
-                                    test_pass.set_vertex_buffer(0, mesh.vertices.slice(0..));
-                                    test_pass.set_index_buffer(mesh.indices.slice(0..), mesh.index_format);
-
-                                    let mut bge = ArrayVec::<_, 18>::new();
-                                    bge.push(BindGroupEntry
-                                    {
-                                        binding: bge.len() as u32,
-                                        resource: mtl.props.as_entire_binding(),
-                                    });
-                                    if !textures.is_empty()
-                                    {
-                                        bge.push(BindGroupEntry
-                                        {
-                                            binding: bge.len() as u32,
-                                            resource: BindingResource::Sampler(pipeline_cache.default_sampler())
-                                        });
-                                        for tex in &textures
-                                        {
-                                            bge.push(BindGroupEntry
-                                            {
-                                                binding: bge.len() as u32,
-                                                resource: BindingResource::TextureView(&tex.gpu_view),
-                                            })
-                                        }
-                                    }
-
-                                    let bind_group = renderer.device().create_bind_group(&BindGroupDescriptor
-                                    {
-                                        label: debug_label!("TODO mtl bind group"), // TODO
-                                        layout: &mtl.bind_layout,
-                                        entries: &bge,
-                                    });
-
-                                    test_pass.set_bind_group(2, &bind_group, &[]);
-
-                                    test_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
-                                }
-                            }
-                        }
+                        let obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(3.0, 0.0, 0.0));
+                        view.draw(obj_world, model);
                     }
+
+                    view.submit(&mut test_pass);
+                     //             test_pass.set_bind_group(0, &cam_bind_group, &[]);
+                    //
+                    //             // todo: use DrawIndirect?
+                    //             worlds_buf[world_index].world =
+                    //             let offset = (world_index * std::mem::size_of::<TransformUniform>()) as u32;
+                    //             test_pass.set_bind_group(1, &world_bind_group, &[offset]);
+                    //             world_index += 1;
+                    //
+                    //             let mesh = &geom.meshes[i as usize];
+                    //             test_pass.set_vertex_buffer(0, mesh.vertices.slice(0..));
+                    //             test_pass.set_index_buffer(mesh.indices.slice(0..), mesh.index_format);
+                    //
+                    //             let mut bge = ArrayVec::<_, 18>::new();
+                    //             bge.push(BindGroupEntry
+                    //             {
+                    //                 binding: bge.len() as u32,
+                    //                 resource: mtl.props.as_entire_binding(),
+                    //             });
+                    //             if !textures.is_empty()
+                    //             {
+                    //                 bge.push(BindGroupEntry
+                    //                 {
+                    //                     binding: bge.len() as u32,
+                    //                     resource: BindingResource::Sampler(pipeline_cache.default_sampler())
+                    //                 });
+                    //                 for tex in &textures
+                    //                 {
+                    //                     bge.push(BindGroupEntry
+                    //                     {
+                    //                         binding: bge.len() as u32,
+                    //                         resource: BindingResource::TextureView(&tex.gpu_view),
+                    //                     })
+                    //                 }
+                    //             }
+                    //
+                    //             let bind_group = renderer.device().create_bind_group(&BindGroupDescriptor
+                    //             {
+                    //                 label: debug_label!("TODO mtl bind group"), // TODO
+                    //                 layout: &mtl.bind_layout,
+                    //                 entries: &bge,
+                    //             });
+                    //
+                    //             test_pass.set_bind_group(2, &bind_group, &[]);
+                    //
+                    //             test_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                    //         }
+                    //     }
+                    // }
                 }
+
                 // todo: only update what was written to
-                renderer.queue().write_buffer(&world_uform_buf, 0, unsafe { worlds_buf.as_u8_slice() });
                 renderer.queue().submit([encoder.finish()]);
             }
 

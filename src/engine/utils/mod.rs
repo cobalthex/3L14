@@ -1,11 +1,18 @@
-pub mod common_traits;
+pub mod bytes_traits;
 
 use std::fmt::{Display, Formatter};
-pub use common_traits::*;
+pub use bytes_traits::*;
 
 pub mod async_completion;
 pub mod alloc_slice;
 pub mod varint;
+pub mod inline_hash;
+
+// How many bytes to print for a maximum bit width
+pub const fn format_width_hex_bytes(max_bits: u8) -> usize
+{
+    (1 + (max_bits - 1) / 4) as usize
+}
 
 pub struct FormatBinary
 {
@@ -86,3 +93,22 @@ mod format_binary_tests
         // assert_eq!("123.0MiB", format!("{:.1}", format_bytes!(123.0 * FormatBinary::Mi))); // ?
     }
 }
+
+pub trait ShortTypeName
+{
+    fn short_type_name() -> &'static str;
+}
+impl<T> ShortTypeName for T
+{
+    #[inline]
+    fn short_type_name() -> &'static str
+    {
+        let type_name = std::any::type_name::<T>();
+        match type_name.rfind(':')
+        {
+            None => type_name,
+            Some(i) => &type_name[(i + 1)..]
+        }
+    }
+}
+

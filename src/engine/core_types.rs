@@ -155,3 +155,18 @@ impl<Payload, Error> DataPayload<Payload, Error>
         matches!(self, Self::Available(_))
     }
 }
+
+#[derive(Debug)]
+pub enum Progress
+{
+    InProgress,
+    Finished,
+}
+
+#[derive(Debug)]
+pub enum FallibleProgress
+{
+    InProgress,
+    Finished,
+    Failed,
+}
