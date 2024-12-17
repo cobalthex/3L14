@@ -40,7 +40,7 @@ fn main()
 
                 Err(err) if err.kind() != ErrorKind::NotFound => panic!("! out-dir asset file '{assets_symlink_target:?}' was unreadable: {err:?}"),
 
-                _ => symlink::symlink_dir(assets_symlink_src, assets_symlink_target).expect("! Failed to symlink asset directory"),
+                _ => symlink::symlink_dir(src_path, assets_symlink_target).expect("! Failed to symlink asset directory"),
             }
         }
         Err(err) =>
@@ -50,6 +50,12 @@ fn main()
         },
     }
 
+    let arch_name =
+    {
+        if cfg!(target_arch = "x86_64") { "x64" }
+        else if cfg!(target_arch = "aarch64") { "arm64" } 
+        else { panic!("Unsupported architecture") }
+    };
 
     // if let Some(bin_name) = env::var_os("CARGO_BIN_NAME")
     // {
@@ -58,13 +64,15 @@ fn main()
     // symlink?
     if let Ok(thirdparty_dir) = Path::new("3rdparty").canonicalize()
     {
-        let dxc_path = thirdparty_dir.join("dxc");
-        if let Err(e) = copy_dir_all(Path::new("3rdparty/dxc"), &out_dir, Some(&[OsStr::new("dll")]))
+        let mut dxc_path = thirdparty_dir.join("dxc");
+        dxc_path.push(arch_name);
+        if let Err(e) = copy_dir_all(dxc_path, &out_dir, Some(&[OsStr::new("dll")]))
         {
             println!("cargo::warning=Failed to copy DXC: {e}");
         }
 
-        let sdl_path = thirdparty_dir.join("sdl");
+        let mut sdl_path = thirdparty_dir.join("sdl");
+        sdl_path.push(arch_name);
         println!(r"cargo:rustc-link-search={}", sdl_path.display());
         if let Err(e) = copy_dir_all(sdl_path, &out_dir, Some(&[OsStr::new("dll")]))
         {

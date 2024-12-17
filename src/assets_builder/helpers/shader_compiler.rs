@@ -106,12 +106,16 @@ impl ShaderCompiler
 
         // matrix ordering? (Zpc vs Zpr for col vs row)
 
-        let blob = self.dxc_library.create_blob_with_encoding_from_str(compilation.source_text)?;
-
         let mut includer = self.includer.lock();
+        let file_path = includer.shaders_root.join(compilation.filename);
+        let file_path_str = file_path.to_string_lossy().as_ref();
+
+        let blob = self.dxc_library.create_blob_with_encoding_from_str(compilation.source_text).map_err(|e| sc_err(file_path, compilation.stage, e))?;
+
+        // todo: compile_with_debug
         let spirv = match self.dxc_compiler.compile(
             &blob,
-            compilation.filename.to_string_lossy().as_ref(),
+            file_path_str,
             &entry_point.expect("Shader stage does not have a entry point!"),
             &profile,
             &dxc_args,
@@ -120,20 +124,19 @@ impl ShaderCompiler
         )
         {
             Err(result) =>
-                {
-                    let error_blob = result.0.get_error_buffer()?;
-                    let error_str = self.dxc_library.get_blob_as_string(&error_blob.into())?;
-                    Err(HassleError::CompileError(error_str))
-                },
+            {
+                let error_blob = result.0.get_error_buffer()?;
+                let error_str = self.dxc_library.get_blob_as_string(&error_blob.into())?;
+                Err(HassleError::CompileError(error_str))
+            },
             Ok(result) =>
-                {
-                    let result_blob = result.get_result()?;
-                    Ok(result_blob.to_vec()) // todo: This could be no-copy
-                }
-        }?;
+            {
+                let result_blob = result.get_result()?;
+                Ok(result_blob.to_vec()) // todo: This could be no-copy
+            }
+        }.map_err(|e| sc_err(file_path, compilation.stage, e))?;
 
-
-        let blob_encoding = self.dxc_library.create_blob_with_encoding(&spirv)?;
+        let blob_encoding = self.dxc_library.create_blob_with_encoding(&spirv).map_err(|e| sc_err(file_path, compilation.stage, e))?;
 
         let module = spirv;
         // TODO: currently broken
@@ -146,11 +149,34 @@ impl ShaderCompiler
         //         let error_str = self.dxc_library.get_blob_as_string(&error_blob.into())?;
         //         Err(HassleError::ValidationError(error_str))
         //     }
-        // }?;
+        // }.map_err(|e| sc_err(file_path, compilation.stage, e))?;
         output.write_all(&module)?;
         Ok(module.len())
     }
 }
+
+fn sc_err(file_path: PathBuf, stage: ShaderStage, error: HassleError) -> ShaderCompilationError
+{
+    ShaderCompilationError
+    {
+        file_path,
+        stage,
+        error,
+    }
+}
+
+#[derive(Debug)]
+pub struct ShaderCompilationError
+{
+    pub file_path: PathBuf,
+    pub stage: ShaderStage,
+    pub error: HassleError,
+}
+impl std::fmt::Display for ShaderCompilationError
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { std::fmt::Debug::fmt(&self, f) }
+}
+impl Error for ShaderCompilationError { }
 
 #[cfg(test)]
 mod tests
