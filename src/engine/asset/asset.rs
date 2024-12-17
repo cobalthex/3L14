@@ -158,12 +158,13 @@ impl Debug for AssetKeySynthHash
 pub struct AssetKey(AssetKeyRepr);
 impl AssetKey
 {
-    // ordered low-high bits
+    // ordered high-low bits
+    const TOTAL_BITS: u8 = AssetKeyRepr::BITS as u8;
     const ASSET_TYPE_BITS: u8 = 12;
     const SYNTH_FLAG_BITS: u8 = 1;
-    const SYNTH_HASH_BITS: u8 = AssetKeyRepr::BITS as u8 - Self::ASSET_TYPE_BITS - Self::SYNTH_FLAG_BITS;
+    const SYNTH_HASH_BITS: u8 = Self::TOTAL_BITS - Self::ASSET_TYPE_BITS - Self::SYNTH_FLAG_BITS;
     const DERIVED_ID_BITS: u8 = 15;
-    const SOURCE_ID_BITS: u8 = AssetKeyRepr::BITS as u8 - Self::ASSET_TYPE_BITS - Self::SYNTH_FLAG_BITS - Self::DERIVED_ID_BITS;
+    const SOURCE_ID_BITS: u8 = Self::TOTAL_BITS - Self::ASSET_TYPE_BITS - Self::SYNTH_FLAG_BITS - Self::DERIVED_ID_BITS;
 
     const SOURCE_KEY_MAX: u64 = (1 << Self::SOURCE_ID_BITS) - 1;
     const DERIVED_KEY_MAX: u16 = (1 << Self::DERIVED_ID_BITS) - 1;
@@ -179,9 +180,10 @@ impl AssetKey
 
     pub const fn unique(asset_type: AssetTypeId, derived_id: AssetKeyDerivedId, source_id: AssetKeySourceId) -> Self
     {
+        const_assert!((AssetKey::TOTAL_BITS / 8) as usize == size_of::<AssetKey>());
         const_assert!(
-            (AssetKey::SOURCE_ID_BITS + AssetKey::DERIVED_ID_BITS + AssetKey::SYNTH_FLAG_BITS + AssetKey::ASSET_TYPE_BITS) / 8
-            == (size_of::<AssetKey>() as u8)
+            (AssetKey::SOURCE_ID_BITS + AssetKey::DERIVED_ID_BITS + AssetKey::SYNTH_FLAG_BITS + AssetKey::ASSET_TYPE_BITS)
+            == (AssetKey::TOTAL_BITS)
         );
 
         debug_assert!((asset_type as u16) < Self::ASSET_TYPE_MAX);
@@ -199,8 +201,8 @@ impl AssetKey
     pub const fn synthetic(asset_type: AssetTypeId, synth_hash: AssetKeySynthHash) -> Self
     {
         const_assert!(
-            (AssetKey::SYNTH_HASH_BITS + AssetKey::SYNTH_FLAG_BITS + AssetKey::ASSET_TYPE_BITS) / 8
-            == (size_of::<AssetKey>() as u8)
+            (AssetKey::SYNTH_HASH_BITS + AssetKey::SYNTH_FLAG_BITS + AssetKey::ASSET_TYPE_BITS)
+            == (AssetKey::TOTAL_BITS)
         );
 
         debug_assert!((asset_type as u16) < Self::ASSET_TYPE_MAX);
@@ -248,12 +250,18 @@ impl AssetKey
     #[inline]
     pub fn as_file_name(&self) -> PathBuf
     {
-        PathBuf::from(format!("{:032x}.{}", self.0, ASSET_FILE_EXTENSION))
+        PathBuf::from(format!("{:0width$x}.{}",
+            self.0,
+            ASSET_FILE_EXTENSION,
+            width = format_width_hex_bytes(AssetKey::TOTAL_BITS)))
     }
     #[inline]
     pub fn as_meta_file_name(&self) -> PathBuf
     {
-        PathBuf::from(format!("{:032x}.{}", self.0, ASSET_META_FILE_EXTENSION))
+        PathBuf::from(format!("{:0width$x}.{}",
+            self.0,
+            ASSET_META_FILE_EXTENSION,
+            width = format_width_hex_bytes(AssetKey::TOTAL_BITS)))
     }
 }
 // custom serialize/deserialize b/c TOML doesn't support u64
@@ -261,7 +269,7 @@ impl Serialize for AssetKey
 {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>
     {
-        format!("{:032x}", self.0).serialize(serializer)
+        format!("{:0width$x}", self.0, width = format_width_hex_bytes(AssetKey::TOTAL_BITS)).serialize(serializer)
     }
 }
 impl<'de> Deserialize<'de> for AssetKey
@@ -284,21 +292,24 @@ impl Debug for AssetKey
         match f.alternate()
         {
             true =>
-                f.write_fmt(format_args!("⟨{:?}|{:032x}⟩",
-                     self.asset_type(),
-                     self.0)),
+                f.write_fmt(format_args!("⟨{:?}|{:0width$x}⟩",
+                    self.asset_type(),
+                    self.0,
+                    width = format_width_hex_bytes(AssetKey::TOTAL_BITS))),
             false =>
-                f.write_fmt(format_args!("⟨{:032x}⟩", self.0)),
+                f.write_fmt(format_args!("⟨{:0width$x}⟩",
+                    self.0,
+                    width = format_width_hex_bytes(AssetKey::TOTAL_BITS))),
         }
     }
 }
-impl From<AssetKey> for u64
+impl From<AssetKey> for AssetKeyRepr
 {
     fn from(value: AssetKey) -> Self { value.0 }
 }
-impl From<u64> for AssetKey
+impl From<AssetKeyRepr> for AssetKey
 {
-    fn from(u: u64) -> Self { Self(u) }
+    fn from(u: AssetKeyRepr) -> Self { Self(u) }
 }
 impl From<[u8; size_of::<AssetKey>()]> for AssetKey
 {
@@ -349,7 +360,7 @@ mod asset_key_tests
         assert_eq!(k.source_id(), source_id, "Source ID");
         assert_eq!(k.synth_hash(), synth_hash, "Synth Hash");
 
-        assert_eq!(0x00180123u64, <AssetKeyRepr>::from(k));
+        assert_eq!(0x0018_0000_0000_0123, <AssetKeyRepr>::from(k));
     }
 
     #[test]
@@ -365,11 +376,11 @@ mod asset_key_tests
         let k1 = AssetKey::unique(
             AssetTypeId::Test1,
             AssetKeyDerivedId(0),
-            AssetKeySourceId(0x1111_1111_1111_1111));
+            AssetKeySourceId(0x1_1111_1111));
         let k2 = AssetKey::unique(
             AssetTypeId::Test1,
             AssetKeyDerivedId(0),
-            AssetKeySourceId(0x1111_1111_1111_1111));
+            AssetKeySourceId(0x1_1111_1111));
 
         assert_eq!(k1, k2);
     }
@@ -380,11 +391,11 @@ mod asset_key_tests
         let k1 = AssetKey::unique(
             AssetTypeId::Test1,
             AssetKeyDerivedId(0),
-            AssetKeySourceId(0x1111_1111_1111_1111));
+            AssetKeySourceId(0x1_1111_1111));
         let k2 = AssetKey::unique(
             AssetTypeId::Test2,
             AssetKeyDerivedId(0),
-            AssetKeySourceId(0x1111_1111_1111_1111));
+            AssetKeySourceId(0x1_1111_1111));
 
         assert_ne!(k1, k2);
     }
@@ -395,11 +406,11 @@ mod asset_key_tests
         let k1 = AssetKey::unique(
             AssetTypeId::Test1,
             AssetKeyDerivedId(0),
-            AssetKeySourceId(0x1111_1111_1111_1111));
+            AssetKeySourceId(0x1_1111_1111));
         let k2 = AssetKey::unique(
             AssetTypeId::Test1,
             AssetKeyDerivedId(1),
-            AssetKeySourceId(0x1111_1111_1111_1111));
+            AssetKeySourceId(0x1_1111_1111));
 
         assert_ne!(k1, k2);
     }
@@ -410,11 +421,11 @@ mod asset_key_tests
         let k1 = AssetKey::unique(
             AssetTypeId::Test1,
             AssetKeyDerivedId(0),
-            AssetKeySourceId(0x1111_1111_1111_1111));
+            AssetKeySourceId(0x1_1111_1111));
         let k2 = AssetKey::unique(
             AssetTypeId::Test1,
             AssetKeyDerivedId(0),
-            AssetKeySourceId(0x2222_2222_2222_2222));
+            AssetKeySourceId(0x2_2222_2222));
 
         assert_ne!(k1, k2);
     }

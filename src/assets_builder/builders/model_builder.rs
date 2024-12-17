@@ -1,3 +1,5 @@
+use game_3l14::engine::graphics::assets::ModelFileSurface;
+use game_3l14::engine::graphics::assets::ModelFile;
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
 use crate::helpers::shader_compiler::{ShaderCompilation, ShaderCompiler};
 use arrayvec::ArrayVec;
@@ -5,7 +7,6 @@ use game_3l14::engine::alloc_slice::alloc_u8_slice;
 use game_3l14::engine::asset::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use game_3l14::engine::graphics::assets::material::{MaterialFile, PbrProps};
 use game_3l14::engine::graphics::assets::{GeometryFile, GeometryFileMesh, GeometryMesh, IndexFormat, MaterialClass, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat, VertexLayout};
-use game_3l14::engine::graphics::{ModelFile, ModelFileSurface, Surface};
 use game_3l14::engine::{as_u8_array, AABB};
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
@@ -284,7 +285,7 @@ impl ModelBuilder
                     emit_symbols: false,
                     defines: vec![],
                 })?;
-                let (module_hash, module_bytes) = shader_module.finish()?;
+                let (module_hash, module_bytes) = shader_module.finish();
                 vshader_output.serialize(&ShaderFile
                 {
                     stage: ShaderStage::Vertex,
@@ -318,7 +319,7 @@ impl ModelBuilder
                     emit_symbols: false,
                     defines: vec![], // TODO
                 })?;
-                let (module_hash, module_bytes) = shader_module.finish()?;
+                let (module_hash, module_bytes) = shader_module.finish();
                 pshader_output.serialize(&ShaderFile
                 {
                     stage: ShaderStage::Pixel,

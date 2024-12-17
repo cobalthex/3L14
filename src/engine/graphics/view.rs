@@ -74,7 +74,7 @@ impl<'f> View<'f>
             {
                 world: object_transform,
             });
-            let uniform_id = next_uniform;
+            let uniform_id = next_uniform as u32;
 
             let (mtl, vsh, psh) =
             {
@@ -127,7 +127,6 @@ impl<'f> View<'f>
             for draw in draws
             {
                 let mesh = &draw.geometry.meshes[draw.mesh_index as usize];
-
 
                 render_pass.set_vertex_buffer(0, mesh.vertices.slice(0..));
                 render_pass.set_index_buffer(mesh.indices.slice(0..), mesh.index_format);

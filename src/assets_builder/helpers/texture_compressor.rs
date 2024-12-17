@@ -1,4 +1,4 @@
-pub use intel_tex::RgbaSurface;
+pub use intel_tex_2::RgbaSurface;
 use proc_macros_3l14::Flags;
 
 pub enum CompressionQuality
@@ -60,10 +60,10 @@ impl TextureCompressor
             {
                 let settings = match input.channels.has_flag(ChannelMapping::Alpha)
                 {
-                    true => intel_tex::bc7::alpha_basic_settings(),
-                    false => intel_tex::bc7::opaque_basic_settings(),
+                    true => intel_tex_2::bc7::alpha_basic_settings(),
+                    false => intel_tex_2::bc7::opaque_basic_settings(),
                 };
-                intel_tex::bc7::compress_blocks(todo!(), &input.texels)
+                intel_tex_2::bc7::compress_blocks(todo!(), &input.texels)
             }
             CompressionQuality::Lossless =>
             {
