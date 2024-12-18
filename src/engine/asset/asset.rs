@@ -158,25 +158,26 @@ impl Debug for AssetKeySynthHash
 pub struct AssetKey(AssetKeyRepr);
 impl AssetKey
 {
-    // ordered high-low bits
     const TOTAL_BITS: u8 = AssetKeyRepr::BITS as u8;
+    
+    // ordered high-low bits
     const ASSET_TYPE_BITS: u8 = 12;
     const SYNTH_FLAG_BITS: u8 = 1;
     const SYNTH_HASH_BITS: u8 = Self::TOTAL_BITS - Self::ASSET_TYPE_BITS - Self::SYNTH_FLAG_BITS;
     const DERIVED_ID_BITS: u8 = 15;
-    const SOURCE_ID_BITS: u8 = Self::TOTAL_BITS - Self::ASSET_TYPE_BITS - Self::SYNTH_FLAG_BITS - Self::DERIVED_ID_BITS;
+    const SOURCE_ID_BITS:  u8 = Self::TOTAL_BITS - Self::ASSET_TYPE_BITS - Self::SYNTH_FLAG_BITS - Self::DERIVED_ID_BITS;
 
-    const SOURCE_KEY_MAX: u64 = (1 << Self::SOURCE_ID_BITS) - 1;
+    const SOURCE_KEY_MAX:  u64 = (1 << Self::SOURCE_ID_BITS) - 1;
     const DERIVED_KEY_MAX: u16 = (1 << Self::DERIVED_ID_BITS) - 1;
-    const SYNTH_HASH_MAX: u64 = (1 << Self::SYNTH_HASH_BITS) - 1;
-    const SYNTH_FLAG_MAX: u8 = (1 << Self::SYNTH_FLAG_BITS) - 1;
-    const ASSET_TYPE_MAX: u16 = (1 << Self::ASSET_TYPE_BITS) - 1;
+    const SYNTH_HASH_MAX:  u64 = (1 << Self::SYNTH_HASH_BITS) - 1;
+    const SYNTH_FLAG_MAX:  u8  = (1 << Self::SYNTH_FLAG_BITS) - 1;
+    const ASSET_TYPE_MAX:  u16 = (1 << Self::ASSET_TYPE_BITS) - 1;
 
-    const SOURCE_KEY_SHIFT: u8 = 0;
+    const SOURCE_KEY_SHIFT:  u8 = 0;
     const DERIVED_KEY_SHIFT: u8 = Self::SOURCE_KEY_SHIFT + Self::SOURCE_ID_BITS;
-    const SYNTH_HASH_SHIFT: u8 = 0;
-    const SYNTH_FLAG_SHIFT: u8 = Self::DERIVED_KEY_SHIFT + Self::DERIVED_ID_BITS;
-    const ASSET_TYPE_SHIFT: u8 = Self::SYNTH_FLAG_SHIFT + Self::SYNTH_FLAG_BITS;
+    const SYNTH_HASH_SHIFT:  u8 = 0;
+    const SYNTH_FLAG_SHIFT:  u8 = Self::DERIVED_KEY_SHIFT + Self::DERIVED_ID_BITS;
+    const ASSET_TYPE_SHIFT:  u8 = Self::SYNTH_FLAG_SHIFT + Self::SYNTH_FLAG_BITS;
 
     pub const fn unique(asset_type: AssetTypeId, derived_id: AssetKeyDerivedId, source_id: AssetKeySourceId) -> Self
     {

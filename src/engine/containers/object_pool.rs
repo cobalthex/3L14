@@ -3,15 +3,16 @@ use std::mem::MaybeUninit;
 use std::ops::Deref;
 use crossbeam::queue::SegQueue;
 use crossbeam::sync::ShardedLock;
+use crate::engine::alloc_slice::alloc_slice_fn;
 
 type PoolEntryIndex = u16; // bottom bit is entry index, rest of bits are bucket index; u16 allows for 64k entries
 pub const OBJECT_POOL_BUCKET_ENTRY_BITS: PoolEntryIndex = 6;
-const OBJECT_POOL_BUCKET_ENTRY_MAX: PoolEntryIndex = 1 << OBJECT_POOL_BUCKET_ENTRY_BITS;
+const OBJECT_POOL_BUCKET_ENTRY_COUNT: PoolEntryIndex = 1 << OBJECT_POOL_BUCKET_ENTRY_BITS;
 
 struct Buckets<T>
 {
     count: PoolEntryIndex, // total created across all buckets
-    buckets: Vec<Box<[MaybeUninit<T>; OBJECT_POOL_BUCKET_ENTRY_MAX as usize]>>,
+    buckets: Vec<Box<[MaybeUninit<T>; OBJECT_POOL_BUCKET_ENTRY_COUNT as usize]>>,
 }
 
 pub struct ObjectPool<T>
@@ -50,8 +51,8 @@ impl<T> ObjectPool<T>
         }
 
         let index;
-        let bucket_local = count & OBJECT_POOL_BUCKET_ENTRY_MAX;
-        if count > 0 && bucket_local < OBJECT_POOL_BUCKET_ENTRY_MAX
+        let bucket_local = count & (OBJECT_POOL_BUCKET_ENTRY_COUNT - 1);
+        if count > 0 && bucket_local < OBJECT_POOL_BUCKET_ENTRY_COUNT
         {
             locked.buckets[(count >> OBJECT_POOL_BUCKET_ENTRY_BITS) as usize][bucket_local as usize]
                 .write((self.create_entry_fn)(count as usize));
@@ -59,7 +60,7 @@ impl<T> ObjectPool<T>
         }
         else
         {
-            let mut new_bucket = Box::new([const { MaybeUninit::uninit() }; OBJECT_POOL_BUCKET_ENTRY_MAX as usize]);
+            let mut new_bucket = alloc_slice_fn( OBJECT_POOL_BUCKET_ENTRY_COUNT as usize, |_| { MaybeUninit::uninit() }).unwrap();
             new_bucket[0].write((self.create_entry_fn)(count as usize));
             index = (locked.buckets.len() << OBJECT_POOL_BUCKET_ENTRY_BITS) as PoolEntryIndex;
             locked.buckets.push(new_bucket);
@@ -82,7 +83,7 @@ impl<T> ObjectPool<T>
         };
 
         let locked = self.buckets.read().unwrap();
-        let entry = &locked.buckets[(index >> OBJECT_POOL_BUCKET_ENTRY_BITS) as usize][(index & (OBJECT_POOL_BUCKET_ENTRY_MAX - 1)) as usize];
+        let entry = &locked.buckets[(index >> OBJECT_POOL_BUCKET_ENTRY_BITS) as usize][(index & (OBJECT_POOL_BUCKET_ENTRY_COUNT - 1)) as usize];
 
         ObjectPoolEntryGuard
         {
@@ -100,7 +101,7 @@ impl<T> Drop for ObjectPool<T>
         let mut count = locked.count;
         for bucket in &mut locked.buckets
         {
-            let n = min(count, OBJECT_POOL_BUCKET_ENTRY_MAX);
+            let n = min(count, OBJECT_POOL_BUCKET_ENTRY_COUNT);
             for i in 0..n
             {
                 unsafe { bucket[i as usize].assume_init_drop() };

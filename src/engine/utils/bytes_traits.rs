@@ -74,10 +74,26 @@ pub const unsafe fn as_typed_slice<T>(u8_slice: &[u8]) -> &[T]
 // TODO: const
 pub unsafe fn as_typed_slice_mut<T>(u8_slice: &mut [u8]) -> &mut [T]
 {
-    std::slice::from_raw_parts_mut(u8_slice.as_mut_ptr() as *mut T, u8_slice.len() / size_of::<T>())
+    // TODO: broken
+    let align = align_of::<T>();
+    let len = u8_slice.len()  / size_of::<T>();
+    let p = u8_slice.as_mut_ptr() as *mut T;
+    std::slice::from_raw_parts_mut(p, len)
 }
-pub fn write_index<T>(u8_slice: &mut [u8], index: usize, value: T)
+pub unsafe fn as_typed_array<T, const N: usize>(u8_slice: &[u8]) -> &[T; N]
 {
-    let slice = unsafe { as_typed_slice_mut(u8_slice) };
-    slice[index] = value;
+    unsafe { &*(u8_slice as *const [u8] as *const [T; N]) }
+}
+pub unsafe fn as_typed_array_mut<T, const N: usize>(u8_slice: &mut [u8]) -> &mut [T; N]
+{
+    unsafe { &mut *(u8_slice as *mut [u8] as *mut [T; N]) }
+}
+
+pub fn write_slice_index<T>(u8_slice: &mut [u8], index: usize, value: T)
+{
+    unsafe { as_typed_slice_mut(u8_slice)[index] = value; }
+}
+pub fn write_array_index<T, const N: usize>(u8_slice: &mut [u8], index: usize, value: T)
+{
+    unsafe { as_typed_array_mut::<_, N>(u8_slice)[index] = value; }
 }

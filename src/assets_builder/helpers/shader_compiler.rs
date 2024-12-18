@@ -108,14 +108,13 @@ impl ShaderCompiler
 
         let mut includer = self.includer.lock();
         let file_path = includer.shaders_root.join(compilation.filename);
-        let file_path_str = file_path.to_string_lossy().as_ref();
 
-        let blob = self.dxc_library.create_blob_with_encoding_from_str(compilation.source_text).map_err(|e| sc_err(file_path, compilation.stage, e))?;
+        let blob = self.dxc_library.create_blob_with_encoding_from_str(compilation.source_text).map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
 
         // todo: compile_with_debug
         let spirv = match self.dxc_compiler.compile(
             &blob,
-            file_path_str,
+            file_path.to_string_lossy().as_ref(),
             &entry_point.expect("Shader stage does not have a entry point!"),
             &profile,
             &dxc_args,
@@ -134,9 +133,9 @@ impl ShaderCompiler
                 let result_blob = result.get_result()?;
                 Ok(result_blob.to_vec()) // todo: This could be no-copy
             }
-        }.map_err(|e| sc_err(file_path, compilation.stage, e))?;
+        }.map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
 
-        let blob_encoding = self.dxc_library.create_blob_with_encoding(&spirv).map_err(|e| sc_err(file_path, compilation.stage, e))?;
+        let blob_encoding = self.dxc_library.create_blob_with_encoding(&spirv).map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
 
         let module = spirv;
         // TODO: currently broken
@@ -149,7 +148,7 @@ impl ShaderCompiler
         //         let error_str = self.dxc_library.get_blob_as_string(&error_blob.into())?;
         //         Err(HassleError::ValidationError(error_str))
         //     }
-        // }.map_err(|e| sc_err(file_path, compilation.stage, e))?;
+        // }.map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
         output.write_all(&module)?;
         Ok(module.len())
     }
