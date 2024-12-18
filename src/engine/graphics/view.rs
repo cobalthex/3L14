@@ -7,8 +7,7 @@ use wgpu::RenderPass;
 use crate::engine::graphics::pipeline_cache::{DebugMode, PipelineCache};
 use crate::engine::graphics::{pipeline_sorter, Renderer};
 use crate::engine::graphics::pipeline_sorter::PipelineSorter;
-use crate::engine::graphics::uniforms_pool::{UniformsPool, UniformsPoolEntryGuard, WgpuBufferWriter};
-use crate::engine::write_index;
+use crate::engine::graphics::uniforms_pool::{UniformsPool, UniformsPoolEntryGuard, WgpuBufferWriter, WriteTyped};
 
 const MAX_ENTRIES_IN_WORLD_BUF: usize = 64;
 
@@ -70,7 +69,7 @@ impl<'f> View<'f>
             }
 
             // todo: one per model?
-            write_index(&mut uniforms_writer, next_uniform, TransformUniform
+            uniforms_writer.write_typed(next_uniform, TransformUniform
             {
                 world: object_transform,
             });

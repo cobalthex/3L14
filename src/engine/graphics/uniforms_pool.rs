@@ -65,3 +65,27 @@ impl<'p> WgpuBufferWriter<'p> for UniformsPoolEntryGuard<'p>
         queue.write_buffer_with(&self.buffer, 0, buf_size).unwrap()
     }
 }
+
+// todo: better name, impl for &[u8] ?
+pub trait WriteTyped
+{
+    fn write_typed<T>(&mut self, index: usize, value: T) -> bool;
+}
+
+impl<'p> WriteTyped for QueueWriteBufferView<'p>
+{
+    fn write_typed<T>(&mut self, index: usize, value: T) -> bool
+    {
+        if index >= self.len() / size_of::<T>()
+        {
+            return false;
+        }
+
+        unsafe
+        {
+            let ptr = self.as_mut_ptr() as *mut T;
+            std::ptr::write_unaligned(ptr.add(index), value);
+        }
+        true
+    }
+}

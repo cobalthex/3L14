@@ -60,7 +60,7 @@ impl<T> ObjectPool<T>
         }
         else
         {
-            let mut new_bucket = alloc_slice_fn( OBJECT_POOL_BUCKET_ENTRY_COUNT as usize, |_| { MaybeUninit::uninit() }).unwrap();
+            let mut new_bucket = Box::new([const { MaybeUninit::uninit() }; OBJECT_POOL_BUCKET_ENTRY_COUNT as usize]);
             new_bucket[0].write((self.create_entry_fn)(count as usize));
             index = (locked.buckets.len() << OBJECT_POOL_BUCKET_ENTRY_BITS) as PoolEntryIndex;
             locked.buckets.push(new_bucket);
