@@ -23,10 +23,8 @@ macro_rules! iif_debug {
 #[macro_export]
 macro_rules! const_assert
 {
-    ($($tt:tt)*) =>
-    {
-        const _: () = assert!($($tt)*);
-    }
+    ($cond:expr) => { const _: () = { assert!($cond); }; };
+    ($cond:expr, $($arg:tt)+) => { const _: () = { assert!($cond, $($arg)+); }; };
 }
 
 pub const TEST_VAL: u32 = iif_debug!(10, 0);

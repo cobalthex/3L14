@@ -82,6 +82,8 @@ impl Camera
     pub fn view(&self) -> ViewMtx { self.view_mtx }
     pub fn projection(&self) -> ProjectionMtx { self.projection_mtx }
 
+    pub fn view_projection(&self) -> Mat4 { self.view_mtx.0 * self.projection_mtx.0 }
+
     pub fn update_view(&mut self) -> &ViewMtx
     {
         self.view_mtx = self.transform.to_view();
