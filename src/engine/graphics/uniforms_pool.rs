@@ -4,7 +4,7 @@ use crate::engine::graphics::Renderer;
 use crate::engine::world::{CameraUniform, TransformUniform};
 use crate::engine::ShortTypeName;
 use std::sync::Arc;
-use wgpu::{BindGroupDescriptor, BindGroupLayout, BufferAddress, BufferDescriptor, BufferSize, BufferUsages, QueueWriteBufferView};
+use wgpu::{BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, QueueWriteBufferView, ShaderStages};
 
 pub struct UniformBufferEntry
 {
@@ -13,10 +13,15 @@ pub struct UniformBufferEntry
     pub bind_group: wgpu::BindGroup,
 }
 
+// TODO: merge with pipeline_cache
+
 pub struct UniformsPool
 {
     cameras: ObjectPool<UniformBufferEntry>,
     transforms: ObjectPool<UniformBufferEntry>,
+    // arc here annoying
+    pub camera_bind_layout: Arc<BindGroupLayout>,
+    pub transform_bind_layout: Arc<BindGroupLayout>,
 }
 impl UniformsPool
 {
@@ -24,14 +29,56 @@ impl UniformsPool
     {
         let max_ubo_size = renderer.device().limits().max_uniform_buffer_binding_size as usize;
 
+        let camera_bind_layout = Arc::new(renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
+        {
+            entries:
+            &[
+                wgpu::BindGroupLayoutEntry
+                {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer
+                    {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+            ],
+            label: debug_label!("Camera vsh bind layout"),
+        }));
+
+        let transform_bind_layout = Arc::new(renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
+        {
+            entries:
+            &[
+                BindGroupLayoutEntry
+                {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer
+                    {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+            ],
+            label: debug_label!("World transform vsh bind layout"),
+        }));
+
         Self
         {
-            cameras: ObjectPool::new(Self::create_object_pool::<CameraUniform>(renderer.clone(), size_of::<CameraUniform>())),
-            transforms: ObjectPool::new(Self::create_object_pool::<TransformUniform>(renderer.clone(), max_ubo_size)),
+            cameras: ObjectPool::new(Self::create_object_pool::<CameraUniform>(renderer.clone(), size_of::<CameraUniform>(), camera_bind_layout.clone())),
+            transforms: ObjectPool::new(Self::create_object_pool::<TransformUniform>(renderer.clone(), max_ubo_size, transform_bind_layout.clone())),
+            camera_bind_layout,
+            transform_bind_layout,
         }
     }
 
-    fn create_object_pool<T: 'static>(renderer: Arc<Renderer>, max_buffer_size: usize, bind_group_layout: &BindGroupLayout) -> impl Fn(usize) -> UniformBufferEntry
+    fn create_object_pool<T: 'static>(renderer: Arc<Renderer>, max_buffer_size: usize, bind_group_layout: Arc<BindGroupLayout>) -> impl Fn(usize) -> UniformBufferEntry
     {
         assert!(!std::mem::needs_drop::<T>());
 
@@ -49,7 +96,7 @@ impl UniformsPool
             let bind_group = renderer.device().create_bind_group(&BindGroupDescriptor
             {
                 label: debug_label!(&format!("{} x {} uniform bind group (pooled)", T::short_type_name(), count)),
-                layout: bind_group_layout,
+                layout: &bind_group_layout,
                 entries: &[],
             });
 

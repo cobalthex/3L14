@@ -1,6 +1,5 @@
 use crate::debug_label;
-use crate::engine::asset::AssetPayload;
-use crate::engine::graphics::assets::{GeometryMesh, Material, MaterialClass, Model, Shader, ShaderStage};
+use crate::engine::graphics::assets::{GeometryMesh, Material, Model, Shader, ShaderStage};
 use crate::engine::graphics::Renderer;
 use metrohash::MetroHash64;
 use parking_lot::{Mutex, RwLock};
@@ -20,12 +19,6 @@ pub enum DebugMode // debug only?
 #[derive(Hash, PartialEq, Eq, Copy, Clone)]
 pub struct PipelineHash(u64);
 
-pub struct CommonBindLayouts
-{
-    pub camera: BindGroupLayout,
-    pub world_transform: BindGroupLayout,
-}
-
 pub struct PipelineCache
 {
     renderer: Arc<Renderer>,
@@ -35,65 +28,15 @@ pub struct PipelineCache
     pipeline_layouts: Mutex<HashMap<u64, PipelineLayout>>,
     pipelines: RwLock<HashMap<PipelineHash, RenderPipeline>>,
 
-    common_bind_layouts: CommonBindLayouts, // TODO: don't hard-code ?
-
     bind_groups: Mutex<HashMap<u64, BindGroup>>,
     default_sampler: Sampler,
 }
 impl PipelineCache
 {
-    // todo: this differently
-    pub fn common_layouts(&self) -> &CommonBindLayouts { &self.common_bind_layouts }
-    
     pub fn default_sampler(&self) -> &Sampler { &self.default_sampler }
 
     pub fn new(renderer: Arc<Renderer>) -> Self
     {
-        let common_bind_layouts = CommonBindLayouts
-        {
-            camera: renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
-            {
-                entries:
-                &[
-                    wgpu::BindGroupLayoutEntry
-                    {
-                        binding: 0,
-                        visibility: ShaderStages::VERTEX,
-                        ty: BindingType::Buffer
-                        {
-                            ty: BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    }
-                ],
-                label: debug_label!("Camera vsh bind layout"),
-            }),
-
-            world_transform: renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
-            {
-                entries:
-                &[
-                    BindGroupLayoutEntry
-                    {
-                        binding: 0,
-                        visibility: ShaderStages::VERTEX,
-                        ty: BindingType::Buffer
-                        {
-                            ty: BufferBindingType::Uniform,
-                            has_dynamic_offset: true,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    }
-                ],
-                label: debug_label!("World transform vsh bind layout"),
-            }),
-        };
-
-
-
         let default_sampler = Self::create_sampler(&renderer);
         
         Self
@@ -101,7 +44,6 @@ impl PipelineCache
             renderer,
             pipeline_layouts: Mutex::default(),
             pipelines: RwLock::default(),
-            common_bind_layouts,
             bind_groups: Mutex::default(),
             default_sampler,
         }

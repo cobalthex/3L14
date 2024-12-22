@@ -96,57 +96,7 @@ fn main() -> ExitReason
         camera.update_view();
 
         let mut pipeline_cache = PipelineCache::new(renderer.clone());
-
-        const MAX_ENTRIES_IN_WORLD_BUF: usize = 64;
-        let world_uform_buf = renderer.device().create_buffer(&BufferDescriptor
-        {
-            label: Some("World uniform buffer"),
-            size: (std::mem::size_of::<TransformUniform>() * MAX_ENTRIES_IN_WORLD_BUF) as BufferAddress,
-            usage: BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let world_bind_group = renderer.device().create_bind_group(&BindGroupDescriptor
-        {
-            layout: &pipeline_cache.common_layouts().world_transform,
-            entries:
-            &[
-                BindGroupEntry
-                {
-                    binding: 0,
-                    resource: BindingResource::Buffer(BufferBinding
-                    {
-                        buffer: &world_uform_buf,
-                        offset: 0,
-                        size: Some(unsafe { BufferSize::new_unchecked(std::mem::size_of::<TransformUniform>() as u64) }),
-                    })
-                }
-            ],
-            label: Some("World bind group"),
-        });
-
         // ꙮ
-
-        let cam_uform_buf = renderer.device().create_buffer(&BufferDescriptor
-        {
-            label: Some("Camera uniform buffer"),
-            size: std::mem::size_of::<CameraUniform>() as BufferAddress,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let cam_bind_group = renderer.device().create_bind_group(&BindGroupDescriptor
-        {
-            layout: &pipeline_cache.common_layouts().camera,
-            entries:
-            &[
-                BindGroupEntry
-                {
-                    binding: 0,
-                    resource: cam_uform_buf.as_entire_binding(),
-                }
-            ],
-            label: Some("Camera bind group"),
-        });
-
         let uniforms_pool = UniformsPool::new(renderer.clone());
 
         let mut obj_rot = Quat::IDENTITY;
@@ -271,9 +221,6 @@ fn main() -> ExitReason
                     debug_menu_memory.is_active ^= true;
                 }
             }
-
-            let cam_uform = CameraUniform::new(&camera, &clock);
-            renderer.queue().write_buffer(&cam_uform_buf, 0, unsafe { [cam_uform].as_u8_slice() });
 
             let render_frame = renderer.frame(frame_number, &input);
             {
