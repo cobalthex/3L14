@@ -83,8 +83,6 @@ impl Camera
     pub fn view(&self) -> ViewMtx { self.view_mtx }
     pub fn projection(&self) -> ProjectionMtx { self.projection_mtx }
 
-    pub fn view_projection(&self) -> Mat4 { self.view_mtx.0 * self.projection_mtx.0 }
-
     pub fn update_view(&mut self) -> &ViewMtx
     {
         self.view_mtx = self.transform.to_view();
@@ -118,13 +116,13 @@ pub struct CameraUniform
 
 impl CameraUniform
 {
-    pub fn new(camera: &Camera, runtime: Duration) -> Self
+    pub fn new(proj_view: Mat4, runtime: Duration) -> Self
     {
         let runtime_millis = runtime.as_millis();
 
         Self
         {
-            proj_view: camera.projection().0 * camera.view().0,
+            proj_view: proj_view,
             total_secs_whole: (runtime_millis / 1000) as u32,
             total_secs_frac: (runtime_millis % 1000) as f32 / 1000.0,
         }

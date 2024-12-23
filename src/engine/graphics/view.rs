@@ -5,7 +5,7 @@ use crate::engine::graphics::pipeline_cache::{DebugMode, PipelineCache};
 use crate::engine::graphics::pipeline_sorter::PipelineSorter;
 use crate::engine::graphics::uniforms_pool::{UniformsPool, UniformsPoolEntryGuard, WgpuBufferWriter, WriteTyped};
 use crate::engine::graphics::{pipeline_sorter, Renderer};
-use crate::engine::world::{Camera, CameraUniform, TransformUniform, ViewMtx};
+use crate::engine::world::{Camera, CameraUniform, ProjectionMtx, TransformUniform, ViewMtx};
 use glam::{Mat4, Vec4Swizzles};
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,40 +16,47 @@ use crate::debug_label;
 // TODO: This needs to exist until the frame has been submitted fully
 pub struct View<'f>
 {
-    runtime: Duration,
-    renderer: &'f Renderer,
+    renderer: Arc<Renderer>,
     pipeline_cache: &'f PipelineCache,
+    runtime: Duration,
     debug_mode: DebugMode,
-    camera: &'f Camera,
+    camera_view: ViewMtx,
+    camera_projection: ProjectionMtx,
     sorter: PipelineSorter,
     used_transforms: Vec<UniformsPoolEntryGuard<'f>>
-    // translucent_pass: TranslucentPass,
 }
 
 impl<'f> View<'f>
 {
-    pub fn new(
-        runtime: Duration,
-        renderer: &'f Renderer,
-        camera: &'f Camera,
-        pipeline_cache: &'f PipelineCache) -> Self
+    // TODO: don't
+    pub fn new(renderer: Arc<Renderer>, pipeline_cache: &'f PipelineCache) -> Self
     {
         Self
         {
-            runtime,
             renderer,
             pipeline_cache,
-            debug_mode: DebugMode::None, // todo
-            camera,
+            runtime: Duration::new(0, 0),
+            debug_mode: DebugMode::None,
+            camera_view: ViewMtx(Mat4::default()),
+            camera_projection: ProjectionMtx(Mat4::default()),
             sorter: PipelineSorter::default(),
             used_transforms: Vec::new(),
         }
     }
 
+    pub fn start(&mut self, runtime: Duration, camera: &Camera)
+    {
+        self.runtime = runtime;
+        self.camera_view = camera.view();
+        self.camera_projection = camera.projection();
+        self.sorter.clear();
+        self.used_transforms.clear();
+    }
+
     pub fn draw(&mut self, object_transform: Mat4, model: Arc<Model>) -> bool
     {
         // todo: use closest OBB point instead of center?
-        let depth = self.camera.view().0.transform_vector3(object_transform.w_axis.xyz()).z;
+        let depth = self.camera_view.0.transform_vector3(object_transform.w_axis.xyz()).z;
 
         // this may be heavy-handed
         if !model.all_dependencies_loaded()
@@ -134,7 +141,8 @@ impl<'f> View<'f>
         let camera = self.pipeline_cache.uniforms.take_camera();
         {
             let mut camera_writer = camera.write(self.renderer.queue());
-            camera_writer.write_typed(0, CameraUniform::new(self.camera, self.runtime));
+            // TODO: view/proj order may be arch dependent?
+            camera_writer.write_typed(0, CameraUniform::new(self.camera_projection.0 * self.camera_view.0, self.runtime));
         }
 
         for (pipeline_hash, draws) in self.sorter.sort()

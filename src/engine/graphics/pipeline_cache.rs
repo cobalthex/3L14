@@ -178,7 +178,8 @@ impl PipelineCache
                 compilation_options: PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState
                 {
-                    format: TextureFormat::Bgra8UnormSrgb, // TODO: based on material, maybe render pass (must match pass), or get from renderer surface format
+                    // format: TextureFormat::Bgra8UnormSrgb, // TODO: based on material, maybe render pass (must match pass), or get from renderer surface format
+                    format: TextureFormat::Rgba8UnormSrgb, // TODO: based on material, maybe render pass (must match pass), or get from renderer surface format
                     blend: None, // todo: material settings
                     write_mask: ColorWrites::ALL,
                 })],

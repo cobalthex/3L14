@@ -101,6 +101,8 @@ fn main() -> ExitReason
 
         let mut obj_rot = Quat::IDENTITY;
 
+        let mut views: [_; 2] = array_init::array_init(|_| View::new(renderer.clone(), &pipeline_cache));
+
         let mut frame_number = FrameNumber(0);
         let mut fps_sparkline = Sparkline::<100>::new(); // todo: use
         'main_loop: loop
@@ -242,7 +244,8 @@ fn main() -> ExitReason
                         &mut encoder,
                         Some(colors::CORNFLOWER_BLUE));
 
-                    let mut view = View::new(frame_time.total_runtime, &renderer, &camera, &pipeline_cache);
+                    let mut view = &mut views[frame_number.0 as usize % views.len()];
+                    view.start(frame_time.total_runtime, &camera);
 
                     if let AssetPayload::Available(model) = test_model.payload()
                     {
@@ -251,54 +254,6 @@ fn main() -> ExitReason
                     }
 
                     view.submit(&mut test_pass);
-                     //             test_pass.set_bind_group(0, &cam_bind_group, &[]);
-                    //
-                    //             // todo: use DrawIndirect?
-                    //             worlds_buf[world_index].world =
-                    //             let offset = (world_index * std::mem::size_of::<TransformUniform>()) as u32;
-                    //             test_pass.set_bind_group(1, &world_bind_group, &[offset]);
-                    //             world_index += 1;
-                    //
-                    //             let mesh = &geom.meshes[i as usize];
-                    //             test_pass.set_vertex_buffer(0, mesh.vertices.slice(0..));
-                    //             test_pass.set_index_buffer(mesh.indices.slice(0..), mesh.index_format);
-                    //
-                    //             let mut bge = ArrayVec::<_, 18>::new();
-                    //             bge.push(BindGroupEntry
-                    //             {
-                    //                 binding: bge.len() as u32,
-                    //                 resource: mtl.props.as_entire_binding(),
-                    //             });
-                    //             if !textures.is_empty()
-                    //             {
-                    //                 bge.push(BindGroupEntry
-                    //                 {
-                    //                     binding: bge.len() as u32,
-                    //                     resource: BindingResource::Sampler(pipeline_cache.default_sampler())
-                    //                 });
-                    //                 for tex in &textures
-                    //                 {
-                    //                     bge.push(BindGroupEntry
-                    //                     {
-                    //                         binding: bge.len() as u32,
-                    //                         resource: BindingResource::TextureView(&tex.gpu_view),
-                    //                     })
-                    //                 }
-                    //             }
-                    //
-                    //             let bind_group = renderer.device().create_bind_group(&BindGroupDescriptor
-                    //             {
-                    //                 label: debug_label!("TODO mtl bind group"), // TODO
-                    //                 layout: &mtl.bind_layout,
-                    //                 entries: &bge,
-                    //             });
-                    //
-                    //             test_pass.set_bind_group(2, &bind_group, &[]);
-                    //
-                    //             test_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
-                    //         }
-                    //     }
-                    // }
                 }
 
                 // todo: only update what was written to
