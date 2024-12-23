@@ -22,6 +22,7 @@ harness = false
 default = []
 debug_asset_lifetimes = []
 debug_gpu_labels = []
+asset_names = []
 
 [dependencies]
 proc_macros_3l14 = { path = "macros" }

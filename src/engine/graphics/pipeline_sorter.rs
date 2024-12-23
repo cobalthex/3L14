@@ -2,8 +2,9 @@ use std::cmp::Ordering;
 use std::collections::hash_map::{Drain, Iter, IterMut};
 use std::collections::HashMap;
 use std::sync::Arc;
+use arrayvec::ArrayVec;
 use glam::Mat4;
-use crate::engine::graphics::assets::{Geometry, Material, Shader};
+use crate::engine::graphics::assets::{material::MAX_MATERIAL_TEXTURE_BINDINGS, Geometry, Material, Shader, Texture};
 use crate::engine::graphics::pipeline_cache::PipelineHash;
 
 pub struct Draw
@@ -15,6 +16,7 @@ pub struct Draw
     pub pipeline_hash: PipelineHash,
     pub geometry: Arc<Geometry>,
     pub material: Arc<Material>,
+    pub textures: ArrayVec<Arc<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS>,
     pub vshader: Arc<Shader>,
     pub pshader: Arc<Shader>,
 }

@@ -9,43 +9,40 @@ use crate::engine::world::{Camera, CameraUniform, TransformUniform, ViewMtx};
 use glam::{Mat4, Vec4Swizzles};
 use std::sync::Arc;
 use std::time::Duration;
-use wgpu::RenderPass;
-
-const MAX_ENTRIES_IN_WORLD_BUF: usize = 64;
+use arrayvec::ArrayVec;
+use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, RenderPass};
+use crate::debug_label;
 
 // TODO: This needs to exist until the frame has been submitted fully
 pub struct View<'f>
 {
-    timestamp: Duration,
+    runtime: Duration,
     renderer: &'f Renderer,
     pipeline_cache: &'f PipelineCache,
-    uniforms_pool: &'f UniformsPool,
     debug_mode: DebugMode,
     camera: &'f Camera,
     sorter: PipelineSorter,
-    used_uniforms: Vec<UniformsPoolEntryGuard<'f>>
+    used_transforms: Vec<UniformsPoolEntryGuard<'f>>
     // translucent_pass: TranslucentPass,
 }
 
 impl<'f> View<'f>
 {
     pub fn new(
-        timestamp: Duration,
+        runtime: Duration,
         renderer: &'f Renderer,
         camera: &'f Camera,
-        pipeline_cache: &'f PipelineCache,
-        uniforms_pool: &'f UniformsPool) -> Self
+        pipeline_cache: &'f PipelineCache) -> Self
     {
         Self
         {
-            timestamp,
+            runtime,
             renderer,
             pipeline_cache,
-            uniforms_pool,
             debug_mode: DebugMode::None, // todo
             camera,
             sorter: PipelineSorter::default(),
-            used_uniforms: Vec::new(),
+            used_transforms: Vec::new(),
         }
     }
 
@@ -61,19 +58,19 @@ impl<'f> View<'f>
         }
 
         // todo: these need to reuse between draw calls
-        let mut uniforms = self.uniforms_pool.take_transforms();
+        let mut uniforms = self.pipeline_cache.uniforms.take_transforms();
         let mut next_uniform = 0;
         let mut uniforms_writer = uniforms.write(self.renderer.queue());
 
         let geo = model.geometry.payload().unwrap();
         for mesh_index in 0..model.mesh_count
         {
-            if next_uniform >= self.used_uniforms.len()
+            if next_uniform >= self.used_transforms.len()
             {
                 drop(uniforms_writer);
-                let mut swap_uniforms = self.uniforms_pool.take_transforms();
+                let mut swap_uniforms = self.pipeline_cache.uniforms.take_transforms();
                 std::mem::swap(&mut uniforms, &mut swap_uniforms);
-                self.used_uniforms.push(swap_uniforms);
+                self.used_transforms.push(swap_uniforms);
                 uniforms_writer = uniforms.write(self.renderer.queue());
 
                 next_uniform = 0;
@@ -84,7 +81,8 @@ impl<'f> View<'f>
             {
                 world: object_transform,
             });
-            let uniform_id = ((self.used_uniforms.len() << 8) + next_uniform) as u32; // todo: ensure bits are enough
+            let uniform_id = (((self.used_transforms.len() - 1) << 8) + next_uniform) as u32; // todo: ensure bits are enough
+            next_uniform += 1;
 
             let (mtl, vsh, psh) =
             {
@@ -95,6 +93,8 @@ impl<'f> View<'f>
                     surf.pixel_shader.payload().unwrap(),
                 )
             };
+
+            let textures = mtl.textures.iter().map(|t| t.payload().unwrap()).collect();
 
             let pipeline_hash = self.pipeline_cache.get_or_create(
                 &geo.meshes[mesh_index as usize],
@@ -112,10 +112,14 @@ impl<'f> View<'f>
                 pipeline_hash,
                 geometry: geo.clone(),
                 material: mtl,
+                textures,
                 vshader: vsh,
                 pshader: psh,
             });
         }
+        
+        drop(uniforms_writer);
+        self.used_transforms.push(uniforms);
 
         true
     }
@@ -127,14 +131,10 @@ impl<'f> View<'f>
     {
         puffin::profile_scope!("View submission");
 
-        let camera = self.uniforms_pool.take_camera();
+        let camera = self.pipeline_cache.uniforms.take_camera();
         {
             let mut camera_writer = camera.write(self.renderer.queue());
-            camera_writer.write_typed(0, CameraUniform
-            {
-                proj_view: self.camera.view_projection(),
-                total_secs: self.timestamp.as_secs_f32(),
-            })
+            camera_writer.write_typed(0, CameraUniform::new(self.camera, self.runtime));
         }
 
         for (pipeline_hash, draws) in self.sorter.sort()
@@ -148,7 +148,39 @@ impl<'f> View<'f>
             {
                 let mesh = &draw.geometry.meshes[draw.mesh_index as usize];
 
-                render_pass.set_bind_group(0, )
+                camera.bind(render_pass, 0, 0);
+                self.used_transforms[(draw.uniform_id >> 8) as usize].bind(render_pass, 1, draw.uniform_id as u8);
+
+                // TODO: don't create on the fly
+                let mut bge = ArrayVec::<_, 18>::new();
+                bge.push(BindGroupEntry
+                {
+                    binding: bge.len() as u32,
+                    resource: draw.material.props.as_entire_binding(),
+                });
+                if !draw.material.textures.is_empty()
+                {
+                    bge.push(BindGroupEntry
+                    {
+                        binding: bge.len() as u32,
+                        resource: BindingResource::Sampler(self.pipeline_cache.default_sampler())
+                    });
+                    for tex in &draw.textures
+                    {
+                        bge.push(BindGroupEntry
+                        {
+                            binding: bge.len() as u32,
+                            resource: BindingResource::TextureView(&tex.gpu_view),
+                        })
+                    }
+                }
+                let mtl_bind_group = self.renderer.device().create_bind_group(&BindGroupDescriptor
+                {
+                    label: debug_label!("TODO mtl bind group"),
+                    layout: &draw.material.bind_layout,
+                    entries: &bge,
+                });
+                render_pass.set_bind_group(2, &mtl_bind_group, &[]);
 
                 render_pass.set_vertex_buffer(0, mesh.vertices.slice(0..));
                 render_pass.set_index_buffer(mesh.indices.slice(0..), mesh.index_format);

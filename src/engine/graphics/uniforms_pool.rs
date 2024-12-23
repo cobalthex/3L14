@@ -1,27 +1,28 @@
-use crate::{const_assert, debug_label};
+use crate::debug_label;
 use crate::engine::containers::{ObjectPool, ObjectPoolEntryGuard};
 use crate::engine::graphics::Renderer;
 use crate::engine::world::{CameraUniform, TransformUniform};
 use crate::engine::ShortTypeName;
 use std::sync::Arc;
-use wgpu::{BindGroupDescriptor, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, QueueWriteBufferView, ShaderStages};
+use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, QueueWriteBufferView, RenderPass, ShaderStages};
 
 pub struct UniformBufferEntry
 {
+    pub entry_size: u32,
     pub count: u32,
     pub buffer: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,
 }
 
-// TODO: merge with pipeline_cache
-
 pub struct UniformsPool
 {
+    renderer: Arc<Renderer>,
+    max_ubo_size: usize,
     cameras: ObjectPool<UniformBufferEntry>,
     transforms: ObjectPool<UniformBufferEntry>,
-    // arc here annoying
-    pub camera_bind_layout: Arc<BindGroupLayout>,
-    pub transform_bind_layout: Arc<BindGroupLayout>,
+
+    pub camera_bind_layout: BindGroupLayout,
+    pub transform_bind_layout: BindGroupLayout,
 }
 impl UniformsPool
 {
@@ -29,7 +30,7 @@ impl UniformsPool
     {
         let max_ubo_size = renderer.device().limits().max_uniform_buffer_binding_size as usize;
 
-        let camera_bind_layout = Arc::new(renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
+        let camera_bind_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
         {
             entries:
             &[
@@ -40,16 +41,16 @@ impl UniformsPool
                     ty: BindingType::Buffer
                     {
                         ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
+                        has_dynamic_offset: true,
                         min_binding_size: None,
                     },
                     count: None,
                 }
             ],
             label: debug_label!("Camera vsh bind layout"),
-        }));
+        });
 
-        let transform_bind_layout = Arc::new(renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
+        let transform_bind_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
         {
             entries:
             &[
@@ -67,56 +68,60 @@ impl UniformsPool
                 }
             ],
             label: debug_label!("World transform vsh bind layout"),
-        }));
+        });
 
         Self
         {
-            cameras: ObjectPool::new(Self::create_object_pool::<CameraUniform>(renderer.clone(), size_of::<CameraUniform>(), camera_bind_layout.clone())),
-            transforms: ObjectPool::new(Self::create_object_pool::<TransformUniform>(renderer.clone(), max_ubo_size, transform_bind_layout.clone())),
+            max_ubo_size,
+            cameras: ObjectPool::new(|_| unimplemented!()),
+            transforms: ObjectPool::new(|_| unimplemented!()),
+            renderer,
             camera_bind_layout,
             transform_bind_layout,
         }
     }
 
-    fn create_object_pool<T: 'static>(renderer: Arc<Renderer>, max_buffer_size: usize, bind_group_layout: Arc<BindGroupLayout>) -> impl Fn(usize) -> UniformBufferEntry
+    fn create_pool_entry<T: 'static>(&self, bind_group_layout: &BindGroupLayout) -> UniformBufferEntry
     {
         assert!(!std::mem::needs_drop::<T>());
 
-        let count = max_buffer_size / size_of::<T>();
-        move |_|
+        let count = self.max_ubo_size / size_of::<T>();
+        let buffer = self.renderer.device().create_buffer(&BufferDescriptor
         {
-            let buffer = renderer.device().create_buffer(&BufferDescriptor
-            {
-                label: debug_label!(&format!("{} x {} uniform buffer (pooled)", T::short_type_name(), count)),
-                size: (count * size_of::<T>()) as BufferAddress,
-                usage: BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+            label: debug_label!(&format!("{} x {} uniform buffer (pooled)", T::short_type_name(), count)),
+            size: (count * size_of::<T>()) as BufferAddress,
+            usage: BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
-            let bind_group = renderer.device().create_bind_group(&BindGroupDescriptor
+        let bind_group = self.renderer.device().create_bind_group(&BindGroupDescriptor
+        {
+            label: debug_label!(&format!("[{}; {}] uniform bind group (pooled)", T::short_type_name(), count)),
+            layout: bind_group_layout,
+            entries: &[BindGroupEntry
             {
-                label: debug_label!(&format!("{} x {} uniform bind group (pooled)", T::short_type_name(), count)),
-                layout: &bind_group_layout,
-                entries: &[],
-            });
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+        });
 
-            UniformBufferEntry
-            {
-                count: count as u32,
-                buffer,
-                bind_group: bind_group,
-            }
+        UniformBufferEntry
+        {
+            entry_size: size_of::<T>() as u32,
+            count: count as u32,
+            buffer,
+            bind_group,
         }
     }
 
     pub fn take_camera(&self) -> ObjectPoolEntryGuard<'_, UniformBufferEntry>
     {
-        self.cameras.take()
+        self.cameras.take_construct(|_| self.create_pool_entry::<CameraUniform>(&self.camera_bind_layout))
     }
 
     pub fn take_transforms(&self) -> ObjectPoolEntryGuard<'_, UniformBufferEntry>
     {
-        self.transforms.take()
+        self.cameras.take_construct(|_| self.create_pool_entry::<TransformUniform>(&self.transform_bind_layout))
     }
 }
 
@@ -132,6 +137,14 @@ impl<'p> WgpuBufferWriter<'p> for UniformsPoolEntryGuard<'p>
     {
         let buf_size = unsafe { BufferSize::new_unchecked(self.buffer.size()) };
         queue.write_buffer_with(&self.buffer, 0, buf_size).unwrap()
+    }
+}
+impl<'p> UniformsPoolEntryGuard<'p>
+{
+    pub fn bind(&self, render_pass: &mut RenderPass, bind_index: u32, buffer_index: u8)
+    {
+        let offset = buffer_index as u32 * self.entry_size;
+        render_pass.set_bind_group(bind_index, &self.bind_group, &[offset]);
     }
 }
 

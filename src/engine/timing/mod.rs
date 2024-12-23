@@ -7,6 +7,7 @@ pub struct Time
     pub current_time: Instant,
     pub last_time: Instant,
     pub delta_time: Duration,
+    pub total_runtime: Duration,
 }
 impl Time
 {
@@ -35,6 +36,7 @@ impl Clock
                 current_time: now,
                 last_time: now - Self::MIN_DURATION,
                 delta_time: Self::MIN_DURATION,
+                total_runtime: Self::MIN_DURATION,
             }),
         }
     }
@@ -45,13 +47,13 @@ impl Clock
         locked.last_time = locked.current_time;
         locked.current_time = Instant::now();
         locked.delta_time = locked.current_time - locked.last_time;
+        locked.total_runtime = locked.current_time - self.start_time;
         *locked
     }
 
-    pub fn total_runtime(&self) -> Duration { self.time().current_time - self.start_time }
     pub fn time(&self) -> Time { *self.time.read() }
 
-        // debug set time?
+    // debug set time?
 }
 impl Default for Clock
 {

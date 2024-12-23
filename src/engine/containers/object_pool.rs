@@ -15,6 +15,8 @@ struct Buckets<T>
     buckets: Vec<Box<[MaybeUninit<T>; OBJECT_POOL_BUCKET_ENTRY_COUNT as usize]>>,
 }
 
+// TODO: separate version for passing the ctor as part of take?
+
 pub struct ObjectPool<T>
 {
     free: SegQueue<PoolEntryIndex>, // ArrayQueue w/ max 2 or 3 buckets of free space? overflow buckets get deleted?
@@ -41,7 +43,7 @@ impl<T> ObjectPool<T>
     pub fn total_count(&self) -> usize { self.buckets.read().unwrap().count as usize }
 
     // returns the first entry, ready for use; or none if a failure happened
-    fn extend(&self) -> Option<PoolEntryIndex>
+    fn extend(&self, create_entry_fn: impl Fn(usize) -> T) -> Option<PoolEntryIndex>
     {
         let mut locked = self.buckets.write().unwrap();
         let count = locked.count;
@@ -55,13 +57,13 @@ impl<T> ObjectPool<T>
         if count > 0 && bucket_local < OBJECT_POOL_BUCKET_ENTRY_COUNT
         {
             locked.buckets[(count >> OBJECT_POOL_BUCKET_ENTRY_BITS) as usize][bucket_local as usize]
-                .write((self.create_entry_fn)(count as usize));
+                .write((create_entry_fn)(count as usize));
             index = count;
         }
         else
         {
             let mut new_bucket = Box::new([const { MaybeUninit::uninit() }; OBJECT_POOL_BUCKET_ENTRY_COUNT as usize]);
-            new_bucket[0].write((self.create_entry_fn)(count as usize));
+            new_bucket[0].write((create_entry_fn)(count as usize));
             index = (locked.buckets.len() << OBJECT_POOL_BUCKET_ENTRY_BITS) as PoolEntryIndex;
             locked.buckets.push(new_bucket);
         }
@@ -70,7 +72,13 @@ impl<T> ObjectPool<T>
         Some(index)
     }
 
+    #[inline]
     pub fn take(&self) -> ObjectPoolEntryGuard<T>
+    {
+        self.take_construct(&self.create_entry_fn)
+    }
+
+    pub fn take_construct(&self, create_entry_fn: impl Fn(usize) -> T) -> ObjectPoolEntryGuard<T>
     {
         let index = match self.free.pop()
         {
@@ -78,7 +86,7 @@ impl<T> ObjectPool<T>
             None =>
             {
                 // this can end up making extra entries if someone frees while this is extending, but that is hopefully rare
-                self.extend().expect("Failed to extend object pool") // more graceful error handling?
+                self.extend(&create_entry_fn).expect("Failed to extend object pool") // more graceful error handling?
             }
         };
 

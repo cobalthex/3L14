@@ -8,6 +8,7 @@ use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use wgpu::{AddressMode, BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
+use crate::engine::graphics::uniforms_pool::UniformsPool;
 
 #[derive(Debug, Clone, Copy, Hash)]
 pub enum DebugMode // debug only?
@@ -22,13 +23,13 @@ pub struct PipelineHash(u64);
 pub struct PipelineCache
 {
     renderer: Arc<Renderer>,
+    pub uniforms: UniformsPool,
 
     // Todo: better threading solve? (Reference tracking makes this a pain)
 
     pipeline_layouts: Mutex<HashMap<u64, PipelineLayout>>,
     pipelines: RwLock<HashMap<PipelineHash, RenderPipeline>>,
 
-    bind_groups: Mutex<HashMap<u64, BindGroup>>,
     default_sampler: Sampler,
 }
 impl PipelineCache
@@ -41,10 +42,10 @@ impl PipelineCache
         
         Self
         {
-            renderer,
+            renderer: renderer.clone(),
+            uniforms: UniformsPool::new(renderer),
             pipeline_layouts: Mutex::default(),
             pipelines: RwLock::default(),
-            bind_groups: Mutex::default(),
             default_sampler,
         }
     }
@@ -121,8 +122,8 @@ impl PipelineCache
             {
                 label: debug_label!(&format!("{:?}+{} tex pipeline layout", material.class, material.textures.len())),
                 bind_group_layouts: &[
-                    &self.common_bind_layouts.camera,
-                    &self.common_bind_layouts.world_transform,
+                    &self.uniforms.camera_bind_layout,
+                    &self.uniforms.transform_bind_layout,
                     &material.bind_layout,
                 ],
                 push_constant_ranges: &[],

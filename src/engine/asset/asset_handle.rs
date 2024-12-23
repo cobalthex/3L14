@@ -11,7 +11,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
-
+use arc_swap::ArcSwapOption;
 use super::*;
 
 // TODO: name Ash<> ?
@@ -63,6 +63,9 @@ pub(super) struct AssetHandleInner
 
     key: AssetKey,
     dropper: Sender<AssetLifecycleRequest>,
+    //
+    // #[cfg(feature = "asset_names")]
+    // name: Arc<str>, // stores optional
 
     // test only?
     ready_waker: Mutex<Option<Waker>>,
@@ -267,6 +270,16 @@ impl<A: Asset> AssetHandle<A>
     {
         self.inner().key
     }
+
+    // The name of this asset, only available with asset names enabled ("" otherwise)
+    // #[inline]
+    // pub fn name(&self) -> Option<&str>
+    // {
+    //     #[cfg(feature = "asset_names")]
+    //     return self.inner().name.as_ref();
+    //     #[cfg(not(feature = "asset_names"))]
+    //     return "";
+    // }
 
     // Retrieve the current payload, holds a strong reference for as long as the guard exists
     #[inline]

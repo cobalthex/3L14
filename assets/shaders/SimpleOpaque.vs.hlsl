@@ -4,7 +4,8 @@
 cbuffer Camera
 {
     float4x4 ProjView;
-    float TotalSecs;
+    uint TotalSecsWhole;
+    float TotalSecsFrac;
 };
 [[vk::binding(0, 1)]]
 cbuffer World

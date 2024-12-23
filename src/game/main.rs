@@ -95,7 +95,7 @@ fn main() -> ExitReason
         camera.transform.position = Vec3::new(0.0, 2.0, -10.0);
         camera.update_view();
 
-        let mut pipeline_cache = PipelineCache::new(renderer.clone());
+        let pipeline_cache = PipelineCache::new(renderer.clone());
         // ꙮ
         let uniforms_pool = UniformsPool::new(renderer.clone());
 
@@ -242,7 +242,7 @@ fn main() -> ExitReason
                         &mut encoder,
                         Some(colors::CORNFLOWER_BLUE));
 
-                    let mut view = View::new(&renderer, &camera, &pipeline_cache, &uniforms_pool);
+                    let mut view = View::new(frame_time.total_runtime, &renderer, &camera, &pipeline_cache);
 
                     if let AssetPayload::Available(model) = test_model.payload()
                     {
@@ -312,7 +312,7 @@ fn main() -> ExitReason
                 {
                     fps: frame_time.fps(),
                     frame_number,
-                    app_runtime: clock.total_runtime().as_secs_f64(),
+                    app_runtime: frame_time.total_runtime.as_secs_f64(),
                     main_window_size: windows.main_window().size(),
                     viewport_size: renderer.display_size().into(),
                 };

@@ -1,9 +1,10 @@
+use std::time::Duration;
+use super::{Transform, ViewMtx};
+use crate::engine::graphics::debug_gui::DebugGui;
+use crate::engine::timing::Time;
+use crate::engine::Radians;
 use egui::Ui;
 use glam::Mat4;
-use gltf::camera::Projection;
-use crate::engine::{Radians, Degrees};
-use crate::engine::graphics::debug_gui::DebugGui;
-use super::{Transform, ViewMtx};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ProjectionMtx(pub Mat4);
@@ -111,17 +112,21 @@ impl DebugGui for Camera
 pub struct CameraUniform
 {
     pub proj_view: Mat4,
-    pub total_secs: f32,
+    pub total_secs_whole: u32,
+    pub total_secs_frac: f32,
 }
 
 impl CameraUniform
 {
-    pub fn new(camera: &Camera, clock: &crate::engine::timing::Clock) -> Self
+    pub fn new(camera: &Camera, runtime: Duration) -> Self
     {
+        let runtime_millis = runtime.as_millis();
+
         Self
         {
             proj_view: camera.projection().0 * camera.view().0,
-            total_secs: clock.total_runtime().as_secs_f32(),
+            total_secs_whole: (runtime_millis / 1000) as u32,
+            total_secs_frac: (runtime_millis % 1000) as f32 / 1000.0,
         }
     }
 }
