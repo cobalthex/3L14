@@ -1,24 +1,83 @@
 use std::hash::{Hash, Hasher};
+use std::io::Write;
+use std::path::Path;
 use egui::Pos2;
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 use crate::engine::graphics::debug_gui::DebugGuiBase;
 
 pub struct DebugMenuId(u64);
 
+#[derive(Serialize, Deserialize)]
 struct DebugMenuItemState
 {
     name: String,
     is_active: bool,
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct DebugMenuMemory
 {
-    pub is_active: bool,
+    #[serde(skip)]
+    generation: usize, // updated everytime a state changes
+    #[serde(skip)]
+    last_saved_generation: usize,
+
+    is_active: bool, // is the top level menu active
     states: IndexMap<u64, DebugMenuItemState>, // todo: this should be sorted
 }
 impl DebugMenuMemory
 {
+    pub fn generation(&self) -> usize { self.generation }
+
+    // returns true if wrote, false if not dirty
+    // will always update dirty state, even on failure
+    pub fn save_if_dirty(&mut self, path: impl AsRef<Path>) -> bool
+    {
+        if self.generation == self.last_saved_generation { return false; }
+        self.last_saved_generation = self.generation;
+
+        let toml = match toml::to_string(&self)
+        {
+            Ok(toml) => toml,
+            Err(e) =>
+            {
+                log::warn!("Failed to serialize debug GUI state: {e}");
+                return false;
+            },
+        };
+        let mut fwrite = match std::fs::File::create(&path)
+        {
+            Ok(file) => file,
+            Err(e) =>
+            {
+                log::warn!("Failed to open debug GUI state file '{:?}' for writing: {e}", path.as_ref());
+                return false;
+            },
+        };
+        if let Err(e) = fwrite.write(toml.as_bytes())
+        {
+            log::warn!("Failed to write debug GUI state to file: {e}");
+            return false;
+        };
+        true
+    }
+
+    pub fn set_active(&mut self, is_active: bool)
+    {
+        if self.is_active != is_active
+        {
+            self.is_active = is_active;
+            self.generation += 1;
+        }
+    }
+
+    pub fn toggle_active(&mut self)
+    {
+        self.is_active ^= true;
+        self.generation += 1;
+    }
+
     pub fn gui_id_by_name<T: DebugGuiBase>(name: &str) -> DebugMenuId
     {
         let mut name_hasher = std::hash::DefaultHasher::new();
@@ -47,26 +106,36 @@ impl DebugMenuMemory
     }
 
     // set a state in the memory, will add if it doesn't exist. Returns the new state
-    pub fn set_active<T: DebugGuiBase>(&mut self, gui: &T, activate: bool)
+    pub fn set_state_active<T: DebugGuiBase>(&mut self, gui: &T, activate: bool)
     {
-        self.get_or_create_state(gui).is_active = activate;
+        let state = self.get_or_create_state(gui);
+        if state.is_active != activate
+        {
+            state.is_active = activate;
+            self.generation += 1;
+        }
     }
 
-    pub fn set_active_by_name<T: DebugGuiBase>(&mut self, name: &str, activate: bool)
+    pub fn set_state_active_by_name<T: DebugGuiBase>(&mut self, name: &str, activate: bool)
     {
         let gui_id = Self::gui_id_by_name::<T>(name);
-        self.states.entry(gui_id.0).or_insert_with(||
+        let state = self.states.entry(gui_id.0).or_insert_with(||
         {
             DebugMenuItemState
             {
                 name: name.to_string(),
                 is_active: false
             }
-        }).is_active = activate;
+        });
+        if state.is_active != activate
+        {
+            state.is_active = activate;
+            self.generation += 1;
+        }
     }
 
     // toggle a state in the memory, does nothing if the state doesn't already exist. Returns the new state
-    pub fn toggle_active<T: DebugGuiBase>(&mut self, gui: &T) -> Option<bool>
+    pub fn toggle_state_active<T: DebugGuiBase>(&mut self, gui: &T) -> Option<bool>
     {
         let gui_id = Self::gui_id(gui);
         match self.states.get_mut(&gui_id.0)
@@ -75,6 +144,7 @@ impl DebugMenuMemory
             Some(state) =>
             {
                 state.is_active ^= true;
+                self.generation += 1;
                 Some(state.is_active)
             }
         }

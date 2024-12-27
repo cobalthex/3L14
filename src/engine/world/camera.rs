@@ -122,7 +122,7 @@ impl CameraUniform
 
         Self
         {
-            proj_view: proj_view,
+            proj_view,
             total_secs_whole: (runtime_millis / 1000) as u32,
             total_secs_frac: (runtime_millis % 1000) as f32 / 1000.0,
         }

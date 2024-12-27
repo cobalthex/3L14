@@ -23,7 +23,7 @@ pub struct View<'f>
     camera_view: ViewMtx,
     camera_projection: ProjectionMtx,
     sorter: PipelineSorter,
-    used_transforms: Vec<UniformsPoolEntryGuard<'f>>
+    used_uniforms: Vec<UniformsPoolEntryGuard<'f>>
 }
 
 impl<'f> View<'f>
@@ -40,17 +40,18 @@ impl<'f> View<'f>
             camera_view: ViewMtx(Mat4::default()),
             camera_projection: ProjectionMtx(Mat4::default()),
             sorter: PipelineSorter::default(),
-            used_transforms: Vec::new(),
+            used_uniforms: Vec::new(),
         }
     }
 
-    pub fn start(&mut self, runtime: Duration, camera: &Camera)
+    pub fn start(&mut self, runtime: Duration, camera: &Camera, debug_mode: DebugMode)
     {
         self.runtime = runtime;
+        self.debug_mode = debug_mode;
         self.camera_view = camera.view();
         self.camera_projection = camera.projection();
         self.sorter.clear();
-        self.used_transforms.clear();
+        self.used_uniforms.clear();
     }
 
     pub fn draw(&mut self, object_transform: Mat4, model: Arc<Model>) -> bool
@@ -72,12 +73,12 @@ impl<'f> View<'f>
         let geo = model.geometry.payload().unwrap();
         for mesh_index in 0..model.mesh_count
         {
-            if next_uniform >= self.used_transforms.len()
+            if next_uniform >= uniforms.count as usize
             {
                 drop(uniforms_writer);
                 let mut swap_uniforms = self.pipeline_cache.uniforms.take_transforms();
                 std::mem::swap(&mut uniforms, &mut swap_uniforms);
-                self.used_transforms.push(swap_uniforms);
+                self.used_uniforms.push(swap_uniforms);
                 uniforms_writer = uniforms.write(self.renderer.queue());
 
                 next_uniform = 0;
@@ -88,7 +89,7 @@ impl<'f> View<'f>
             {
                 world: object_transform,
             });
-            let uniform_id = (((self.used_transforms.len() - 1) << 8) + next_uniform) as u32; // todo: ensure bits are enough
+            let uniform_id = ((self.used_uniforms.len() << 8) + next_uniform) as u32; // todo: ensure bits are enough
             next_uniform += 1;
 
             let (mtl, vsh, psh) =
@@ -126,8 +127,9 @@ impl<'f> View<'f>
         }
         
         drop(uniforms_writer);
-        self.used_transforms.push(uniforms);
+        self.used_uniforms.push(uniforms);
 
+        // self.renderer.queue().submit([]); // ?
         true
     }
 
@@ -157,7 +159,7 @@ impl<'f> View<'f>
                 let mesh = &draw.geometry.meshes[draw.mesh_index as usize];
 
                 camera.bind(render_pass, 0, 0);
-                self.used_transforms[(draw.uniform_id >> 8) as usize].bind(render_pass, 1, draw.uniform_id as u8);
+                self.used_uniforms[(draw.uniform_id >> 8) as usize].bind(render_pass, 1, draw.uniform_id as u8);
 
                 // TODO: don't create on the fly
                 let mut bge = ArrayVec::<_, 18>::new();
@@ -195,5 +197,7 @@ impl<'f> View<'f>
                 render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
             }
         }
+
+        self.used_uniforms.push(camera);
     }
 }

@@ -7,7 +7,9 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+use egui::Ui;
 use wgpu::{AddressMode, BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
+use crate::engine::graphics::debug_gui::DebugGui;
 use crate::engine::graphics::uniforms_pool::UniformsPool;
 
 #[derive(Debug, Clone, Copy, Hash)]
@@ -178,8 +180,8 @@ impl PipelineCache
                 compilation_options: PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState
                 {
-                    // format: TextureFormat::Bgra8UnormSrgb, // TODO: based on material, maybe render pass (must match pass), or get from renderer surface format
-                    format: TextureFormat::Rgba8UnormSrgb, // TODO: based on material, maybe render pass (must match pass), or get from renderer surface format
+                    format: TextureFormat::Bgra8UnormSrgb, // TODO: based on material, maybe render pass (must match pass), or get from renderer surface format
+                    // format: TextureFormat::Rgba8UnormSrgb, // TODO: based on material, maybe render pass (must match pass), or get from renderer surface format
                     blend: None, // todo: material settings
                     write_mask: ColorWrites::ALL,
                 })],
@@ -210,5 +212,17 @@ impl PipelineCache
             anisotropy_clamp: 1,
             border_color: None,
         })
+    }
+}
+impl DebugGui for PipelineCache
+{
+    fn name(&self) -> &str { "Render pipelines" }
+
+    fn debug_gui(&self, ui: &mut Ui)
+    {
+        ui.label(format!("Layouts: {}", self.pipeline_layouts.lock().len()));
+        ui.label(format!("Pipelines: {}", self.pipelines.read().len()));
+
+        ui.collapsing(self.uniforms.name(), |cui| self.uniforms.debug_gui(cui));
     }
 }

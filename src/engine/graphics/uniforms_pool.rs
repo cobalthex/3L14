@@ -1,10 +1,12 @@
+use crate::engine::graphics::debug_gui::DebugGui;
 use crate::debug_label;
 use crate::engine::containers::{ObjectPool, ObjectPoolEntryGuard};
 use crate::engine::graphics::Renderer;
 use crate::engine::world::{CameraUniform, TransformUniform};
 use crate::engine::ShortTypeName;
 use std::sync::Arc;
-use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, QueueWriteBufferView, RenderPass, ShaderStages};
+use egui::Ui;
+use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, QueueWriteBufferView, RenderPass, ShaderStages};
 
 pub struct UniformBufferEntry
 {
@@ -73,19 +75,19 @@ impl UniformsPool
         Self
         {
             max_ubo_size,
-            cameras: ObjectPool::new(|_| unimplemented!()),
-            transforms: ObjectPool::new(|_| unimplemented!()),
+            cameras: ObjectPool::default(),
+            transforms: ObjectPool::default(),
             renderer,
             camera_bind_layout,
             transform_bind_layout,
         }
     }
 
-    fn create_pool_entry<T: 'static>(&self, bind_group_layout: &BindGroupLayout) -> UniformBufferEntry
+    fn create_pool_entry<T: 'static>(&self, bind_group_layout: &BindGroupLayout, max_count: Option<usize>) -> UniformBufferEntry
     {
         assert!(!std::mem::needs_drop::<T>());
 
-        let count = self.max_ubo_size / size_of::<T>();
+        let count = max_count.unwrap_or_else(|| self.max_ubo_size / size_of::<T>());
         let buffer = self.renderer.device().create_buffer(&BufferDescriptor
         {
             label: debug_label!(&format!("{} x {} uniform buffer (pooled)", T::short_type_name(), count)),
@@ -101,7 +103,12 @@ impl UniformsPool
             entries: &[BindGroupEntry
             {
                 binding: 0,
-                resource: buffer.as_entire_binding(),
+                resource: BindingResource::Buffer(wgpu::BufferBinding
+                {
+                    buffer: &buffer,
+                    offset: 0,
+                    size: Some(unsafe { BufferSize::new_unchecked(size_of::<T>() as u64) }),
+                }),
             }],
         });
 
@@ -116,12 +123,24 @@ impl UniformsPool
 
     pub fn take_camera(&self) -> ObjectPoolEntryGuard<'_, UniformBufferEntry>
     {
-        self.cameras.take_construct(|_| self.create_pool_entry::<CameraUniform>(&self.camera_bind_layout))
+        // re-evaluate max count here?
+        self.cameras.take(|_| self.create_pool_entry::<CameraUniform>(&self.camera_bind_layout, Some(2)))
     }
 
     pub fn take_transforms(&self) -> ObjectPoolEntryGuard<'_, UniformBufferEntry>
     {
-        self.cameras.take_construct(|_| self.create_pool_entry::<TransformUniform>(&self.transform_bind_layout))
+        self.transforms.take(|_| self.create_pool_entry::<TransformUniform>(&self.transform_bind_layout, None))
+    }
+}
+impl DebugGui for UniformsPool
+{
+    fn name(&self) -> &str { "Uniforms" }
+
+    fn debug_gui(&self, ui: &mut Ui)
+    {
+        ui.label(format!("Max UBO size: {}", self.max_ubo_size));
+        ui.label(format!("Cameras: {} free, {} total", self.cameras.free_count(), self.cameras.total_count()));
+        ui.label(format!("Transforms: {} free, {} total", self.transforms.free_count(), self.transforms.total_count()));
     }
 }
 
@@ -160,7 +179,7 @@ impl<'p> WriteTyped for QueueWriteBufferView<'p>
     {
         unsafe
         {
-            let ptr = self.as_mut_ptr() as *mut T;
+            let mut ptr = self.as_mut_ptr() as *mut T;
             std::ptr::write_unaligned(ptr.add(index), value);
         }
     }

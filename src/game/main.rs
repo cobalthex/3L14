@@ -1,23 +1,19 @@
-use arrayvec::ArrayVec;
 use clap::Parser;
 use game_3l14::engine::graphics::assets::texture::TextureLifecycler;
 use game_3l14::engine::graphics::assets::{material, Geometry, GeometryLifecycler, Material, MaterialLifecycler, Model, ModelLifecycler, Shader, ShaderLifecycler, Texture};
 use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
 use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
 use game_3l14::engine::graphics::pipeline_cache::{DebugMode, PipelineCache};
-use game_3l14::engine::{asset::*, graphics::*, input::*, timing::*, windows::*, world::*, *};
-use game_3l14::{debug_label, ExitReason};
-use glam::{Mat4, Quat, Vec3};
-use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
-use std::io::Read;
-use std::ops::Deref;
-use std::process::ExitCode;
-use std::sync::Arc;
-use std::time::Duration;
-use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
-use game_3l14::engine::graphics::pipeline_sorter::PipelineSorter;
 use game_3l14::engine::graphics::uniforms_pool::UniformsPool;
 use game_3l14::engine::graphics::view::View;
+use game_3l14::engine::{asset::*, graphics::*, input::*, timing::*, windows::*, world::*, *};
+use game_3l14::ExitReason;
+use glam::{Mat4, Quat, Vec3};
+use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
+use std::ops::Deref;
+use std::sync::Arc;
+use std::time::Duration;
+use wgpu::{BindGroupEntry, BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -79,7 +75,7 @@ fn main() -> ExitReason
         #[cfg(debug_assertions)]
         {
             debug_menu_memory = DebugMenuMemory::default();
-            debug_menu_memory.set_active_by_name::<debug_gui::AppStats>("App Stats", true); // a big fragile...
+            debug_menu_memory.set_state_active_by_name::<debug_gui::AppStats>("App Stats", true); // a big fragile...
         }
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
@@ -101,7 +97,7 @@ fn main() -> ExitReason
 
         let mut obj_rot = Quat::IDENTITY;
 
-        let mut views: [_; 2] = array_init::array_init(|_| View::new(renderer.clone(), &pipeline_cache));
+        let mut views: [_; renderer::MAX_CONSECUTIVE_FRAMES] = array_init::array_init(|_| View::new(renderer.clone(), &pipeline_cache));
 
         let mut frame_number = FrameNumber(0);
         let mut fps_sparkline = Sparkline::<100>::new(); // todo: use
@@ -216,11 +212,11 @@ fn main() -> ExitReason
             {
                 if kbd.has_keymod(KeyMods::ALT)
                 {
-                    debug_menu_memory.toggle_active(&debug_gui::FrameProfiler);
+                    debug_menu_memory.toggle_state_active(&debug_gui::FrameProfiler);
                 }
                 else
                 {
-                    debug_menu_memory.is_active ^= true;
+                    debug_menu_memory.toggle_active();
                 }
             }
 
@@ -245,7 +241,7 @@ fn main() -> ExitReason
                         Some(colors::CORNFLOWER_BLUE));
 
                     let mut view = &mut views[frame_number.0 as usize % views.len()];
-                    view.start(frame_time.total_runtime, &camera);
+                    view.start(frame_time.total_runtime, &camera, DebugMode::None);
 
                     if let AssetPayload::Available(model) = test_model.payload()
                     {
@@ -279,7 +275,10 @@ fn main() -> ExitReason
                 debug_menu.add(&camera);
                 debug_menu.add(&assets);
                 debug_menu.add(renderer.deref());
+                debug_menu.add(&pipeline_cache);
                 debug_menu.present();
+
+                debug_menu_memory.save_if_dirty("debug_gui.state");
             }
 
             renderer.present(render_frame);
@@ -291,9 +290,9 @@ fn main() -> ExitReason
         }
     }
     
-    std::mem::drop(renderer);
-    std::mem::drop(windows);
-    std::mem::drop(assets);
+    drop(renderer);
+    drop(windows);
+    drop(assets);
 
     std::thread::sleep(Duration::from_micros(10)); // allow logs to flush -- TEMP
 

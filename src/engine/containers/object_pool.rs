@@ -9,6 +9,7 @@ type PoolEntryIndex = u16; // bottom bit is entry index, rest of bits are bucket
 pub const OBJECT_POOL_BUCKET_ENTRY_BITS: PoolEntryIndex = 6;
 const OBJECT_POOL_BUCKET_ENTRY_COUNT: PoolEntryIndex = 1 << OBJECT_POOL_BUCKET_ENTRY_BITS;
 
+#[derive(Default)]
 struct Buckets<T>
 {
     count: PoolEntryIndex, // total created across all buckets
@@ -21,11 +22,10 @@ pub struct ObjectPool<T>
 {
     free: SegQueue<PoolEntryIndex>, // ArrayQueue w/ max 2 or 3 buckets of free space? overflow buckets get deleted?
     buckets: ShardedLock<Buckets<T>>,
-    create_entry_fn: Box<dyn Fn(usize) -> T>,
 }
-impl<T> ObjectPool<T>
+impl<T> Default for ObjectPool<T>
 {
-    pub fn new(create_entry_fn: impl Fn(usize) -> T + 'static) -> Self
+    fn default() -> Self
     {
         Self
         {
@@ -35,10 +35,11 @@ impl<T> ObjectPool<T>
                 count: 0,
                 buckets: Vec::new(),
             }),
-            create_entry_fn: Box::new(create_entry_fn),
         }
     }
-
+}
+impl<T> ObjectPool<T>
+{
     pub fn free_count(&self) -> usize { self.free.len() }
     pub fn total_count(&self) -> usize { self.buckets.read().unwrap().count as usize }
 
@@ -62,7 +63,7 @@ impl<T> ObjectPool<T>
         }
         else
         {
-            let mut new_bucket = Box::new([const { MaybeUninit::uninit() }; OBJECT_POOL_BUCKET_ENTRY_COUNT as usize]);
+            let mut new_bucket = Box::new([const { MaybeUninit::zeroed() }; OBJECT_POOL_BUCKET_ENTRY_COUNT as usize]);
             new_bucket[0].write((create_entry_fn)(count as usize));
             index = (locked.buckets.len() << OBJECT_POOL_BUCKET_ENTRY_BITS) as PoolEntryIndex;
             locked.buckets.push(new_bucket);
@@ -72,13 +73,7 @@ impl<T> ObjectPool<T>
         Some(index)
     }
 
-    #[inline]
-    pub fn take(&self) -> ObjectPoolEntryGuard<T>
-    {
-        self.take_construct(&self.create_entry_fn)
-    }
-
-    pub fn take_construct(&self, create_entry_fn: impl Fn(usize) -> T) -> ObjectPoolEntryGuard<T>
+    pub fn take(&self, create_entry_fn: impl Fn(usize) -> T) -> ObjectPoolEntryGuard<T>
     {
         let index = match self.free.pop()
         {
@@ -143,15 +138,17 @@ mod tests
 {
     use super::*;
 
+    fn entry_ctor(i: usize) -> usize { i }
+
     #[test]
     fn test()
     {
-        let pool = ObjectPool::new(|i| i);
+        let pool = ObjectPool::default();
         assert_eq!(pool.total_count(), 0);
         assert_eq!(pool.free_count(), 0);
 
         {
-            let n = pool.take();
+            let n = pool.take(entry_ctor);
             assert_eq!(n.index, 0);
             assert_eq!(pool.total_count(), 1);
             assert_eq!(pool.free_count(), 0);
@@ -161,10 +158,10 @@ mod tests
         assert_eq!(pool.free_count(), 1);
 
         {
-            let n = pool.take();
+            let n = pool.take(entry_ctor);
             assert_eq!(n.index, 0);
             {
-                let m = pool.take();
+                let m = pool.take(entry_ctor);
                 assert_eq!(m.index, 1);
                 assert_eq!(pool.total_count(), 2);
                 assert_eq!(pool.free_count(), 0);
