@@ -1,13 +1,12 @@
-use std::error::Error;
-use std::hash::{Hash, Hasher};
-use std::ops::Range;
-use std::sync::Arc;
-use bitcode::{Decode, Encode};
-use wgpu::BufferSlice;
-use crate::engine::asset::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadRequest, AssetPayload, AssetTypeId};
+use super::{GeometryHandle, MaterialHandle, ShaderHandle};
+use crate::engine::asset::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadRequest, AssetTypeId};
 use crate::engine::graphics::debug_gui::DebugGui;
 use crate::engine::graphics::Renderer;
-use super::{Geometry, Material, MaterialLifecycler, Shader};
+use bitcode::{Decode, Encode};
+use proc_macros_3l14::Asset;
+use std::error::Error;
+use std::hash::Hash;
+use std::sync::Arc;
 
 #[derive(Encode, Decode)]
 pub struct ModelFileSurface
@@ -26,31 +25,32 @@ pub struct ModelFile
 
 pub struct Surface
 {
-    pub material: AssetHandle<Material>,
-    pub vertex_shader: AssetHandle<Shader>,
-    pub pixel_shader: AssetHandle<Shader>,
+    pub material: MaterialHandle,
+    pub vertex_shader: ShaderHandle,
+    pub pixel_shader: ShaderHandle,
 }
 
+#[derive(Asset)]
 pub struct Model
 {
     pub mesh_count: u32,
-    pub geometry: AssetHandle<Geometry>,
+    pub geometry: GeometryHandle,
     pub surfaces: Box<[Surface]>,
 }
-impl Asset for Model
-{
-    fn asset_type() -> AssetTypeId { AssetTypeId::Model }
-    fn all_dependencies_loaded(&self) -> bool
-    {
-        self.geometry.is_loaded_recursive() &&
-        self.surfaces.iter().all(|s|
-            {
-                s.material.is_loaded_recursive() &&
-                s.vertex_shader.is_loaded_recursive() &&
-                s.pixel_shader.is_loaded_recursive()
-            })
-    }
-}
+// impl Asset for Model
+// {
+//     fn asset_type() -> AssetTypeId { AssetTypeId::Model }
+//     fn all_dependencies_loaded(&self) -> bool
+//     {
+//         self.geometry.is_loaded_recursive() &&
+//         self.surfaces.iter().all(|s|
+//             {
+//                 s.material.is_loaded_recursive() &&
+//                 s.vertex_shader.is_loaded_recursive() &&
+//                 s.pixel_shader.is_loaded_recursive()
+//             })
+//     }
+// }
 
 pub struct ModelLifecycler
 {

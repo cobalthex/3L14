@@ -1,10 +1,10 @@
-use std::ops::Range;
 use crate::debug_label;
-use crate::engine::asset::{Asset, AssetLifecycler, AssetLoadRequest, AssetTypeId};
+use crate::engine::asset::{Asset, AssetHandle, AssetLifecycler, AssetLoadRequest, AssetTypeId};
 use crate::engine::graphics::debug_gui::DebugGui;
 use crate::engine::graphics::Renderer;
 use crate::engine::AABB;
 use bitcode::{Decode, Encode};
+use proc_macros_3l14::Asset;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
@@ -93,14 +93,11 @@ pub struct GeometryMesh
     pub indices: Buffer,
 }
 
+#[derive(Asset)]
 pub struct Geometry
 {
     pub bounds: AABB, // note; these are untransformed
     pub meshes: Box<[GeometryMesh]>,
-}
-impl Asset for Geometry
-{
-    fn asset_type() -> AssetTypeId { AssetTypeId::Geometry }
 }
 
 pub struct GeometryLifecycler

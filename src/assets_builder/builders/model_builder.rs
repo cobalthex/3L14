@@ -242,7 +242,7 @@ impl ModelBuilder
             let material =
             {
                 // call into MaterialBuilder?
-                let mut mtl_output = outputs.add_output(AssetTypeId::RenderMaterial)?;
+                let mut mtl_output = outputs.add_output(AssetTypeId::Material)?;
 
                 mtl_output.depends_on_multiple(&textures);
 

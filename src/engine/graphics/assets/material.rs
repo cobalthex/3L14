@@ -1,17 +1,17 @@
+use crate::debug_label;
 use crate::engine::asset::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadRequest, AssetTypeId};
-use crate::engine::graphics::assets::Texture;
+use crate::engine::graphics::assets::{Texture, TextureHandle};
 use crate::engine::graphics::colors::Rgba;
+use crate::engine::graphics::debug_gui::DebugGui;
+use crate::engine::graphics::Renderer;
+use arrayvec::ArrayVec;
 use bitcode::{Decode, Encode};
+use proc_macros_3l14::{Asset, FancyEnum};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::sync::Arc;
-use arrayvec::ArrayVec;
-use proc_macros_3l14::FancyEnum;
-use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferSize, BufferUsages, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, TextureSampleType, TextureViewDimension};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use crate::debug_label;
-use crate::engine::graphics::debug_gui::DebugGui;
-use crate::engine::graphics::Renderer;
+use wgpu::{BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, Buffer, BufferBindingType, BufferSize, BufferUsages, SamplerBindingType, ShaderStages, TextureSampleType, TextureViewDimension};
 
 pub const MAX_MATERIAL_TEXTURE_BINDINGS: usize = 16;
 
@@ -45,20 +45,13 @@ pub struct MaterialFile
     pub props: Box<[u8]>,
 }
 
+#[derive(Asset)]
 pub struct Material
 {
     pub class: MaterialClass,
     pub props: Buffer,
     pub bind_layout: BindGroupLayout,
-    pub textures: ArrayVec<AssetHandle<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS>,
-}
-impl Asset for Material
-{
-    fn asset_type() -> AssetTypeId { AssetTypeId::RenderMaterial }
-    fn all_dependencies_loaded(&self) -> bool
-    {
-        self.textures.iter().all(|t| t.is_loaded_recursive())
-    }
+    pub textures: ArrayVec<TextureHandle, MAX_MATERIAL_TEXTURE_BINDINGS>,
 }
 
 pub struct MaterialLifecycler

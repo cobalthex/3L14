@@ -44,7 +44,7 @@ impl AssetBuilder for MaterialBuilder
         input.read_to_string(&mut mtl_source)?;
         let mtl: MaterialFile = toml::from_str(&mtl_source)?;
 
-        let mut mtl_output = outputs.add_output(AssetTypeId::RenderMaterial)?;
+        let mut mtl_output = outputs.add_output(AssetTypeId::Material)?;
         mtl_output.depends_on_multiple(&mtl.textures);
         mtl_output.serialize(&mtl)?;
         mtl_output.finish()?;

@@ -27,7 +27,8 @@ pub struct PipelineCache
     renderer: Arc<Renderer>,
     pub uniforms: UniformsPool,
 
-    // Todo: better threading solve? (Reference tracking makes this a pain)
+    // TODO: callback from renderer when one of the global settings changes
+    // invalidate all pipelines
 
     pipeline_layouts: Mutex<HashMap<u64, PipelineLayout>>,
     pipelines: RwLock<HashMap<PipelineHash, RenderPipeline>>,
@@ -138,7 +139,7 @@ impl PipelineCache
 
         let desc = RenderPipelineDescriptor
         {
-            label: Some("TODO RenderPipeline Name"), // TODO
+            label: debug_label!("TODO RenderPipeline Name"), // TODO
             layout: Some(pipeline_layout),
             vertex: VertexState
             {

@@ -14,11 +14,13 @@ pub enum AssetTypeId
 
     Texture = 4,
     Geometry = 5,
-    RenderMaterial = 6,
+    Material = 6,
     Shader = 7,
     Model = 8,
 
     Scene = 9,
     
     // ComputePipeline
+
+    // Surface -- physics
 }

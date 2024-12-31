@@ -1,3 +1,4 @@
+use std::io::SeekFrom::Current;
 use std::ops::Mul;
 use crate::engine::asset::Asset;
 use crate::engine::graphics::assets::Model;
@@ -10,8 +11,15 @@ use glam::{Mat4, Vec4Swizzles};
 use std::sync::Arc;
 use std::time::Duration;
 use arrayvec::ArrayVec;
-use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, RenderPass};
+use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, QueueWriteBufferView, RenderPass};
 use crate::debug_label;
+
+struct CurrentUniformsWriter<'f>
+{
+    renderer: Arc<Renderer>,
+    writer: QueueWriteBufferView<'f>,
+    next_slot: usize,
+}
 
 // TODO: This needs to exist until the frame has been submitted fully
 pub struct View<'f>
@@ -23,24 +31,34 @@ pub struct View<'f>
     camera_view: ViewMtx,
     camera_projection: ProjectionMtx,
     sorter: PipelineSorter,
-    used_uniforms: Vec<UniformsPoolEntryGuard<'f>>
+    used_uniforms_pools: Vec<UniformsPoolEntryGuard<'f>>,
+    // current_txfms_writer: CurrentUniformsWriter<'f>,
 }
 
 impl<'f> View<'f>
 {
-    // TODO: don't
     pub fn new(renderer: Arc<Renderer>, pipeline_cache: &'f PipelineCache) -> Self
     {
+        let used_uniforms = vec![pipeline_cache.uniforms.take_transforms()];
+        let rc = renderer.clone();
+        // let current_txfms_writer = CurrentUniformsWriter
+        // {
+        //     writer: used_uniforms[0].write(rc.queue()),
+        //     renderer: rc,
+        //     next_slot: 0,
+        // };
+
         Self
         {
-            renderer,
             pipeline_cache,
             runtime: Duration::new(0, 0),
             debug_mode: DebugMode::None,
             camera_view: ViewMtx(Mat4::default()),
             camera_projection: ProjectionMtx(Mat4::default()),
             sorter: PipelineSorter::default(),
-            used_uniforms: Vec::new(),
+            used_uniforms_pools: used_uniforms,
+            // current_txfms_writer,
+            renderer,
         }
     }
 
@@ -51,7 +69,7 @@ impl<'f> View<'f>
         self.camera_view = camera.view();
         self.camera_projection = camera.projection();
         self.sorter.clear();
-        self.used_uniforms.clear();
+        self.used_uniforms_pools.clear();
     }
 
     pub fn draw(&mut self, object_transform: Mat4, model: Arc<Model>) -> bool
@@ -78,7 +96,7 @@ impl<'f> View<'f>
                 drop(uniforms_writer);
                 let mut swap_uniforms = self.pipeline_cache.uniforms.take_transforms();
                 std::mem::swap(&mut uniforms, &mut swap_uniforms);
-                self.used_uniforms.push(swap_uniforms);
+                self.used_uniforms_pools.push(swap_uniforms);
                 uniforms_writer = uniforms.write(self.renderer.queue());
 
                 next_uniform = 0;
@@ -89,7 +107,7 @@ impl<'f> View<'f>
             {
                 world: object_transform,
             });
-            let uniform_id = ((self.used_uniforms.len() << 8) + next_uniform) as u32; // todo: ensure bits are enough
+            let uniform_id = ((self.used_uniforms_pools.len() << 8) + next_uniform) as u32; // todo: ensure bits are enough
             next_uniform += 1;
 
             let (mtl, vsh, psh) =
@@ -127,9 +145,7 @@ impl<'f> View<'f>
         }
         
         drop(uniforms_writer);
-        self.used_uniforms.push(uniforms);
-
-        // self.renderer.queue().submit([]); // ?
+        self.used_uniforms_pools.push(uniforms);
         true
     }
 
@@ -159,7 +175,7 @@ impl<'f> View<'f>
                 let mesh = &draw.geometry.meshes[draw.mesh_index as usize];
 
                 camera.bind(render_pass, 0, 0);
-                self.used_uniforms[(draw.uniform_id >> 8) as usize].bind(render_pass, 1, draw.uniform_id as u8);
+                self.used_uniforms_pools[(draw.uniform_id >> 8) as usize].bind(render_pass, 1, draw.uniform_id as u8);
 
                 // TODO: don't create on the fly
                 let mut bge = ArrayVec::<_, 18>::new();
@@ -198,6 +214,6 @@ impl<'f> View<'f>
             }
         }
 
-        self.used_uniforms.push(camera);
+        self.used_uniforms_pools.push(camera);
     }
 }

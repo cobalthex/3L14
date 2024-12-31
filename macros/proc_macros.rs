@@ -1,6 +1,7 @@
 mod fancy_enum;
 mod type_layout_hash;
 mod flags_enum;
+mod asset_derive;
 
 // FancyEnum adds .variant_ident() and for each #[enum_prop(k=v)] a method k() returning v
 #[proc_macro_derive(FancyEnum, attributes(enum_prop))]
@@ -18,3 +19,7 @@ pub fn flags_enum_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStr
 
 #[proc_macro_derive(LayoutHash)]
 pub fn layout_hash_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream { type_layout_hash::layout_hash(input) }
+
+#[proc_macro_derive(Asset)] // todo: better name?
+pub fn asset_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream { asset_derive::asset_derive(input) }
+

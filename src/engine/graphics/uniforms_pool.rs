@@ -160,6 +160,7 @@ impl<'p> WgpuBufferWriter<'p> for UniformsPoolEntryGuard<'p>
 }
 impl<'p> UniformsPoolEntryGuard<'p>
 {
+    #[inline]
     pub fn bind(&self, render_pass: &mut RenderPass, bind_index: u32, buffer_index: u8)
     {
         let offset = buffer_index as u32 * self.entry_size;
@@ -175,6 +176,7 @@ pub trait WriteTyped
 
 impl<'p> WriteTyped for QueueWriteBufferView<'p>
 {
+    #[inline]
     fn write_typed<T>(&mut self, index: usize, value: T)
     {
         unsafe

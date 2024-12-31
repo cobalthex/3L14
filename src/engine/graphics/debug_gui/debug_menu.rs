@@ -1,5 +1,5 @@
 use std::hash::{Hash, Hasher};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 use egui::Pos2;
 use indexmap::IndexMap;
@@ -15,6 +15,66 @@ struct DebugMenuItemState
     is_active: bool,
 }
 
+mod serialize_debug_menu_states
+{
+    use std::fmt::Formatter;
+    use std::hash::DefaultHasher;
+    use super::*;
+    use serde::{Deserializer, Serializer};
+    use serde::de::{MapAccess, Visitor};
+    use serde::ser::SerializeMap;
+
+    pub fn serialize<S: Serializer>(mem: &IndexMap<u64, DebugMenuItemState>, serializer: S) -> Result<S::Ok, S::Error>
+    {
+        let mut s = serializer.serialize_map(Some(mem.len()))?;
+        for (_, state) in mem
+        {
+            s.serialize_entry(&state.name, &state.is_active)?;
+        }
+        s.end()
+    }
+
+
+    struct StatesVisitor;
+    impl<'de> Visitor<'de> for StatesVisitor
+    {
+        type Value = IndexMap<u64, DebugMenuItemState>;
+
+        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result
+        {
+            formatter.write_str("a map with an 'id' field and key-value pairs")
+        }
+
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error>
+        {
+            let mut imap = IndexMap::new();
+
+            while let Some(key) = map.next_key::<String>()?
+            {
+                let key_hash =
+                {
+                    let mut hasher = DefaultHasher::new();
+                    key.hash(&mut hasher);
+                    hasher.finish()
+                };
+                let value = map.next_value()?;
+                imap.insert(key_hash, DebugMenuItemState
+                {
+                    name: key,
+                    is_active: value,
+                });
+            }
+
+            Ok(imap)
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<IndexMap<u64, DebugMenuItemState>, D::Error>
+    {
+        deserializer.deserialize_map(StatesVisitor)
+    }
+}
+
 #[derive(Default, Serialize, Deserialize)]
 pub struct DebugMenuMemory
 {
@@ -24,6 +84,7 @@ pub struct DebugMenuMemory
     last_saved_generation: usize,
 
     is_active: bool, // is the top level menu active
+    #[serde(with = "serialize_debug_menu_states")]
     states: IndexMap<u64, DebugMenuItemState>, // todo: this should be sorted
 }
 impl DebugMenuMemory
@@ -61,6 +122,27 @@ impl DebugMenuMemory
             return false;
         };
         true
+    }
+
+    pub fn load(path: impl AsRef<Path>) -> Self
+    {
+        let mut fread = match std::fs::File::open(&path)
+        {
+            Ok(file) => file,
+            Err(e) =>
+                {
+                    log::warn!("Failed to open debug GUI state file '{:?}' for reading: {e}", path.as_ref());
+                    return Self::default();
+                },
+        };
+        let mut toml = String::new();
+        if let Err(e) = fread.read_to_string(&mut toml)
+        {
+            log::warn!("Failed to read debug GUI state from file: {e}");
+            return Self::default();
+        };
+
+        toml::from_str(&toml).unwrap_or_else(|_| Self::default())
     }
 
     pub fn set_active(&mut self, is_active: bool)
@@ -180,7 +262,12 @@ impl<'m> DebugMenu<'m>
                 {
                     for gui in self.memory.states.values_mut()
                     {
+                        let is_active = gui.is_active;
                         ui.checkbox(&mut gui.is_active, &gui.name);
+                        if gui.is_active != is_active
+                        {
+                            self.memory.generation += 1;
+                        }
                     }
                 });
     }
@@ -191,6 +278,11 @@ impl<'m> DebugMenu<'m>
         // todo: sorted dict
 
         let state = self.memory.get_or_create_state(gui);
-        gui.debug_gui_base(&mut state.is_active, &self.debug_gui)
+        let is_active = state.is_active;
+        gui.debug_gui_base(&mut state.is_active, &self.debug_gui);
+        if state.is_active != is_active
+        {
+            self.memory.generation += 1;
+        }
     }
 }

@@ -1,7 +1,9 @@
+use crate::engine::asset::AssetHandle;
 use crate::engine::graphics::Renderer;
 use crate::{debug_label, format_binary};
 use bitcode::{Decode, Encode};
 use egui::Ui;
+use proc_macros_3l14::Asset;
 use std::error::Error;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
@@ -41,6 +43,7 @@ pub struct TextureFile
     // all mips are stored contiguously w/out gaps
 }
 
+#[derive(Asset)]
 pub struct Texture
 {
     pub gpu_tex: wgpu::Texture,
@@ -64,10 +67,6 @@ impl Texture
         }
         total_size
     }
-}
-impl Asset for Texture
-{
-    fn asset_type() -> AssetTypeId { AssetTypeId::Texture }
 }
 
 pub struct TextureLifecycler

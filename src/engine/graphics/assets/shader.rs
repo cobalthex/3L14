@@ -1,16 +1,15 @@
 use crate::debug_label;
-use crate::engine::asset::{Asset, AssetKey, AssetLifecycler, AssetLoadRequest, AssetTypeId};
+use crate::engine::asset::{Asset, AssetHandle, AssetLifecycler, AssetLoadRequest, AssetTypeId};
+use crate::engine::graphics::debug_gui::DebugGui;
 use crate::engine::graphics::Renderer;
 use bitcode::{Decode, Encode};
+use proc_macros_3l14::{Asset, FancyEnum};
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::error::Error;
 use std::sync::Arc;
-use proc_macros_3l14::FancyEnum;
 use wgpu::util::{make_spirv, make_spirv_raw};
-use wgpu::{BufferAddress, FragmentState, MultisampleState, ShaderModule, ShaderModuleDescriptor, ShaderModuleDescriptorSpirV, VertexBufferLayout, VertexState};
-use crate::engine::graphics::assets::MaterialLifecycler;
-use crate::engine::graphics::debug_gui::DebugGui;
+use wgpu::{ShaderModuleDescriptor, ShaderModuleDescriptorSpirV};
 
 #[derive(Default, Debug, PartialEq, Hash, Clone, Copy, Serialize, Deserialize, Encode, Decode, FancyEnum)]
 pub enum ShaderStage
@@ -32,15 +31,12 @@ pub struct ShaderFile
     pub module_hash: u64,
 }
 
+#[derive(Asset)]
 pub struct Shader
 {
     pub stage: ShaderStage,
     pub module: wgpu::ShaderModule,
     pub module_hash: u64, // likely duplicates asset key but oh well
-}
-impl Asset for Shader
-{
-    fn asset_type() -> AssetTypeId { AssetTypeId::Shader }
 }
 
 pub struct ShaderLifecycler

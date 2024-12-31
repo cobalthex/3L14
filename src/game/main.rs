@@ -13,6 +13,7 @@ use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
+use egui::Widget;
 use wgpu::{BindGroupEntry, BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
 
 #[derive(Debug, Parser)]
@@ -74,7 +75,7 @@ fn main() -> ExitReason
         let mut debug_menu_memory;
         #[cfg(debug_assertions)]
         {
-            debug_menu_memory = DebugMenuMemory::default();
+            debug_menu_memory = DebugMenuMemory::load("debug_gui.state");
             debug_menu_memory.set_state_active_by_name::<debug_gui::AppStats>("App Stats", true); // a big fragile...
         }
 
@@ -83,7 +84,7 @@ fn main() -> ExitReason
         let model_key: AssetKey = 0x008000008dd00f81.into();
         let test_model = assets.load::<Model>(model_key);
 
-        let mut camera = Camera::new(Some("fp_cam"), CameraProjection::Perspective
+        let mut camera = Camera::new(Some("cam"), CameraProjection::Perspective
         {
             aspect_ratio: renderer.display_aspect_ratio(),
             fov: Degrees(59.0).into()
@@ -240,12 +241,15 @@ fn main() -> ExitReason
                         &mut encoder,
                         Some(colors::CORNFLOWER_BLUE));
 
-                    let mut view = &mut views[frame_number.0 as usize % views.len()];
+                    let view = &mut views[frame_number.0 as usize % views.len()];
                     view.start(frame_time.total_runtime, &camera, DebugMode::None);
 
                     if let AssetPayload::Available(model) = test_model.payload()
                     {
-                        let obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(3.0, 0.0, 0.0));
+                        let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(3.0, 0.0, 0.0));
+                        view.draw(obj_world, model.clone());
+
+                        obj_world = Mat4::from_rotation_translation(obj_rot.inverse(), Vec3::new(-3.0, 0.0, -2.0));
                         view.draw(obj_world, model);
                     }
 
@@ -270,6 +274,7 @@ fn main() -> ExitReason
 
                 let mut debug_menu = DebugMenu::new(&mut debug_menu_memory, &render_frame.debug_gui);
                 debug_menu.add(&app_stats);
+                debug_menu.add(&fps_sparkline);
                 debug_menu.add(&debug_gui::FrameProfiler);
                 debug_menu.add(&input);
                 debug_menu.add(&camera);

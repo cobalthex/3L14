@@ -1,4 +1,6 @@
-use egui::{Pos2, Sense, Stroke, Vec2};
+use egui::{Context, Pos2, Sense, Stroke, Ui, Vec2, Window};
+use crate::engine::graphics::debug_gui::{DebugGuiBase};
+// TODO: use buckets where each bucket is calculated average over previous second
 
 pub struct Sparkline<const N_ENTRIES: usize>
 {
@@ -131,5 +133,26 @@ impl<const N_ENTRIES: usize> egui::Widget for &Sparkline<N_ENTRIES>
         }
 
         response
+    }
+}
+impl<const N_ENTRIES: usize> DebugGuiBase for Sparkline<N_ENTRIES>
+{
+    fn name(&self) -> &str { "FPS over time" }
+
+    fn debug_gui_base(&self, is_active: &mut bool, debug_gui: &Context)
+    {
+        Window::new(self.name())
+            .movable(true)
+            .resizable(true)
+            .title_bar(false)
+            .open(is_active)
+            .show(debug_gui, |ui|
+                {
+                    ui.horizontal_centered(|hui|
+                    {
+                        hui.label(format!("{:.1}", self.entries[self.count - 1]));
+                        egui::Widget::ui(self, hui);
+                    });
+                });
     }
 }

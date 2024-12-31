@@ -59,7 +59,7 @@ pub struct Camera
 }
 impl Camera
 {
-    pub fn new<S: AsRef<str>>(name: Option<S>, projection: CameraProjection) -> Self
+    pub fn new(name: Option<impl AsRef<str>>, projection: CameraProjection) -> Self
     {
         let near_clip =  0.1;
         let far_clip = 1000.0;
