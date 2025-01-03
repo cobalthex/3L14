@@ -1,4 +1,6 @@
-use crate::engine::{DataPayload, ShortTypeName};
+use super::*;
+use crate::engine::utils::ShortTypeName;
+use crate::engine::DataPayload;
 use crossbeam::channel::Sender;
 use parking_lot::Mutex;
 use std::alloc::Layout;
@@ -11,8 +13,6 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
-use arc_swap::ArcSwapOption;
-use super::*;
 
 // TODO: name Ash<> ?
 

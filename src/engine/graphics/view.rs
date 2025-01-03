@@ -1,5 +1,4 @@
-use std::io::SeekFrom::Current;
-use std::ops::Mul;
+use crate::debug_label;
 use crate::engine::asset::Asset;
 use crate::engine::graphics::assets::Model;
 use crate::engine::graphics::pipeline_cache::{DebugMode, PipelineCache};
@@ -7,12 +6,13 @@ use crate::engine::graphics::pipeline_sorter::PipelineSorter;
 use crate::engine::graphics::uniforms_pool::{UniformsPool, UniformsPoolEntryGuard, WgpuBufferWriter, WriteTyped};
 use crate::engine::graphics::{pipeline_sorter, Renderer};
 use crate::engine::world::{Camera, CameraUniform, ProjectionMtx, TransformUniform, ViewMtx};
+use arrayvec::ArrayVec;
 use glam::{Mat4, Vec4Swizzles};
+use std::io::SeekFrom::Current;
+use std::ops::Mul;
 use std::sync::Arc;
 use std::time::Duration;
-use arrayvec::ArrayVec;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, QueueWriteBufferView, RenderPass};
-use crate::debug_label;
 
 struct CurrentUniformsWriter<'f>
 {

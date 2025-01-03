@@ -44,7 +44,7 @@ impl<T> IntoU8Box for Vec<T>
 #[cfg(test)]
 mod tests
 {
-    use crate::engine::{AsU8Slice, IntoU8Box};
+    use crate::engine::utils::{AsU8Slice, IntoU8Box};
 
     #[test]
     fn u8_slice()

@@ -1,6 +1,6 @@
 use crate::const_assert;
 use crate::engine::asset::AssetTypeId;
-use crate::engine::format_width_hex_bytes;
+use crate::engine::utils::format_width_hex_bytes;
 use bitcode::{Decode, Encode};
 use metrohash::MetroHash64;
 use rand::RngCore;

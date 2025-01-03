@@ -3,7 +3,6 @@ use std::mem::MaybeUninit;
 use std::ops::Deref;
 use crossbeam::queue::SegQueue;
 use crossbeam::sync::ShardedLock;
-use crate::engine::alloc_slice::alloc_slice_fn;
 
 type PoolEntryIndex = u16; // bottom bit is entry index, rest of bits are bucket index; u16 allows for 64k entries
 pub const OBJECT_POOL_BUCKET_ENTRY_BITS: PoolEntryIndex = 6;

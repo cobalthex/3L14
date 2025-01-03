@@ -7,6 +7,9 @@ impl Radians
 {
     pub const ZERO: Radians = Radians(0.0);
     pub const PI: Radians = Radians(std::f32::consts::PI);
+    pub const TWO_PI: Radians = Radians(std::f32::consts::TAU);
+    pub const PI_OVER_TWO: Radians = Radians(std::f32::consts::FRAC_PI_2);
+    pub const PI_OVER_FOUR: Radians = Radians(std::f32::consts::FRAC_PI_4);
 
     // modifies the value to be between -PI and PI
     pub fn normalize(&mut self) -> &Self
@@ -15,8 +18,8 @@ impl Radians
         self
     }
 
-    pub fn to_degrees_f32(self) -> f32 { self.0 / std::f32::consts::PI * 180.0 }
-    pub fn to_degrees(self) -> Degrees { Degrees(self.to_degrees_f32()) }
+    pub const fn to_degrees_f32(self) -> f32 { self.0 / std::f32::consts::PI * 180.0 }
+    pub const fn to_degrees(self) -> Degrees { Degrees(self.to_degrees_f32()) }
 }
 impl Display for Radians
 {
@@ -79,8 +82,8 @@ impl Degrees
         self
     }
 
-    pub fn to_radians_f32(self) -> f32 { self.0 * std::f32::consts::PI / 180.0 }
-    pub fn to_radians(self) -> Radians { Radians(self.to_radians_f32()) }
+    pub const fn to_radians_f32(self) -> f32 { self.0 * std::f32::consts::PI / 180.0 }
+    pub const fn to_radians(self) -> Radians { Radians(self.to_radians_f32()) }
 }
 impl From<Radians> for Degrees
 {

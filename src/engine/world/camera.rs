@@ -1,10 +1,10 @@
 use std::time::Duration;
 use super::{Transform, ViewMtx};
 use crate::engine::graphics::debug_gui::DebugGui;
-use crate::engine::timing::Time;
-use crate::engine::Radians;
+use crate::engine::math::{Plane, Radians};
 use egui::Ui;
-use glam::Mat4;
+use glam::{Mat4, Vec4};
+use super::Frustum;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ProjectionMtx(pub Mat4);
@@ -56,6 +56,7 @@ pub struct Camera
 
     view_mtx: ViewMtx,
     projection_mtx: ProjectionMtx,
+    frustum: Frustum,
 }
 impl Camera
 {
@@ -67,6 +68,7 @@ impl Camera
         let transform = Transform::default();
         let view_mtx = transform.to_view();
         let projection_mtx = projection.as_matrix(near_clip, far_clip);
+        let frustum = todo!();
 
         Self
         {
@@ -77,6 +79,7 @@ impl Camera
             far_clip,
             view_mtx,
             projection_mtx,
+            frustum,
         }
     }
 

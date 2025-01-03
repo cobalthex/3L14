@@ -9,8 +9,8 @@ pub struct AABB
 }
 impl AABB
 {
-    pub fn max_min() -> Self { Self { min: Vec3::MAX, max: Vec3::MIN }}
-    pub fn new(min: Vec3, max: Vec3) -> Self { Self { min, max } }
+    pub const fn max_min() -> Self { Self { min: Vec3::MAX, max: Vec3::MIN }}
+    pub const fn new(min: Vec3, max: Vec3) -> Self { Self { min, max } }
 
     pub fn size(&self) -> Vec3 { self.max - self.min }
     pub fn half(&self) -> Vec3 { (self.max - self.min) / 2.0 }

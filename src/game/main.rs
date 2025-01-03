@@ -1,4 +1,5 @@
 use clap::Parser;
+use egui::Widget;
 use game_3l14::engine::graphics::assets::texture::TextureLifecycler;
 use game_3l14::engine::graphics::assets::{material, Geometry, GeometryLifecycler, Material, MaterialLifecycler, Model, ModelLifecycler, Shader, ShaderLifecycler, Texture};
 use game_3l14::engine::graphics::debug_gui::debug_menu::{DebugMenu, DebugMenuMemory};
@@ -13,8 +14,8 @@ use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
-use egui::Widget;
 use wgpu::{BindGroupEntry, BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
+use game_3l14::engine::math::Degrees;
 
 #[derive(Debug, Parser)]
 struct CliArgs

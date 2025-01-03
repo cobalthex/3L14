@@ -2,6 +2,8 @@ use std::fmt;
 use std::fmt::Formatter;
 use serde::Serializer;
 
+// TODO: clean up this file
+
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TickCount(pub u64);
 impl TickCount

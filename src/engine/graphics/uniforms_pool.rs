@@ -3,7 +3,7 @@ use crate::debug_label;
 use crate::engine::containers::{ObjectPool, ObjectPoolEntryGuard};
 use crate::engine::graphics::Renderer;
 use crate::engine::world::{CameraUniform, TransformUniform};
-use crate::engine::ShortTypeName;
+use crate::engine::utils::ShortTypeName;
 use std::sync::Arc;
 use egui::Ui;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, QueueWriteBufferView, RenderPass, ShaderStages};

@@ -1,6 +1,6 @@
 use super::*;
-use crate::engine::alloc_slice::alloc_slice_uninit;
-use crate::engine::{varint, ShortTypeName};
+use crate::engine::utils::alloc_slice::alloc_slice_uninit;
+use crate::engine::utils::{varint, ShortTypeName};
 use bitcode::DecodeOwned;
 use std::any::TypeId;
 use std::collections::HashMap;
