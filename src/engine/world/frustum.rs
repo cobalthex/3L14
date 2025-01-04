@@ -1,5 +1,5 @@
-use glam::Mat4;
-use crate::engine::math::Plane;
+use glam::{Mat4, Vec3};
+use crate::engine::math::{Facing, GetFacing, Intersection, Intersects, Plane};
 
 #[derive(Debug)]
 pub struct Frustum
@@ -31,6 +31,30 @@ impl Frustum
     #[inline] pub fn bottom(&self) -> Plane { self.planes[3] }
     #[inline] pub fn near(&self) -> Plane { self.planes[4] }
     #[inline] pub fn far(&self) -> Plane { self.planes[5] }
+
+    pub fn normalize(&mut self)
+    {
+        for p in &mut self.planes
+        {
+            p.normalize()
+        }
+    }
+}
+impl Intersects<Vec3> for Frustum
+{
+    fn intersects(&self, other: &Vec3) -> Intersection
+    {
+        let mut inside = true;
+        for p in &self.planes
+        {
+             inside &= ! matches!(p.get_facing(other), Facing::Behind);
+        }
+        match inside
+        {
+            true => Intersection::Contained,
+            false => Intersection::None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -43,26 +67,28 @@ mod tests
     #[test]
     fn planes()
     {
+        // todo: use Camera?
+
         let projection = Mat4::perspective_lh(Radians::PI_OVER_TWO.0, 1.0, 1.0, 10.0);
         let view = Mat4::look_at_lh(
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::new(0.0, 0.0, 1.0),
             Vec3::Y,
         );
-
+        
         let view_projection = projection * view;
 
-        // Extract frustum planes
         let frustum = Frustum::new(&view_projection);
         println!("{:?}", frustum);
 
-        // Verify plane normals and distances
-        // Expected results are calculated manually for this simple setup
+        let recip_sqrt2 = 1.0 / 2.0_f32.sqrt();
+
+        // TODO: these values are wrong
         let expected_planes = [
-            Plane::new(Vec3::new(1.0, 0.0, 0.0), 1.0),
-            Plane::new(Vec3::new(-1.0, 0.0, 0.0), 1.0),
-            Plane::new(Vec3::new(0.0, 1.0, 0.0), 1.0),
-            Plane::new(Vec3::new(0.0, -1.0, 0.0), 1.0),
+            Plane::new(Vec3::new(recip_sqrt2, 0.0, recip_sqrt2), 1.0),
+            Plane::new(Vec3::new(-recip_sqrt2, 0.0, recip_sqrt2), 1.0),
+            Plane::new(Vec3::new(0.0, recip_sqrt2, recip_sqrt2), 1.0),
+            Plane::new(Vec3::new(0.0, -recip_sqrt2, recip_sqrt2), 1.0),
             Plane::new(Vec3::new(0.0, 0.0, 1.0), 1.0),
             Plane::new(Vec3::new(0.0, 0.0, -1.0), 10.0),
         ];

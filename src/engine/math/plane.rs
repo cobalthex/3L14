@@ -1,4 +1,5 @@
 use glam::{Vec3, Vec4, Vec4Swizzles};
+use crate::engine::math::{Facing, GetFacing};
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Plane(pub Vec4);
@@ -43,6 +44,11 @@ impl Plane
         let len = self.0.xyz().length_recip();
         Self(self.0 * len)
     }
+
+    pub fn dot(self, other: Plane) -> f32
+    {
+        self.0.dot(other.0)
+    }
 }
 impl Default for Plane
 {
@@ -61,6 +67,16 @@ impl From<Plane> for Vec4
     fn from(value: Plane) -> Self
     {
         value.0
+    }
+}
+impl GetFacing<Vec3> for Plane
+{
+    fn get_facing(&self, other: &Vec3) -> Facing
+    {
+        let dot = self.normal().dot(*other) - self.distance();
+        if dot > 0.0 { Facing::InFront }
+        else if dot == 0.0 { Facing::On }
+        else { Facing::Behind }
     }
 }
 
