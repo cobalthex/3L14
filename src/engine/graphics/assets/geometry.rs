@@ -8,13 +8,14 @@ use proc_macros_3l14::Asset;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{Buffer, BufferUsages, VertexAttribute, VertexBufferLayout, VertexStepMode};
+use wgpu::{vertex_attr_array, Buffer, BufferUsages, VertexAttribute, VertexBufferLayout, VertexStepMode};
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode, Hash)]
 pub enum VertexLayout
 {
     StaticSimple,
+    DebugLines,
 }
 impl From<VertexLayout> for wgpu::VertexBufferLayout<'static>
 {
@@ -39,6 +40,21 @@ impl From<VertexLayout> for wgpu::VertexBufferLayout<'static>
                     attributes: &V_ATTRS,
                 }
             },
+
+            VertexLayout::DebugLines =>
+            {
+                const V_ATTRS: [VertexAttribute; 2] = wgpu::vertex_attr_array!
+                [
+                    0 => Float32x3, // position
+                    1 => Uint32, // color 0
+                ];
+                VertexBufferLayout
+                {
+                    array_stride: V_ATTRS.iter().fold(0, |a, e| a + e.format.size()), // passed in from file?
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &V_ATTRS,
+                }
+            }
         }
     }
 }

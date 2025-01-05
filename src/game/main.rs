@@ -7,6 +7,7 @@ use game_3l14::engine::graphics::debug_gui::sparkline::Sparkline;
 use game_3l14::engine::graphics::pipeline_cache::{DebugMode, PipelineCache};
 use game_3l14::engine::graphics::uniforms_pool::UniformsPool;
 use game_3l14::engine::graphics::view::View;
+use game_3l14::engine::math::Degrees;
 use game_3l14::engine::{asset::*, graphics::*, input::*, timing::*, windows::*, world::*, *};
 use game_3l14::ExitReason;
 use glam::{Mat4, Quat, Vec3};
@@ -15,7 +16,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 use wgpu::{BindGroupEntry, BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
-use game_3l14::engine::math::Degrees;
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -85,13 +85,19 @@ fn main() -> ExitReason
         let model_key: AssetKey = 0x008000008dd00f81.into();
         let test_model = assets.load::<Model>(model_key);
 
-        let mut camera = Camera::new(Some("cam"), CameraProjection::Perspective
+        let mut camera = Camera::new(Some("cam"));
+        camera.update_projection(CameraProjection::Perspective
         {
+            fov: Degrees(90.0).into(),
             aspect_ratio: renderer.display_aspect_ratio(),
-            fov: Degrees(59.0).into()
-        });
-        camera.transform.position = Vec3::new(0.0, 2.0, -10.0);
-        camera.update_view();
+        }, 0.1, 1000.0);
+        let mut cam_transform = Transform
+        {
+            position: Vec3::new(0.0, 2.0, -10.0),
+            rotation: Quat::default(),
+            scale: Vec3::default(),
+        };
+        camera.update_view(&cam_transform);
 
         let pipeline_cache = PipelineCache::new(renderer.clone());
         // ꙮ
@@ -166,46 +172,46 @@ fn main() -> ExitReason
                 let yaw = input.mouse().position_delta.x as f32 * MOUSE_SCALE; // left to right
                 let pitch = input.mouse().position_delta.y as f32 * MOUSE_SCALE; // down to up
                 let roll = 0.0;
-                camera.transform.rotate(yaw, pitch, roll);
+                cam_transform.rotate(yaw, pitch, roll);
             }
 
             let speed = if input.keyboard().has_keymod(KeyMods::SHIFT) { 20.0 } else { 8.0 } * frame_time.delta_time.as_secs_f32();
             if kbd.is_down(KeyCode::W)
             {
-                camera.transform.position += camera.transform.forward() * speed;
+                cam_transform.position += cam_transform.forward() * speed;
             }
             if kbd.is_down(KeyCode::A)
             {
-                camera.transform.position += camera.transform.left() * speed;
+                cam_transform.position += cam_transform.left() * speed;
             }
             if kbd.is_down(KeyCode::S)
             {
-                camera.transform.position += camera.transform.backward() * speed;
+                cam_transform.position += cam_transform.backward() * speed;
             }
             if kbd.is_down(KeyCode::D)
             {
-                camera.transform.position += camera.transform.right() * speed;
+                cam_transform.position += cam_transform.right() * speed;
             }
             if kbd.is_down(KeyCode::E)
             {
-                camera.transform.position += camera.transform.up() * speed;
+                cam_transform.position += cam_transform.up() * speed;
             }
             if kbd.is_down(KeyCode::Q)
             {
-                camera.transform.position += camera.transform.down() * speed;
+                cam_transform.position += cam_transform.down() * speed;
             }
             if kbd.is_press(KeyCode::Z)
             {
                 let rounding = std::f32::consts::FRAC_PI_4;
-                let (axis, mut angle) = camera.transform.rotation.to_axis_angle();
+                let (axis, mut angle) = cam_transform.rotation.to_axis_angle();
                 angle = f32::round(angle / rounding) * rounding;
-                camera.transform.rotation = Quat::from_axis_angle(axis, angle);
+                cam_transform.rotation = Quat::from_axis_angle(axis, angle);
             }
             if kbd.is_press(KeyCode::X)
             {
-                camera.transform.rotation = Quat::IDENTITY;
+                cam_transform.rotation = Quat::IDENTITY;
             }
-            camera.update_view();
+            camera.update_view(&cam_transform);
 
             obj_rot *= Quat::from_rotation_y(0.5 * frame_time.delta_time.as_secs_f32());
 

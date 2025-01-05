@@ -5,7 +5,7 @@ use crate::engine::graphics::pipeline_cache::{DebugMode, PipelineCache};
 use crate::engine::graphics::pipeline_sorter::PipelineSorter;
 use crate::engine::graphics::uniforms_pool::{UniformsPool, UniformsPoolEntryGuard, WgpuBufferWriter, WriteTyped};
 use crate::engine::graphics::{pipeline_sorter, Renderer};
-use crate::engine::world::{Camera, CameraUniform, ProjectionMtx, TransformUniform, ViewMtx};
+use crate::engine::world::{Camera, CameraUniform, Frustum, ProjectionMtx, TransformUniform, ViewMtx};
 use arrayvec::ArrayVec;
 use glam::{Mat4, Vec4Swizzles};
 use std::sync::Arc;
@@ -19,6 +19,12 @@ struct CurrentUniformsWriter<'f>
     next_slot: usize,
 }
 
+pub trait Draw<T>
+{
+    // todo: Transform instead of matrix?
+    fn draw(&mut self, transform: Mat4, what: T) -> bool;
+}
+
 // TODO: This needs to exist until the frame has been submitted fully
 pub struct View<'f>
 {
@@ -28,11 +34,11 @@ pub struct View<'f>
     debug_mode: DebugMode,
     camera_view: ViewMtx,
     camera_projection: ProjectionMtx,
+    clip_frustum: Frustum,
     sorter: PipelineSorter,
     used_uniforms_pools: Vec<UniformsPoolEntryGuard<'f>>,
     // current_txfms_writer: CurrentUniformsWriter<'f>,
 }
-
 impl<'f> View<'f>
 {
     pub fn new(renderer: Arc<Renderer>, pipeline_cache: &'f PipelineCache) -> Self
@@ -53,6 +59,7 @@ impl<'f> View<'f>
             debug_mode: DebugMode::None,
             camera_view: ViewMtx(Mat4::default()),
             camera_projection: ProjectionMtx(Mat4::default()),
+            clip_frustum: Frustum::NULL,
             sorter: PipelineSorter::default(),
             used_uniforms_pools: used_uniforms,
             // current_txfms_writer,
@@ -66,85 +73,9 @@ impl<'f> View<'f>
         self.debug_mode = debug_mode;
         self.camera_view = camera.view();
         self.camera_projection = camera.projection();
+        self.clip_frustum = camera.frustum().clone(); // TODO: optionally take in manual frustum
         self.sorter.clear();
         self.used_uniforms_pools.clear();
-    }
-
-    pub fn draw(&mut self, object_transform: Mat4, model: Arc<Model>) -> bool
-    {
-        // todo: use closest OBB point instead of center?
-        let depth = self.camera_view.0.transform_vector3(object_transform.w_axis.xyz()).z;
-
-        // this may be heavy-handed
-        if !model.all_dependencies_loaded()
-        {
-            return false;
-        }
-
-        // todo: these need to reuse between draw calls
-        let mut uniforms = self.pipeline_cache.uniforms.take_transforms();
-        let mut next_uniform = 0;
-        let mut uniforms_writer = uniforms.write(self.renderer.queue());
-
-        let geo = model.geometry.payload().unwrap();
-        for mesh_index in 0..model.mesh_count
-        {
-            if next_uniform >= uniforms.count as usize
-            {
-                drop(uniforms_writer);
-                let mut swap_uniforms = self.pipeline_cache.uniforms.take_transforms();
-                std::mem::swap(&mut uniforms, &mut swap_uniforms);
-                self.used_uniforms_pools.push(swap_uniforms);
-                uniforms_writer = uniforms.write(self.renderer.queue());
-
-                next_uniform = 0;
-            }
-
-            // todo: one per model?
-            uniforms_writer.write_typed(next_uniform, TransformUniform
-            {
-                world: object_transform,
-            });
-            let uniform_id = ((self.used_uniforms_pools.len() << 8) + next_uniform) as u32; // todo: ensure bits are enough
-            next_uniform += 1;
-
-            let (mtl, vsh, psh) =
-            {
-                let surf = &model.surfaces[mesh_index as usize];
-                (
-                    surf.material.payload().unwrap(),
-                    surf.vertex_shader.payload().unwrap(),
-                    surf.pixel_shader.payload().unwrap(),
-                )
-            };
-
-            let textures = mtl.textures.iter().map(|t| t.payload().unwrap()).collect();
-
-            let pipeline_hash = self.pipeline_cache.get_or_create(
-                &geo.meshes[mesh_index as usize],
-                &mtl,
-                &vsh,
-                &psh,
-                self.debug_mode);
-
-            self.sorter.push(pipeline_sorter::Draw
-            {
-                transform: object_transform,
-                depth,
-                mesh_index,
-                uniform_id,
-                pipeline_hash,
-                geometry: geo.clone(),
-                material: mtl,
-                textures,
-                vshader: vsh,
-                pshader: psh,
-            });
-        }
-        
-        drop(uniforms_writer);
-        self.used_uniforms_pools.push(uniforms);
-        true
     }
 
     // TODO: compute lights influence
@@ -213,5 +144,84 @@ impl<'f> View<'f>
         }
 
         self.used_uniforms_pools.push(camera);
+    }
+}
+impl<'f> Draw<Arc<Model>> for View<'f>
+{
+    fn draw(&mut self, object_transform: Mat4, model: Arc<Model>) -> bool
+    {
+        // todo: use closest OBB point instead of center?
+        let depth = self.camera_view.0.transform_vector3(object_transform.w_axis.xyz()).z;
+
+        // this may be heavy-handed
+        if !model.all_dependencies_loaded()
+        {
+            return false;
+        }
+
+        // todo: these need to reuse between draw calls
+        let mut uniforms = self.pipeline_cache.uniforms.take_transforms();
+        let mut next_uniform = 0;
+        let mut uniforms_writer = uniforms.write(self.renderer.queue());
+
+        let geo = model.geometry.payload().unwrap();
+        for mesh_index in 0..model.mesh_count
+        {
+            if next_uniform >= uniforms.count as usize
+            {
+                drop(uniforms_writer);
+                let mut swap_uniforms = self.pipeline_cache.uniforms.take_transforms();
+                std::mem::swap(&mut uniforms, &mut swap_uniforms);
+                self.used_uniforms_pools.push(swap_uniforms);
+                uniforms_writer = uniforms.write(self.renderer.queue());
+
+                next_uniform = 0;
+            }
+
+            // todo: one per model?
+            uniforms_writer.write_typed(next_uniform, TransformUniform
+            {
+                world: object_transform,
+            });
+            let uniform_id = ((self.used_uniforms_pools.len() << 8) + next_uniform) as u32; // todo: ensure bits are enough
+            next_uniform += 1;
+
+            let (mtl, vsh, psh) =
+                {
+                    let surf = &model.surfaces[mesh_index as usize];
+                    (
+                        surf.material.payload().unwrap(),
+                        surf.vertex_shader.payload().unwrap(),
+                        surf.pixel_shader.payload().unwrap(),
+                    )
+                };
+
+            let textures = mtl.textures.iter().map(|t| t.payload().unwrap()).collect();
+
+            let pipeline_hash = self.pipeline_cache.get_or_create(
+                &geo.meshes[mesh_index as usize],
+                &mtl,
+                &vsh,
+                &psh,
+                self.debug_mode);
+
+            self.sorter.push(pipeline_sorter::Draw
+            {
+                transform: object_transform,
+                depth,
+                mesh_index,
+                uniform_id,
+                pipeline_hash,
+                geometry: geo.clone(),
+                material: mtl,
+                textures,
+                vshader: vsh,
+                pshader: psh,
+            });
+        }
+
+        drop(uniforms_writer);
+        self.used_uniforms_pools.push(uniforms);
+        true
     }
 }

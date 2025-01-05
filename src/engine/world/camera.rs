@@ -1,9 +1,9 @@
 use std::time::Duration;
-use super::{Transform, ViewMtx};
+use super::{Transform, ViewMtx, WORLD_FORWARD, WORLD_UP};
 use crate::engine::graphics::debug_gui::DebugGui;
 use crate::engine::math::{Plane, Radians};
 use egui::Ui;
-use glam::{Mat4, Vec4};
+use glam::{Mat4, Vec3, Vec4};
 use super::Frustum;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -48,11 +48,10 @@ pub struct Camera
 {
     pub name: Option<String>,
 
-    pub transform: Transform,
+    #[cfg(debug_assertions)]
+    debug_transform: Transform,
 
-    pub projection: CameraProjection,
-    pub near_clip: f32,
-    pub far_clip: f32,
+    projection: CameraProjection,
 
     view_mtx: ViewMtx,
     projection_mtx: ProjectionMtx,
@@ -60,23 +59,18 @@ pub struct Camera
 }
 impl Camera
 {
-    pub fn new(name: Option<impl AsRef<str>>, projection: CameraProjection) -> Self
+    pub fn new(name: Option<impl AsRef<str>>) -> Self
     {
-        let near_clip =  0.1;
-        let far_clip = 1000.0;
-
-        let transform = Transform::default();
-        let view_mtx = transform.to_view();
-        let projection_mtx = projection.as_matrix(near_clip, far_clip);
-        let frustum = todo!();
+        let projection = CameraProjection::Perspective { fov: Radians(90.0), aspect_ratio: 16.0 / 9.0 };
+        let view_mtx = ViewMtx(Mat4::look_at_lh(Vec3::ZERO, WORLD_FORWARD, WORLD_UP));
+        let projection_mtx = projection.as_matrix(0.1, 10.0);
+        let frustum = Frustum::new(&(projection_mtx.0 * view_mtx.0)); // v*p?
 
         Self
         {
             name: name.map(|n| n.as_ref().to_string()),
-            transform,
+            debug_transform: Transform::default(),
             projection,
-            near_clip,
-            far_clip,
             view_mtx,
             projection_mtx,
             frustum,
@@ -85,16 +79,20 @@ impl Camera
 
     pub fn view(&self) -> ViewMtx { self.view_mtx }
     pub fn projection(&self) -> ProjectionMtx { self.projection_mtx }
+    pub fn frustum(&self) -> &Frustum { &self.frustum }
 
-    pub fn update_view(&mut self) -> &ViewMtx
+    // Update cached values after updating one of the public fields
+    pub fn update_projection(&mut self, projection: CameraProjection, near_clip: f32, far_clip: f32)
     {
-        self.view_mtx = self.transform.to_view();
-        &self.view_mtx
+        self.projection = projection;
+        self.projection_mtx = self.projection.as_matrix(near_clip, far_clip);
+        self.frustum = Frustum::new(&(self.projection_mtx.0 * self.view_mtx.0)); // v*p?
     }
-    pub fn update_projection(&mut self) -> &ProjectionMtx
+
+    pub fn update_view(&mut self, transform: &Transform)
     {
-        self.projection_mtx = self.projection.as_matrix(self.near_clip, self.far_clip);
-        &self.projection_mtx
+        self.view_mtx = transform.to_view();
+        self.frustum = Frustum::new(&(self.projection_mtx.0 * self.view_mtx.0));
     }
 }
 impl DebugGui for Camera
@@ -103,8 +101,11 @@ impl DebugGui for Camera
 
     fn debug_gui(&self, ui: &mut Ui)
     {
-        ui.label(format!("Position: {:.2?}", self.transform.position));
-        ui.label(format!("Forward: {:.2?}", self.transform.forward()));
+        #[cfg(debug_assertions)]
+        {
+            ui.label(format!("Position: {:.2?}", self.debug_transform.position));
+            ui.label(format!("Forward: {:.2?}", self.debug_transform.forward()));
+        }
         ui.label(format!("Projection: {:?}", self.projection));
     }
 }

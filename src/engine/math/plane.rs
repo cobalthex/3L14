@@ -1,7 +1,9 @@
+use std::fmt::{Debug, Formatter};
 use glam::{Vec3, Vec4, Vec4Swizzles};
 use crate::engine::math::{Facing, GetFacing};
+use crate::engine::utils::ShortTypeName;
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct Plane(pub Vec4);
 impl Plane
 {
@@ -29,7 +31,11 @@ impl Plane
     #[inline] pub fn flipped(self) -> Self
     {
         Self(Vec4::new(-self.0.x, -self.0.y, -self.0.z, self.0.w))
-    }
+    } // negate the normal
+    #[inline] pub fn mirrored(self) -> Self
+    {
+        Self(Vec4::new(self.0.x, self.0.y, self.0.z, -self.0.w))
+    } // negate the distance
 
     // TODO: dot(), transform()
     // intersects?
@@ -48,6 +54,32 @@ impl Plane
     pub fn dot(self, other: Plane) -> f32
     {
         self.0.dot(other.0)
+    }
+
+    // Returns
+    pub fn intersecting_point(a: Self, b: Self, c: Self) -> Option<Vec3>
+    {
+        let nab = a.normal().cross(b.normal());
+        let nbc = b.normal().cross(c.normal());
+        let nca = c.normal().cross(a.normal());
+
+        let denom = (a.distance() * nbc) + (b.distance() * nca) + (c.distance() * nab);
+        let recip = a.normal().dot(nbc);
+
+        let result = denom / recip;
+        (!result.is_nan()).then_some(result)
+    }
+
+    // intersecting_line?
+}
+impl Debug for Plane
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    {
+        f.debug_struct(Self::short_type_name())
+            .field("normal", &self.normal())
+            .field("distance", &self.distance())
+            .finish()
     }
 }
 impl Default for Plane
@@ -86,13 +118,6 @@ mod tests
     use approx::assert_relative_eq;
     use super::*;
 
-    fn vec_approx_eq(a: Vec3, b: Vec3)
-    {
-        assert_relative_eq!(a.x, b.x);
-        assert_relative_eq!(a.y, b.y);
-        assert_relative_eq!(a.z, b.z);
-    }
-
     #[test]
     fn basic()
     {
@@ -116,7 +141,7 @@ mod tests
 
         let plane = Plane::from_points(a, b, c);
         let recip_sqrt2 = 1.0 / 2.0_f32.sqrt();
-        vec_approx_eq(plane.normal(), Vec3::new(-recip_sqrt2, recip_sqrt2, 0.0));
+        assert!(plane.normal().abs_diff_eq(Vec3::new(-recip_sqrt2, recip_sqrt2, 0.0), 1e-5));
         assert_relative_eq!(plane.distance(), -recip_sqrt2);
     }
 
@@ -128,7 +153,29 @@ mod tests
         plane.normalize();
         assert_eq!(normed, plane);
 
-        vec_approx_eq(plane.normal(), Vec3::new(1.0 / 9.0, 4.0 / 9.0, 8.0 / 9.0));
+        assert!(plane.normal().abs_diff_eq(Vec3::new(1.0 / 9.0, 4.0 / 9.0, 8.0 / 9.0), 1e-5));
         assert_relative_eq!(plane.distance(), 3.0 / 9.0);
+    }
+
+    #[test]
+    fn point_intersection()
+    {
+        let pa = Plane::new(Vec3::new(1.0, 0.0, 0.0), 0.0);
+        let pb = Plane::new(Vec3::new(0.0, 1.0, 0.0), 0.0);
+        let pc = Plane::new(Vec3::new(0.0, 0.0, 1.0), 0.0);
+        
+        let intersection = Plane::intersecting_point(pa, pb, pc);
+        assert_eq!(intersection, Some(Vec3::new(0.0, 0.0, 0.0)));
+    }
+
+    #[test]
+    fn no_point_intersection()
+    {
+        let pa = Plane::new(Vec3::new(0.0, 1.0, 0.0), 0.0);
+        let pb = Plane::new(Vec3::new(0.0, 1.0, 0.0), 0.0);
+        let pc = Plane::new(Vec3::new(0.0, 1.0, 0.0), 0.0);
+
+        let intersection = Plane::intersecting_point(pa, pb, pc);
+        assert_eq!(intersection, None);
     }
 }

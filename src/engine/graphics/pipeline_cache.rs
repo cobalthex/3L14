@@ -1,5 +1,5 @@
 use crate::debug_label;
-use crate::engine::graphics::assets::{GeometryMesh, Material, Model, Shader, ShaderStage};
+use crate::engine::graphics::assets::{GeometryMesh, Material, Model, Shader, ShaderStage, VertexLayout};
 use crate::engine::graphics::Renderer;
 use metrohash::MetroHash64;
 use parking_lot::{Mutex, RwLock};
@@ -89,7 +89,7 @@ impl PipelineCache
 
         pipelines.with_upgraded(|p|
         {
-            let pipeline = self.create_pipeline(geometry, material, vertex_shader, pixel_shader, mode);
+            let pipeline = self.create_pipeline(geometry.vertex_layout, material, vertex_shader, pixel_shader, mode);
             p.insert(pipeline_hash, pipeline);
         });
 
@@ -98,7 +98,7 @@ impl PipelineCache
 
     fn create_pipeline(
         &self,
-        geometry: &GeometryMesh,
+        vertex_layout: VertexLayout,
         material: &Material,
         vertex_shader: &Shader,
         pixel_shader: &Shader,
@@ -134,10 +134,10 @@ impl PipelineCache
         });
 
         // todo: if these update, this will invalidate the pipeline
-        let renderer_surface_config = self.renderer.surface_format();
+        let renderer_surface_format = self.renderer.surface_format();
         let renderer_msaa_count = self.renderer.msaa_max_sample_count();
 
-        let desc = RenderPipelineDescriptor
+        self.renderer.device().create_render_pipeline(&RenderPipelineDescriptor
         {
             label: debug_label!("TODO RenderPipeline Name"), // TODO
             layout: Some(pipeline_layout),
@@ -146,7 +146,7 @@ impl PipelineCache
                 module: &vertex_shader.module,
                 entry_point: ShaderStage::Vertex.entry_point().expect("Shader stage has no entry-point"),
                 compilation_options: PipelineCompilationOptions::default(),
-                buffers: &[geometry.vertex_layout.into()],
+                buffers: &[vertex_layout.into()],
             },
             primitive: PrimitiveState
             {
@@ -181,18 +181,14 @@ impl PipelineCache
                 compilation_options: PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState
                 {
-                    format: TextureFormat::Bgra8UnormSrgb, // TODO: based on material, maybe render pass (must match pass), or get from renderer surface format
-                    // format: TextureFormat::Rgba8UnormSrgb, // TODO: based on material, maybe render pass (must match pass), or get from renderer surface format
+                    format: renderer_surface_format,
                     blend: None, // todo: material settings
                     write_mask: ColorWrites::ALL,
                 })],
             }),
             multiview: None,
             cache: None, // todo
-        };
-
-        let pipeline = self.renderer.device().create_render_pipeline(&desc);
-        pipeline
+        })
     }
 
     // todo
