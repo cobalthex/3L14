@@ -1,7 +1,6 @@
 use super::*;
 use bitcode::Encode;
 use game_3l14::engine::asset::{AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetTypeId};
-use game_3l14::engine::{varint, ShortTypeName};
 use metrohash::MetroHash64;
 use serde::{Deserializer, Serializer};
 use std::collections::HashMap;
@@ -15,6 +14,7 @@ use std::path::{Path, PathBuf};
 use unicase::UniCase;
 use walkdir::WalkDir;
 use game_3l14::engine::utils::inline_hash::InlineWriteHash;
+use game_3l14::engine::utils::{varint, ShortTypeName};
 // TODO: split this file out some?
 
 struct AssetBuilderEntry

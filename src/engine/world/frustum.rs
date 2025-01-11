@@ -69,7 +69,7 @@ impl Debug for Frustum
 }
 impl Intersects<Vec3> for Frustum
 {
-    fn intersects(&self, other: &Vec3) -> Intersection
+    fn get_intersection(&self, other: Vec3) -> Intersection
     {
         let mut inside = true;
         for p in &self.planes
@@ -78,7 +78,7 @@ impl Intersects<Vec3> for Frustum
         }
         match inside
         {
-            true => Intersection::Contained,
+            true => Intersection::Overlapping,
             false => Intersection::None,
         }
     }

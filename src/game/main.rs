@@ -1,3 +1,4 @@
+use game_3l14::engine::graphics::view::Draw;
 use clap::Parser;
 use egui::Widget;
 use game_3l14::engine::graphics::assets::texture::TextureLifecycler;
@@ -234,15 +235,6 @@ fn main() -> ExitReason
 
                 let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
                 {
-                    fn get_model_mesh(model: &Model, mesh: u32) -> Option<(Arc<Geometry>, Arc<Material>, Arc<Shader>, Arc<Shader>)>
-                    {
-                        let AssetPayload::Available(geometry) = model.geometry.payload() else { return None; };
-                        let AssetPayload::Available(material) = model.surfaces[mesh as usize].material.payload() else { return None; };
-                        let AssetPayload::Available(vshader) = model.surfaces[mesh as usize].vertex_shader.payload() else { return None; };
-                        let AssetPayload::Available(pshader) = model.surfaces[mesh as usize].pixel_shader.payload() else { return None; };
-                        Some((geometry, material, vshader, pshader))
-                    }
-
                     let mut test_pass = render_passes::test(
                         &render_frame,
                         &mut encoder,
@@ -253,11 +245,14 @@ fn main() -> ExitReason
 
                     if let AssetPayload::Available(model) = test_model.payload()
                     {
-                        let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(3.0, 0.0, 0.0));
-                        view.draw(obj_world, model.clone());
+                        if model.all_dependencies_loaded()
+                        {
+                            let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(3.0, 0.0, 0.0));
+                            view.draw(obj_world, model.clone());
 
-                        obj_world = Mat4::from_rotation_translation(obj_rot.inverse(), Vec3::new(-3.0, 0.0, -2.0));
-                        view.draw(obj_world, model);
+                            obj_world = Mat4::from_rotation_translation(obj_rot.inverse(), Vec3::new(-3.0, 0.0, -2.0));
+                            view.draw(obj_world, model);
+                        }
                     }
 
                     view.submit(&mut test_pass);

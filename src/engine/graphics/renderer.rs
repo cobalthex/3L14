@@ -78,7 +78,7 @@ impl Renderer
 
         let instance = Instance::new(InstanceDescriptor
         {
-            backends: Backends::PRIMARY,
+            backends: Backends::DX12,
             flags: InstanceFlags::from_build_config(),
             dx12_shader_compiler: Dx12Compiler::Dxc
             {

@@ -1,30 +1,22 @@
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Intersection
 {
     None,
     Overlapping,
-    Contained
+    EdgesTouching,
+    // Fully contained?
 }
-impl Intersection
-{
-    pub fn combine_with(&mut self, other: Intersection)
-    {
-        *self = match other
-        {
-            Intersection::None => *self,
-            Intersection::Overlapping => Intersection::Overlapping,
-            Intersection::Contained => match self
-            {
-                Intersection::Contained => Intersection::Contained,
-                _ => Intersection::Overlapping,
-            },
-        };
-    }
-}
+
+// TODO: rename these to be more clear of who contains who
 
 pub trait Intersects<T>
 {
-    fn intersects(&self, other: &T) -> Intersection;
+    fn get_intersection(&self, other: T) -> Intersection;
+}
+
+pub trait IsOnOrInside<T>
+{
+    fn is_on_or_inside(&self, other: T) -> bool;
 }
 
 pub enum Facing
@@ -36,5 +28,8 @@ pub enum Facing
 
 pub trait GetFacing<T>
 {
-    fn get_facing(&self, other: &T) -> Facing;
+    fn get_facing(&self, other: T) -> Facing;
 }
+
+
+// TODO: can probably simplify these somewhat

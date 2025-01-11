@@ -1,6 +1,6 @@
 use crate::debug_label;
 use crate::engine::asset::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadRequest, AssetTypeId};
-use crate::engine::graphics::assets::{Texture, TextureHandle};
+use crate::engine::graphics::assets::{Texture};
 use crate::engine::graphics::colors::Rgba;
 use crate::engine::graphics::debug_gui::DebugGui;
 use crate::engine::graphics::Renderer;
@@ -51,7 +51,7 @@ pub struct Material
     pub class: MaterialClass,
     pub props: Buffer,
     pub bind_layout: BindGroupLayout,
-    pub textures: ArrayVec<TextureHandle, MAX_MATERIAL_TEXTURE_BINDINGS>,
+    pub textures: ArrayVec<AssetHandle<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS>,
 }
 
 pub struct MaterialLifecycler

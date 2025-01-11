@@ -1,25 +1,26 @@
-use game_3l14::engine::graphics::assets::ModelFileSurface;
-use game_3l14::engine::graphics::assets::ModelFile;
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
 use crate::helpers::shader_compiler::{ShaderCompilation, ShaderCompiler};
 use arrayvec::ArrayVec;
-use game_3l14::engine::alloc_slice::alloc_u8_slice;
 use game_3l14::engine::asset::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use game_3l14::engine::graphics::assets::material::{MaterialFile, PbrProps};
+use game_3l14::engine::graphics::assets::ModelFile;
+use game_3l14::engine::graphics::assets::ModelFileSurface;
 use game_3l14::engine::graphics::assets::{GeometryFile, GeometryFileMesh, GeometryMesh, IndexFormat, MaterialClass, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat, VertexLayout};
-use game_3l14::engine::{as_u8_array, AABB};
+use game_3l14::engine::math::{Sphere, AABB};
+use game_3l14::engine::utils::as_u8_array;
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
+use metrohash::MetroHash64;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
-use std::mem;
 use std::path::{Path, PathBuf};
-use metrohash::MetroHash64;
+use glam::Vec3;
 use unicase::UniCase;
-use game_3l14::engine::inline_hash::InlineWriteHash;
+use game_3l14::engine::utils::alloc_slice::alloc_u8_slice;
+use game_3l14::engine::utils::inline_hash::InlineWriteHash;
 
 #[derive(Hash)]
 struct ShaderHash
@@ -129,16 +130,18 @@ impl ModelBuilder
 
         let mut meshes = Vec::new();
         let mut surfaces = Vec::new();
-        let mut model_bounds = AABB::max_min();
+        let mut model_bounds_aabb = AABB::MAX_MIN;
 
         let vertex_layout = VertexLayout::StaticSimple; // TODO: figure out from model
+
+        let mut sphere_points = Vec::<Vec3>::new();
 
         // todo: iter.map() ?
         for in_prim in in_mesh.primitives()
         {
             let bb = in_prim.bounding_box();
             let mesh_bounds = AABB::new(bb.min.into(), bb.max.into());
-            model_bounds.union_with(mesh_bounds);
+            model_bounds_aabb.union_with(mesh_bounds);
 
             let prim_reader = in_prim.reader(|b| Some(&buffers[b.index()]));
             let positions = prim_reader.read_positions().ok_or(ModelImportError::NoPositionData)?; // not required?
@@ -147,10 +150,12 @@ impl ModelBuilder
             let mut tex_coords = prim_reader.read_tex_coords(0).map(|t| t.into_f32());
             let mut colors = prim_reader.read_colors(0).map(|c| c.into_rgba_u8());
 
+
             let mut vertex_count = 0;
             let mut vertices = Vec::new();
             for pos in positions.into_iter()
             {
+                sphere_points.push(pos.into());
                 let vertex = StaticSimpleVertex
                 {
                     position: pos,
@@ -330,11 +335,12 @@ impl ModelBuilder
             }
 
             let mesh_bounds = AABB::new(bb.min.into(), bb.max.into());
-            model_bounds.union_with(mesh_bounds);
+            model_bounds_aabb.union_with(mesh_bounds);
 
             meshes.push(GeometryFileMesh
             {
-                bounds: mesh_bounds,
+                bounds_aabb: mesh_bounds,
+                bounds_sphere: Sphere::from_points(&sphere_points),
                 vertex_layout,
                 index_format,
                 vertex_count,
@@ -342,6 +348,8 @@ impl ModelBuilder
                 vertices: vertices.into_boxed_slice(),
                 indices: indices.into_boxed_slice(),
             });
+
+            sphere_points.clear();
 
             surfaces.push(ModelFileSurface
             {
@@ -357,7 +365,8 @@ impl ModelBuilder
 
             geom_output.serialize(&GeometryFile
             {
-                bounds: model_bounds,
+                bounds_aabb: model_bounds_aabb,
+                bounds_sphere: Sphere::default(), // TODO
                 meshes: meshes.into_boxed_slice(),
             })?;
             geom_output.finish()?

@@ -1,4 +1,5 @@
 use glam::Vec3;
+use crate::engine::asset::AssetHandle;
 use crate::engine::math::{Radians, AABB};
 use crate::engine::graphics::assets::model::*;
 
@@ -22,7 +23,7 @@ impl<T> SpatialMap<T>
 
 pub struct Scene
 {
-    pub static_geo: Vec<ModelHandle>,
+    pub static_geo: Vec<AssetHandle<Model>>,
 }
 impl Scene
 {

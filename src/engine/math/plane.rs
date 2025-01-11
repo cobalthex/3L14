@@ -103,9 +103,9 @@ impl From<Plane> for Vec4
 }
 impl GetFacing<Vec3> for Plane
 {
-    fn get_facing(&self, other: &Vec3) -> Facing
+    fn get_facing(&self, other: Vec3) -> Facing
     {
-        let dot = self.normal().dot(*other) - self.distance();
+        let dot = self.normal().dot(other) - self.distance();
         if dot > 0.0 { Facing::InFront }
         else if dot == 0.0 { Facing::On }
         else { Facing::Behind }

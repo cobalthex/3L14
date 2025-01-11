@@ -2,7 +2,7 @@ use crate::debug_label;
 use crate::engine::asset::{Asset, AssetHandle, AssetLifecycler, AssetLoadRequest, AssetTypeId};
 use crate::engine::graphics::debug_gui::DebugGui;
 use crate::engine::graphics::Renderer;
-use crate::engine::math::AABB;
+use crate::engine::math::{Sphere, AABB};
 use bitcode::{Decode, Encode};
 use proc_macros_3l14::Asset;
 use serde::{Deserialize, Serialize};
@@ -81,7 +81,8 @@ impl From<IndexFormat> for wgpu::IndexFormat
 #[derive(Encode, Decode)]
 pub struct GeometryFileMesh
 {
-    pub bounds: AABB, // note; these are untransformed
+    pub bounds_aabb: AABB,
+    pub bounds_sphere: Sphere,
     pub vertex_layout: VertexLayout,
     pub index_format: IndexFormat,
     pub vertex_count: u32,
@@ -94,13 +95,15 @@ pub struct GeometryFileMesh
 pub struct GeometryFile
 {
     // note: it may be nice to split vertices into multiple buffers( p,n,t in one buffer, others in a second buffer)
-    pub bounds: AABB,
+    pub bounds_aabb: AABB,
+    pub bounds_sphere: Sphere,
     pub meshes: Box<[GeometryFileMesh]>,
 }
 
 pub struct GeometryMesh
 {
-    pub bounds: AABB,
+    pub bounds_aabb: AABB,
+    pub bounds_sphere: Sphere,
     pub vertex_layout: VertexLayout,
     pub index_format: wgpu::IndexFormat,
     pub vertex_count: u32,
@@ -112,7 +115,8 @@ pub struct GeometryMesh
 #[derive(Asset)]
 pub struct Geometry
 {
-    pub bounds: AABB, // note; these are untransformed
+    pub bounds_aabb: AABB, // note; these are untransformed
+    pub bounds_sphere: Sphere,
     pub meshes: Box<[GeometryMesh]>,
 }
 
@@ -151,7 +155,8 @@ impl AssetLifecycler for GeometryLifecycler
             });
             GeometryMesh
             {
-                bounds: mesh.bounds,
+                bounds_aabb: mesh.bounds_aabb,
+                bounds_sphere: mesh.bounds_sphere,
                 vertex_layout: mesh.vertex_layout,
                 index_format: mesh.index_format.into(),
                 vertex_count: mesh.vertex_count,
@@ -163,7 +168,8 @@ impl AssetLifecycler for GeometryLifecycler
 
         Ok(Geometry
         {
-            bounds: mf.bounds,
+            bounds_aabb: mf.bounds_aabb,
+            bounds_sphere: mf.bounds_sphere,
             meshes: meshes.collect(),
         })
     }
