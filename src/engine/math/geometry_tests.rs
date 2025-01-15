@@ -16,7 +16,7 @@ pub trait Intersects<T>
 
 pub trait IsOnOrInside<T>
 {
-    fn is_on_or_inside(&self, other: T) -> bool;
+    fn other_is_on_or_inside(&self, other: T) -> bool;
 }
 
 pub enum Facing
@@ -31,5 +31,11 @@ pub trait GetFacing<T>
     fn get_facing(&self, other: T) -> Facing;
 }
 
+// The distance from this object's center to another object's center
+pub trait CenterDistance<T>
+{
+    fn center_distance(&self, other: T) -> f32 { self.center_distance_sq(other).sqrt() }
+    fn center_distance_sq(&self, other: T) -> f32;
+}
 
 // TODO: can probably simplify these somewhat

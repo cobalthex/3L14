@@ -134,7 +134,7 @@ impl ModelBuilder
 
         let vertex_layout = VertexLayout::StaticSimple; // TODO: figure out from model
 
-        let mut sphere_points = Vec::<Vec3>::new();
+        let model_sphere = Sphere::EMPTY;
 
         // todo: iter.map() ?
         for in_prim in in_mesh.primitives()
@@ -150,9 +150,9 @@ impl ModelBuilder
             let mut tex_coords = prim_reader.read_tex_coords(0).map(|t| t.into_f32());
             let mut colors = prim_reader.read_colors(0).map(|c| c.into_rgba_u8());
 
-
             let mut vertex_count = 0;
-            let mut vertices = Vec::new();
+            let mut vertex_data = Vec::new();
+            let mut sphere_points = Vec::new();
             for pos in positions.into_iter()
             {
                 sphere_points.push(pos.into());
@@ -165,7 +165,7 @@ impl ModelBuilder
                 };
 
                 // TODO: byte order
-                vertices.write_all(unsafe { as_u8_array(&vertex) })?;
+                vertex_data.write_all(unsafe { as_u8_array(&vertex) })?;
                 vertex_count += 1;
             };
 
@@ -345,11 +345,9 @@ impl ModelBuilder
                 index_format,
                 vertex_count,
                 index_count,
-                vertices: vertices.into_boxed_slice(),
+                vertices: vertex_data.into_boxed_slice(),
                 indices: indices.into_boxed_slice(),
             });
-
-            sphere_points.clear();
 
             surfaces.push(ModelFileSurface
             {
