@@ -134,7 +134,9 @@ impl ModelBuilder
 
         let vertex_layout = VertexLayout::StaticSimple; // TODO: figure out from model
 
-        let model_sphere = Sphere::EMPTY;
+        let mut model_bounds_sphere = Sphere::EMPTY;
+
+        let mut mesh_points = Vec::new();
 
         // todo: iter.map() ?
         for in_prim in in_mesh.primitives()
@@ -152,10 +154,10 @@ impl ModelBuilder
 
             let mut vertex_count = 0;
             let mut vertex_data = Vec::new();
-            let mut sphere_points = Vec::new();
             for pos in positions.into_iter()
             {
-                sphere_points.push(pos.into());
+                //mesh_points.push(pos.into());
+
                 let vertex = StaticSimpleVertex
                 {
                     position: pos,
@@ -337,10 +339,14 @@ impl ModelBuilder
             let mesh_bounds = AABB::new(bb.min.into(), bb.max.into());
             model_bounds_aabb.union_with(mesh_bounds);
 
+            let mesh_sphere = Sphere::from_points(&mesh_points);
+            mesh_points.clear();
+            model_bounds_sphere += mesh_sphere;
+
             meshes.push(GeometryFileMesh
             {
                 bounds_aabb: mesh_bounds,
-                bounds_sphere: Sphere::from_points(&sphere_points),
+                bounds_sphere: mesh_sphere,
                 vertex_layout,
                 index_format,
                 vertex_count,
@@ -364,7 +370,7 @@ impl ModelBuilder
             geom_output.serialize(&GeometryFile
             {
                 bounds_aabb: model_bounds_aabb,
-                bounds_sphere: Sphere::default(), // TODO
+                bounds_sphere: model_bounds_sphere,
                 meshes: meshes.into_boxed_slice(),
             })?;
             geom_output.finish()?

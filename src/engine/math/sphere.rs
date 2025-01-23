@@ -247,16 +247,20 @@ impl std::ops::Add<Sphere> for Sphere
 impl std::ops::AddAssign<Sphere> for Sphere
 {
     // Note: Combining multiple spheres can become over-sized due to the 'greedy' nature of this algorithm (geometric iterative expansion)
+    #[no_mangle]
     fn add_assign(&mut self, other: Sphere)
     {
         let dist_sq = self.center().distance_squared(other.center());
-        if dist_sq <= (self.radius() - other.radius()).powi(2)
+        let rad = self.radius() + other.radius();
+        let rad_sq = rad * rad;
+        if rad_sq <= dist_sq
         {
+            // inside
             return;
         }
 
         let dist = dist_sq.sqrt();
-        let new_radius = (dist + self.radius() + other.radius()) / 2.0;
+        let new_radius = (dist + rad) / 2.0;
         let new_center = self.center() + ((new_radius - self.radius()) / dist) * (other.center() - self.center());
         self.0 = Vec4::from((new_center, new_radius));
     }
@@ -280,38 +284,39 @@ mod tests
     #[test]
     fn math()
     {
-        let sphere = Sphere::new(Vec3::new(0.0, 2.0, 0.0), 5.0);
-        assert_eq!(sphere.center(), Vec3::new(0.0, 2.0, 0.0));
-        assert_eq!(sphere.radius(), 5.0);
+        let sphere_a = Sphere::new(Vec3::new(0.0, 2.0, 0.0), 5.0);
+        assert_eq!(sphere_a.center(), Vec3::new(0.0, 2.0, 0.0));
+        assert_eq!(sphere_a.radius(), 5.0);
 
-        let sphere = sphere + Vec3::new(1.0, 0.0, 0.0);
-        assert_eq!(sphere.center(), Vec3::new(1.0, 2.0, 0.0));
-        assert_eq!(sphere.radius(), 5.0);
+        let sphere_b = sphere_a + Vec3::new(1.0, 0.0, 0.0);
+        assert_eq!(sphere_b.center(), Vec3::new(1.0, 2.0, 0.0));
+        assert_eq!(sphere_b.radius(), 5.0);
 
-        let sphere = sphere - Vec3::new(4.0, 0.0, 0.0);
-        assert_eq!(sphere.center(), Vec3::new(-3.0, 2.0, 0.0));
-        assert_eq!(sphere.radius(), 5.0);
+        let sphere_c = sphere_b - Vec3::new(4.0, 0.0, 0.0);
+        assert_eq!(sphere_c.center(), Vec3::new(-3.0, 2.0, 0.0));
+        assert_eq!(sphere_c.radius(), 5.0);
 
-        let sphere = sphere.expanded(3.0);
-        assert_eq!(sphere.center(), Vec3::new(-3.0, 2.0, 0.0));
-        assert_eq!(sphere.radius(), 8.0);
+        let sphere_d = sphere_c.expanded(3.0);
+        assert_eq!(sphere_d.center(), Vec3::new(-3.0, 2.0, 0.0));
+        assert_eq!(sphere_d.radius(), 8.0);
     }
 
     #[test]
     fn expanding_sphere()
     {
-        let mut sphere = Sphere::EMPTY;
-        sphere += Sphere::new(Vec3::new(0.0, 2.0, 0.0), 5.0);
-        println!("!! {:?}", sphere);
+        let mut sphere_a = Sphere::EMPTY;
+        sphere_a += Sphere::new(Vec3::new(0.0, 2.0, 0.0), 5.0);
+        assert_eq!(sphere_a.center(), Vec3::new(0.0, 3.5, 0.0));
+        assert_eq!(sphere_a.radius(), 3.5);
 
-        let mut sphere = Sphere::new(Vec3::new(0.0, 2.0, 0.0), 5.0);
-        sphere += Sphere::new(Vec3::new(0.0, 5.0, 0.0), 2.0);
-        assert_eq!(sphere.center(), Vec3::new(0.0, 2.0, 0.0));
-        assert_eq!(sphere.radius(), 5.0);
+        let mut sphere_b = Sphere::new(Vec3::new(0.0, 2.0, 0.0), 5.0);
+        sphere_b += Sphere::new(Vec3::new(0.0, 5.0, 0.0), 2.0);
+        assert_eq!(sphere_b.center(), Vec3::new(0.0, 2.0, 0.0));
+        assert_eq!(sphere_b.radius(), 5.0);
 
-        sphere += Sphere::new(Vec3::new(0.0, 7.0, 0.0), 2.0);
-        assert_eq!(sphere.center(), Vec3::new(0.0, 3.0, 0.0));
-        assert_eq!(sphere.radius(), 6.0);
+        sphere_b += Sphere::new(Vec3::new(0.0, 7.0, 0.0), 2.0);
+        assert_eq!(sphere_b.center(), Vec3::new(0.0, 3.0, 0.0));
+        assert_eq!(sphere_b.radius(), 6.0);
     }
 
     #[test]
@@ -334,17 +339,17 @@ mod tests
     {
         let sphere = Sphere::new(Vec3::new(0.0, 2.0, 0.0), 5.0);
 
-        let test = Sphere::new(Vec3::new(0.0, 4.0, 0.0), 3.0);
-        assert_eq!(sphere.get_intersection(test), Intersection::Overlapping);
-        assert!(sphere.other_is_on_or_inside(test));
+        let test_a = Sphere::new(Vec3::new(0.0, 4.0, 0.0), 3.0);
+        assert_eq!(sphere.get_intersection(test_a), Intersection::Overlapping);
+        assert!(sphere.other_is_on_or_inside(test_a));
 
-        let test = Sphere::new(Vec3::new(0.0, 10.0, 0.0), 3.0);
-        assert_eq!(sphere.get_intersection(test), Intersection::EdgesTouching);
-        assert!(sphere.other_is_on_or_inside(test));
+        let test_b = Sphere::new(Vec3::new(0.0, 10.0, 0.0), 3.0);
+        assert_eq!(sphere.get_intersection(test_b), Intersection::EdgesTouching);
+        assert!(sphere.other_is_on_or_inside(test_b));
 
-        let test = Sphere::new(Vec3::new(0.0, 100.0,0.0), 3.0);
-        assert_eq!(sphere.get_intersection(test), Intersection::None);
-        assert!(!sphere.other_is_on_or_inside(test));
+        let test_c = Sphere::new(Vec3::new(0.0, 100.0, 0.0), 3.0);
+        assert_eq!(sphere.get_intersection(test_c), Intersection::None);
+        assert!(!sphere.other_is_on_or_inside(test_c));
     }
 
     mod from_points
