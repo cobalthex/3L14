@@ -1,13 +1,13 @@
-use std::io::Write;
-use glam::Mat4;
-use wgpu::{include_spirv, BlendState, Buffer, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, FragmentState, FrontFace, MultisampleState, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, TextureFormat, VertexState};
-use wgpu::util::BufferInitDescriptor;
+use glam::{Mat4, Vec2, Vec3, Vec3Swizzles};
+use wgpu::{include_spirv, BlendState, Buffer, BufferAddress, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, FragmentState, FrontFace, IndexFormat, MultisampleState, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor, TextureFormat, VertexBufferLayout, VertexState, VertexStepMode};
 use crate::debug_label;
 use crate::engine::graphics::{Renderer, Rgba};
-use crate::engine::graphics::assets::ShaderStage;
+use crate::engine::graphics::assets::{ShaderStage, VertexLayout};
+use crate::engine::utils::AsU8Slice;
 use crate::engine::world::{Camera, Frustum};
 
-const CUBOID_INDICES: [u32; 24] =
+// Indices to draw lines
+const CUBOID_INDICES: [u32; 26] =
 [
     0, 4,
     0, 2,
@@ -21,11 +21,18 @@ const CUBOID_INDICES: [u32; 24] =
     6, 7,
     7, 5,
     5, 4,
+    1, 5,
 ];
+
+struct DebugLineVertex
+{
+    position: Vec2,
+    color: u32,
+}
 
 struct DrawLines
 {
-    vertices: Vec<u8>,
+    vertices: Vec<DebugLineVertex>,
     indices: Vec<u32>,
     vbuffer: Buffer,
     ibuffer: Buffer,
@@ -33,6 +40,7 @@ struct DrawLines
 
 pub struct DebugDraw
 {
+    camera_transform: Mat4,
     lines_pipeline: RenderPipeline,
     lines: DrawLines,
 }
@@ -44,6 +52,7 @@ impl DebugDraw
         let renderer_msaa_count = renderer.msaa_max_sample_count();
 
         // TODO: load shaders better
+        // TODO: buffer pool (and use 16 bit vertices)
 
         let lines_pipeline = renderer.device().create_render_pipeline(&RenderPipelineDescriptor
         {
@@ -54,7 +63,7 @@ impl DebugDraw
                 module: &renderer.device().create_shader_module(include_spirv!("../../../assets/shaders/DebugLines.vs.spv")),
                 entry_point: ShaderStage::Vertex.entry_point().expect("Shader stage has no entry-point"),
                 compilation_options: Default::default(),
-                buffers: &[],
+                buffers: &[VertexLayout::DebugLines.into()],
             },
             primitive: PrimitiveState
             {
@@ -96,19 +105,20 @@ impl DebugDraw
         {
             label: debug_label!("Debug lines vertices"),
             size: 16 * max_entries,
-            usage: BufferUsages::COPY_DST,
+            usage: BufferUsages::COPY_DST | BufferUsages::VERTEX,
             mapped_at_creation: false,
         });
         let lines_ibuffer = renderer.device().create_buffer(&BufferDescriptor
         {
-            label: debug_label!("Debug lines vertices"),
+            label: debug_label!("Debug lines indices"),
             size: 4 * max_entries,
-            usage: BufferUsages::COPY_DST,
+            usage: BufferUsages::COPY_DST | BufferUsages::INDEX,
             mapped_at_creation: false,
         });
 
         Self
         {
+            camera_transform: Mat4::IDENTITY,
             lines_pipeline,
             lines: DrawLines
             {
@@ -120,29 +130,101 @@ impl DebugDraw
         }
     }
 
-    pub fn draw_frustum(&mut self, transform: Mat4, camera: &Camera, color: Rgba)
+    pub fn begin(&mut self, camera: &Camera)
+    {
+        self.camera_transform = camera.clip_mtx();
+        self.lines.vertices.clear();
+        self.lines.indices.clear();
+    }
+
+    pub fn draw_frustum(&mut self, camera: &Camera, world_transform: Mat4, color: Rgba)
     {
         let start = self.lines.vertices.len() as u32;
-        let corners = Frustum::get_corners(camera.projection().0 * camera.view().0 * transform);
+        let mut transform = camera.clip_mtx();
+        let corners = Frustum::get_corners(transform.inverse());
+        transform = (transform * world_transform).inverse();
         for corner in corners
         {
-            self.lines.vertices.extend_from_slice(&corner.x.to_le_bytes());
-            self.lines.vertices.extend_from_slice(&corner.y.to_le_bytes());
-            self.lines.vertices.extend_from_slice(&corner.z.to_le_bytes());
-            self.lines.vertices.extend_from_slice(&<[u8; 4]>::from(color));
+            self.lines.vertices.push(DebugLineVertex
+            {
+                position: transform.transform_vector3(corner).xy(),
+                color: color.into(),
+            });
         }
         for i in CUBOID_INDICES
         {
-            self.lines.indices.push(i + start);
+            self.lines.indices.push(start + i);
+        }
+
+        // TODO: use draw wire box
+    }
+
+    pub fn draw_wire_box(&mut self, mut transform: Mat4, color: Rgba)
+    {
+        let start = self.lines.vertices.len() as u32;
+
+        transform = self.camera_transform * transform;
+
+        const CUBOID_CORNERS: [Vec3; 8] =
+        [
+            Vec3::new(-1.0, -1.0, -1.0), // near bottom left
+            Vec3::new( 1.0, -1.0, -1.0), // near bottom right
+            Vec3::new(-1.0,  1.0, -1.0), // near top left
+            Vec3::new( 1.0,  1.0, -1.0), // near top right
+            Vec3::new(-1.0, -1.0,  1.0), // far bottom left
+            Vec3::new( 1.0, -1.0,  1.0), // far bottom right
+            Vec3::new(-1.0,  1.0,  1.0), // far top left
+            Vec3::new( 1.0,  1.0,  1.0), // far top right
+        ];
+
+        for corner in CUBOID_CORNERS
+        {
+            self.lines.vertices.push(DebugLineVertex
+            {
+                position: transform.project_point3(corner).xy(),
+                color: color.into(),
+            });
+        }
+        for i in CUBOID_INDICES
+        {
+            self.lines.indices.push(start + i);
         }
     }
 
-    pub fn submit(&mut self, render_pass: &mut RenderPass)
+    pub fn draw_clipspace_line(&mut self, a: Vec2, b: Vec2, color: Rgba)
+    {
+        let start = self.lines.vertices.len() as u32;
+
+        self.lines.vertices.push(DebugLineVertex
+        {
+            position: a,
+            color: color.into(),
+        });
+        self.lines.vertices.push(DebugLineVertex
+        {
+            position: b,
+            color: color.into(),
+        });
+
+        self.lines.indices.push(start);
+        self.lines.indices.push(start + 1);
+    }
+
+    pub fn submit(&mut self, queue: &Queue, render_pass: &mut RenderPass)
     {
         puffin::profile_scope!("DebugDraw submission");
-        //
-        // render_pass.set_vertex_buffer(0, self.lines.slice(0..));
-        // render_pass.set_index_buffer(mesh.indices.slice(0..), mesh.index_format);
-        // render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+
+        let num_indices = self.lines.indices.len() as u32;
+        if num_indices > 0
+        {
+            // TODO: write verts/indices directly to buffer
+            queue.write_buffer(&self.lines.vbuffer, 0, unsafe { self.lines.vertices.as_u8_slice() });
+            queue.write_buffer(&self.lines.ibuffer, 0, unsafe { self.lines.indices.as_u8_slice() });
+
+            render_pass.set_vertex_buffer(0, self.lines.vbuffer.slice(..));
+            render_pass.set_index_buffer(self.lines.ibuffer.slice(..), IndexFormat::Uint32);
+            render_pass.set_pipeline(&self.lines_pipeline);
+            render_pass.draw_indexed(0..num_indices, 0, 0..1);
+        }
     }
 }

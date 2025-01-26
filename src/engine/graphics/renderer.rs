@@ -78,7 +78,7 @@ impl Renderer
 
         let instance = Instance::new(InstanceDescriptor
         {
-            backends: Backends::DX12,
+            backends: Backends::PRIMARY,
             flags: InstanceFlags::from_build_config(),
             dx12_shader_compiler: Dx12Compiler::Dxc
             {
@@ -112,7 +112,7 @@ impl Renderer
                 required_features: Features::empty()
                     | Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
                     | Features::PUSH_CONSTANTS
-                    //| Features::SPIRV_SHADER_PASSTHROUGH,
+                    | (if cfg!(load_shaders_direct) { Features::SPIRV_SHADER_PASSTHROUGH } else { Features::empty() })
                     ,
                 // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
                 required_limits: Limits
@@ -158,6 +158,9 @@ impl Renderer
         {
             None
         };
+
+        // TODO: log debug
+        println!("Created renderer with {surface_config:?} + {sample_flags:?}");
 
         let debug_gui = egui::Context::default();
         debug_gui.set_visuals(Visuals

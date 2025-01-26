@@ -1,3 +1,4 @@
+use std::cmp::max;
 use crate::debug_label;
 use crate::engine::asset::Asset;
 use crate::engine::graphics::assets::Model;
@@ -5,9 +6,9 @@ use crate::engine::graphics::pipeline_cache::{DebugMode, PipelineCache};
 use crate::engine::graphics::pipeline_sorter::PipelineSorter;
 use crate::engine::graphics::uniforms_pool::{UniformsPool, UniformsPoolEntryGuard, WgpuBufferWriter, WriteTyped};
 use crate::engine::graphics::{pipeline_sorter, Renderer};
-use crate::engine::world::{Camera, CameraUniform, Frustum, ProjectionMtx, TransformUniform, ViewMtx};
+use crate::engine::world::{Camera, CameraUniform, Frustum, TransformUniform};
 use arrayvec::ArrayVec;
-use glam::{Mat4, Vec4Swizzles};
+use glam::{Mat4, Vec3, Vec4Swizzles};
 use std::sync::Arc;
 use std::time::Duration;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, QueueWriteBufferView, RenderPass};
@@ -32,8 +33,7 @@ pub struct View<'f>
     pipeline_cache: &'f PipelineCache,
     runtime: Duration,
     debug_mode: DebugMode,
-    camera_view: ViewMtx,
-    camera_projection: ProjectionMtx,
+    camera: Camera,
     clip_frustum: Frustum,
     sorter: PipelineSorter,
     used_uniforms_pools: Vec<UniformsPoolEntryGuard<'f>>,
@@ -57,8 +57,7 @@ impl<'f> View<'f>
             pipeline_cache,
             runtime: Duration::new(0, 0),
             debug_mode: DebugMode::None,
-            camera_view: ViewMtx(Mat4::default()),
-            camera_projection: ProjectionMtx(Mat4::default()),
+            camera: Camera::default(),
             clip_frustum: Frustum::NULL,
             sorter: PipelineSorter::default(),
             used_uniforms_pools: used_uniforms,
@@ -71,9 +70,8 @@ impl<'f> View<'f>
     {
         self.runtime = runtime;
         self.debug_mode = debug_mode;
-        self.camera_view = camera.view();
-        self.camera_projection = camera.projection();
-        self.clip_frustum = camera.frustum().clone(); // TODO: optionally take in manual frustum
+        self.camera = camera.clone();
+        self.clip_frustum = Frustum::new(&self.camera.clip_mtx()); // TODO: optionally take in manual frustum
         self.sorter.clear();
         self.used_uniforms_pools.clear();
     }
@@ -89,7 +87,7 @@ impl<'f> View<'f>
         {
             let mut camera_writer = camera.write(self.renderer.queue());
             // TODO: view/proj order may be arch dependent?
-            camera_writer.write_typed(0, CameraUniform::new(self.camera_projection.0 * self.camera_view.0, self.runtime));
+            camera_writer.write_typed(0, CameraUniform::new(self.camera.clip_mtx(), self.runtime));
         }
 
         for (pipeline_hash, draws) in self.sorter.sort()
@@ -150,8 +148,10 @@ impl<'f> Draw<Arc<Model>> for View<'f>
 {
     fn draw(&mut self, object_transform: Mat4, model: Arc<Model>) -> bool
     {
-        // todo: use closest OBB point instead of center?
-        let depth = self.camera_view.0.transform_vector3(object_transform.w_axis.xyz()).z;
+        // TODO: verify this math all works
+        let ct = self.camera.transform();
+        let rad = object_transform.x_axis.x.max(object_transform.y_axis.y.max(object_transform.z_axis.z));
+        let depth = object_transform.w_axis.xyz().distance_squared(ct.position) - (rad * rad);
 
         // this may be heavy-handed
         if !model.all_dependencies_loaded()

@@ -23,6 +23,7 @@ default = []
 debug_asset_lifetimes = []
 debug_gpu_labels = []
 asset_names = []
+load_shaders_direct = [] # requires API support too
 
 [dependencies]
 proc_macros_3l14 = { path = "macros" }

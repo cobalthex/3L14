@@ -14,8 +14,10 @@ pub struct Rgba
 }
 impl Rgba
 {
+    #[inline]
     pub fn new(r: u8, b: u8, g: u8, a: u8) -> Self { Self { r, g, b, a } }
 
+    #[inline]
     pub fn to_srgb(self) -> Self
     {
         let f = |xu: u8|
@@ -32,6 +34,12 @@ impl Rgba
         };
 
         Rgba { r: f(self.r), g: f(self.g), b: f(self.b), a: self.a }
+    }
+
+    #[inline]
+    pub fn to_bgra(self) -> Self
+    {
+        Self::new(self.b, self.g, self.r, self.a)
     }
 }
 impl Default for Rgba
@@ -137,6 +145,12 @@ pub const TRANSPARENT_BLACK: Rgba = Rgba { r: 0, g: 0, b: 0, a: 0 };
 pub const BLACK: Rgba = Rgba { r: 0, g: 0, b: 0, a: 255 };
 pub const WHITE: Rgba = Rgba { r: 255, g: 255, b: 255, a: 255 };
 pub const GRAY: Rgba = Rgba { r: 144, g: 144, b: 144, a: 255 };
+pub const RED: Rgba = Rgba { r: 255, g: 0, b: 0, a: 255 };
+pub const YELLOW: Rgba = Rgba { r: 255, g: 255, b: 0, a: 255 };
+pub const GREEN: Rgba = Rgba { r: 0, g: 255, b: 0, a: 255 };
+pub const CYAN: Rgba = Rgba { r: 0, g: 255, b: 255, a: 255 };
+pub const BLUE: Rgba = Rgba { r: 0, g: 0, b: 255, a: 255 };
+pub const MAGENTA: Rgba = Rgba { r: 255, g: 0, b: 255, a: 255 };
 pub const CORNFLOWER_BLUE: Rgba = Rgba { r: 100, g: 149, b: 237, a: 255 };
 pub const GOOD_PURPLE: Rgba = Rgba { r: 64, g: 72, b: 255, a: 255 };
 pub const BAD_RED: Rgba = Rgba { r: 102, g: 6, b: 32, a: 255 };

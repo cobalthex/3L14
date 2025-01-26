@@ -1,15 +1,12 @@
 use std::time::Duration;
-use super::{Transform, ViewMtx, WORLD_FORWARD, WORLD_UP};
+use super::{Transform, WORLD_FORWARD, WORLD_UP};
 use crate::engine::graphics::debug_gui::DebugGui;
 use crate::engine::math::{Plane, Radians};
 use egui::Ui;
 use glam::{Mat4, Vec3, Vec4};
 use super::Frustum;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ProjectionMtx(pub Mat4);
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CameraProjection
 {
     Perspective
@@ -27,84 +24,84 @@ pub enum CameraProjection
 }
 impl CameraProjection
 {
-    pub fn as_matrix(&self, near_clip: f32, far_clip: f32) -> ProjectionMtx
+    pub fn as_matrix(&self, near_clip: f32, far_clip: f32) -> Mat4
     {
         match self
         {
             CameraProjection::Perspective { fov, aspect_ratio } =>
             {
-                ProjectionMtx(Mat4::perspective_lh(fov.0, *aspect_ratio, near_clip, far_clip))
+                Mat4::perspective_lh(fov.0, *aspect_ratio, near_clip, far_clip)
             },
             CameraProjection::Orthographic { left, top, right, bottom } =>
             {
-                ProjectionMtx(Mat4::orthographic_lh(*left, *right, *bottom, *top, near_clip, far_clip))
+                Mat4::orthographic_lh(*left, *right, *bottom, *top, near_clip, far_clip)
             },
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Camera
 {
-    pub name: Option<String>,
+    projection: CameraProjection, // todo: store near/far clip
+    near_clip: f32,
+    far_clip: f32,
 
-    #[cfg(debug_assertions)]
-    debug_transform: Transform,
+    // should view/proj matrices be stored?
 
-    projection: CameraProjection,
-
-    view_mtx: ViewMtx,
-    projection_mtx: ProjectionMtx,
-    frustum: Frustum,
+    transform: Transform,
+    clip_mtx: Mat4,
 }
 impl Camera
 {
-    pub fn new(name: Option<impl AsRef<str>>) -> Self
-    {
-        let projection = CameraProjection::Perspective { fov: Radians(90.0), aspect_ratio: 16.0 / 9.0 };
-        let view_mtx = ViewMtx(Mat4::look_at_lh(Vec3::ZERO, WORLD_FORWARD, WORLD_UP));
-        let projection_mtx = projection.as_matrix(0.1, 10.0);
-        let frustum = Frustum::new(&(projection_mtx.0 * view_mtx.0)); // v*p?
-
-        Self
-        {
-            name: name.map(|n| n.as_ref().to_string()),
-            debug_transform: Transform::default(),
-            projection,
-            view_mtx,
-            projection_mtx,
-            frustum,
-        }
-    }
-
-    pub fn view(&self) -> ViewMtx { self.view_mtx }
-    pub fn projection(&self) -> ProjectionMtx { self.projection_mtx }
-    pub fn frustum(&self) -> &Frustum { &self.frustum }
+    pub fn transform(&self) -> &Transform { &self.transform }
+    pub fn clip_mtx(&self) -> Mat4 { self.clip_mtx }
 
     // Update cached values after updating one of the public fields
     pub fn update_projection(&mut self, projection: CameraProjection, near_clip: f32, far_clip: f32)
     {
         self.projection = projection;
-        self.projection_mtx = self.projection.as_matrix(near_clip, far_clip);
-        self.frustum = Frustum::new(&(self.projection_mtx.0 * self.view_mtx.0)); // v*p?
+        self.near_clip = near_clip;
+        self.far_clip = far_clip;
+        let projection_mtx = self.projection.as_matrix(self.near_clip, self.far_clip);
+        self.clip_mtx = projection_mtx * self.transform.to_view();
     }
 
-    pub fn update_view(&mut self, transform: &Transform)
+    pub fn update_view(&mut self, transform: Transform)
     {
-        self.view_mtx = transform.to_view();
-        self.frustum = Frustum::new(&(self.projection_mtx.0 * self.view_mtx.0));
+        self.transform = transform;
+        self.clip_mtx = self.projection.as_matrix(self.near_clip, self.far_clip) * self.transform.to_view();
+    }
+}
+impl Default for Camera
+{
+    fn default() -> Self
+    {
+        let projection = CameraProjection::Perspective { fov: Radians(90.0), aspect_ratio: 16.0 / 9.0 };
+        let transform = Transform::default();
+        let clip_mtx = projection.as_matrix(0.1, 1000.0) * transform.to_view();
+
+        Self
+        {
+            projection,
+            near_clip: 0.1,
+            far_clip: 1000.0,
+            transform,
+            clip_mtx,
+        }
     }
 }
 impl DebugGui for Camera
 {
-    fn name(&self) -> &str { "Camera" } // TODO { format!("Camera '{}'", self.name.as_ref().map_or("", |n| n.as_str())) }
+    fn name(&self) -> &str { "Camera" }
 
     fn debug_gui(&self, ui: &mut Ui)
     {
         #[cfg(debug_assertions)]
         {
-            ui.label(format!("Position: {:.2?}", self.debug_transform.position));
-            ui.label(format!("Forward: {:.2?}", self.debug_transform.forward()));
+            // TODO
+            // ui.label(format!("Position: {:.2?}", self.debug_transform.position));
+            // ui.label(format!("Forward: {:.2?}", self.debug_transform.forward()));
         }
         ui.label(format!("Projection: {:?}", self.projection));
     }

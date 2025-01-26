@@ -45,7 +45,6 @@ pub struct ShaderLifecycler
 }
 impl ShaderLifecycler
 {
-    const LOAD_SHADERS_DIRECT: bool = false;
 
     pub fn new(renderer: Arc<Renderer>) -> Self
     {
@@ -60,7 +59,8 @@ impl AssetLifecycler for ShaderLifecycler
     {
         let shader_file: ShaderFile = request.deserialize()?;
 
-        let module = match Self::LOAD_SHADERS_DIRECT && self.renderer.supports_feature(wgpu::Features::SPIRV_SHADER_PASSTHROUGH)
+        let module = match cfg!(load_shaders_direct) &&
+            self.renderer.supports_feature(wgpu::Features::SPIRV_SHADER_PASSTHROUGH)
         {
             true => unsafe
             {

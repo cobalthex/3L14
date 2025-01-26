@@ -35,7 +35,7 @@ impl From<VertexLayout> for wgpu::VertexBufferLayout<'static>
                 ];
                 VertexBufferLayout
                 {
-                    array_stride: V_ATTRS.iter().fold(0, |a, e| a + e.format.size()), // passed in from file?
+                    array_stride: V_ATTRS.iter().fold(0, |a, e| a + e.format.size()),
                     step_mode: VertexStepMode::Vertex,
                     attributes: &V_ATTRS,
                 }
@@ -45,12 +45,12 @@ impl From<VertexLayout> for wgpu::VertexBufferLayout<'static>
             {
                 const V_ATTRS: [VertexAttribute; 2] = wgpu::vertex_attr_array!
                 [
-                    0 => Float32x3, // position
+                    0 => Float32x2, // clip-space position
                     1 => Uint32, // color 0
                 ];
                 VertexBufferLayout
                 {
-                    array_stride: V_ATTRS.iter().fold(0, |a, e| a + e.format.size()), // passed in from file?
+                    array_stride: V_ATTRS.iter().fold(0, |a, e| a + e.format.size()),
                     step_mode: VertexStepMode::Vertex,
                     attributes: &V_ATTRS,
                 }

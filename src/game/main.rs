@@ -11,12 +11,13 @@ use game_3l14::engine::graphics::view::View;
 use game_3l14::engine::math::Degrees;
 use game_3l14::engine::{asset::*, graphics::*, input::*, timing::*, windows::*, world::*, *};
 use game_3l14::ExitReason;
-use glam::{Mat4, Quat, Vec3};
+use glam::{Mat4, Quat, Vec2, Vec3};
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 use wgpu::{BindGroupEntry, BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
+use game_3l14::engine::graphics::debug_draw::DebugDraw;
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -86,7 +87,7 @@ fn main() -> ExitReason
         let model_key: AssetKey = 0x008000008dd00f81.into();
         let test_model = assets.load::<Model>(model_key);
 
-        let mut camera = Camera::new(Some("cam"));
+        let mut camera = Camera::default();
         camera.update_projection(CameraProjection::Perspective
         {
             fov: Degrees(90.0).into(),
@@ -98,7 +99,7 @@ fn main() -> ExitReason
             rotation: Quat::default(),
             scale: Vec3::default(),
         };
-        camera.update_view(&cam_transform);
+        camera.update_view(cam_transform.clone());
 
         let pipeline_cache = PipelineCache::new(renderer.clone());
         // ꙮ
@@ -107,6 +108,10 @@ fn main() -> ExitReason
         let mut obj_rot = Quat::IDENTITY;
 
         let mut views: [_; renderer::MAX_CONSECUTIVE_FRAMES] = array_init::array_init(|_| View::new(renderer.clone(), &pipeline_cache));
+
+        let mut debug_draw = DebugDraw::new(&renderer);
+
+        let mut draw_camera = None;
 
         let mut frame_number = FrameNumber(0);
         let mut fps_sparkline = Sparkline::<100>::new(); // todo: use
@@ -167,6 +172,11 @@ fn main() -> ExitReason
                 input.mouse().set_capture(ToggleState::Toggle);
             }
 
+            if kbd.is_press(KeyCode::T)
+            {
+                draw_camera = Some(camera.clone());
+            }
+
             if input.mouse().is_captured()
             {
                 const MOUSE_SCALE: f32 = 0.015;
@@ -212,7 +222,7 @@ fn main() -> ExitReason
             {
                 cam_transform.rotation = Quat::IDENTITY;
             }
-            camera.update_view(&cam_transform);
+            camera.update_view(cam_transform.clone());
 
             obj_rot *= Quat::from_rotation_y(0.5 * frame_time.delta_time.as_secs_f32());
 
@@ -232,30 +242,45 @@ fn main() -> ExitReason
             let render_frame = renderer.frame(frame_number, &input);
             {
                 puffin::profile_scope!("Render frame");
+                debug_draw.begin(&camera);
+
+                debug_draw.draw_clipspace_line(Vec2::new(-0.7, -0.7), Vec2::new(0.7, 0.2), colors::RED);
+                if let Some(cam) = &draw_camera
+                {
+                    debug_draw.draw_frustum(&cam, cam_transform.to_world(), colors::WHITE);
+                }
+                debug_draw.draw_wire_box(Mat4::IDENTITY, colors::MAGENTA);
 
                 let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
                 {
-                    let mut test_pass = render_passes::test(
-                        &render_frame,
-                        &mut encoder,
-                        Some(colors::CORNFLOWER_BLUE));
-
-                    let view = &mut views[frame_number.0 as usize % views.len()];
-                    view.start(frame_time.total_runtime, &camera, DebugMode::None);
-
-                    if let AssetPayload::Available(model) = test_model.payload()
                     {
-                        if model.all_dependencies_loaded()
-                        {
-                            let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(3.0, 0.0, 0.0));
-                            view.draw(obj_world, model.clone());
+                        let mut scene_pass = render_passes::scene(
+                            &render_frame,
+                            &mut encoder,
+                            Some(colors::CORNFLOWER_BLUE));
 
-                            obj_world = Mat4::from_rotation_translation(obj_rot.inverse(), Vec3::new(-3.0, 0.0, -2.0));
-                            view.draw(obj_world, model);
+                        let view = &mut views[frame_number.0 as usize % views.len()];
+                        view.start(frame_time.total_runtime, &camera, DebugMode::None);
+
+                        if let AssetPayload::Available(model) = test_model.payload()
+                        {
+                            if model.all_dependencies_loaded()
+                            {
+                                let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(3.0, 0.0, 0.0));
+                                view.draw(obj_world, model.clone());
+
+                                obj_world = Mat4::from_rotation_translation(obj_rot.inverse(), Vec3::new(-3.0, 0.0, -2.0));
+                                view.draw(obj_world, model);
+                            }
                         }
+
+                        view.submit(&mut scene_pass);
                     }
 
-                    view.submit(&mut test_pass);
+                    {
+                        let mut debug_pass = render_passes::debug(&render_frame, &mut encoder);
+                        debug_draw.submit(renderer.queue(), &mut debug_pass);
+                    }
                 }
 
                 // todo: only update what was written to

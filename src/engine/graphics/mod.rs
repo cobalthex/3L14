@@ -15,4 +15,4 @@ pub mod assets;
 pub mod pipeline_cache;
 pub mod pipeline_sorter;
 pub mod uniforms_pool;
-mod debug_draw;
+pub mod debug_draw;
