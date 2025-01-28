@@ -1,0 +1,15 @@
+[package]
+name = "input-3l14"
+description = "User input handling"
+workspace = ".."
+
+edition.workspace = true
+
+[dependencies]
+nab-3l14.workspace = true
+debug-3l14.workspace = true
+sdl2.workspace = true
+egui.workspace = true
+glam.workspace = true
+puffin.workspace = true
+log.workspace = true

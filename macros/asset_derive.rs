@@ -1,9 +1,6 @@
-use metrohash::MetroHash64;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use std::hash::{Hash, Hasher};
-use proc_macro2::Ident;
-use syn::{parse_macro_input, parse_quote, Data, DeriveInput, Fields, Type};
+use syn::{parse_macro_input, Data, DeriveInput, Type};
 
 pub fn asset_derive(input: TokenStream) -> TokenStream
 {
@@ -42,9 +39,9 @@ pub fn asset_derive(input: TokenStream) -> TokenStream
 
     let z: TokenStream = (quote!
     {
-        impl Asset for #ident
+        impl ::asset_3l14::Asset for #ident
         {
-            fn asset_type() -> AssetTypeId { AssetTypeId::#ident }
+            fn asset_type() -> ::asset_3l14::AssetTypeId { ::asset_3l14::AssetTypeId::#ident }
             fn all_dependencies_loaded(&self) -> bool
             {
                 #handle_refs

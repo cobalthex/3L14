@@ -2,8 +2,7 @@ use metrohash::MetroHash64;
 use proc_macro::TokenStream;
 use quote::quote;
 use std::hash::{Hash, Hasher};
-use proc_macro2::Ident;
-use syn::{parse_macro_input, parse_quote, DeriveInput};
+use syn::{parse_macro_input, DeriveInput};
 
 pub const TYPE_LAYOUT_HASH_SEED: u64 = 0x1337C0DE00000000; // NOTE: This will change all usages if this changes
 

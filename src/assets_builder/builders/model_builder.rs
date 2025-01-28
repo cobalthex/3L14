@@ -1,13 +1,6 @@
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
 use crate::helpers::shader_compiler::{ShaderCompilation, ShaderCompiler};
 use arrayvec::ArrayVec;
-use game_3l14::engine::asset::{AssetKey, AssetKeySynthHash, AssetTypeId};
-use game_3l14::engine::graphics::assets::material::{MaterialFile, PbrProps};
-use game_3l14::engine::graphics::assets::ModelFile;
-use game_3l14::engine::graphics::assets::ModelFileSurface;
-use game_3l14::engine::graphics::assets::{GeometryFile, GeometryFileMesh, GeometryMesh, IndexFormat, MaterialClass, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat, VertexLayout};
-use game_3l14::engine::math::{Sphere, AABB};
-use game_3l14::engine::utils::as_u8_array;
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
 use metrohash::MetroHash64;
@@ -18,9 +11,13 @@ use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use glam::Vec3;
+use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use unicase::UniCase;
-use game_3l14::engine::utils::alloc_slice::alloc_u8_slice;
-use game_3l14::engine::utils::inline_hash::InlineWriteHash;
+use graphics_3l14::assets::{GeometryFile, GeometryFileMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat, VertexLayout};
+use nab_3l14::math::{Sphere, AABB};
+use nab_3l14::utils::alloc_slice::alloc_u8_slice;
+use nab_3l14::utils::as_u8_array;
+use nab_3l14::utils::inline_hash::InlineWriteHash;
 
 #[derive(Hash)]
 struct ShaderHash

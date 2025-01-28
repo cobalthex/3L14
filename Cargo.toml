@@ -1,9 +1,12 @@
 [package]
 name = "game_3l14"
+build = "build/build_main.rs"
+autobins = false
+edition = "2021"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
-autobins = false
-build = "build/build_main.rs"
 publish = false
 
 [[bin]]
@@ -18,6 +21,7 @@ path = "src/game/main.rs"
 name = "hlists"
 harness = false
 
+#### TODO: these need to be propagated
 [features]
 default = []
 debug_asset_lifetimes = []
@@ -25,8 +29,41 @@ debug_gpu_labels = []
 asset_names = []
 load_shaders_direct = [] # requires API support too
 
+[workspace]
+members = ["*-3l14"]
+
 [dependencies]
+asset-3l14.workspace = true
+containers-3l14.workspace = true
+debug-3l14.workspace = true
+graphics-3l14.workspace = true
+input-3l14.workspace = true
+nab-3l14.workspace = true
+world-3l14.workspace = true
+
+array-init.workspace = true
+clap.workspace = true
+glam.workspace = true
+log.workspace = true
+puffin.workspace = true
+puffin_http.workspace = true
+sdl2.workspace = true
+wgpu.workspace = true
+gltf.workspace = true
+arrayvec.workspace = true
+serde.workspace = true
+unicase.workspace = true
+metrohash.workspace = true
+
+[workspace.dependencies]
 proc_macros_3l14 = { path = "macros" }
+asset-3l14 = { path = "./asset-3l14" }
+containers-3l14 = { path = "./containers-3l14" }
+debug-3l14 = { path = "./debug-3l14" }
+graphics-3l14 = { path = "./graphics-3l14" }
+input-3l14 = { path = "./input-3l14" }
+nab-3l14 = { path = "./nab-3l14" }
+world-3l14 = { path = "./world-3l14" }
 
 chrono = { version = "0.4.38", features = ["serde"] }
 flagset = "0.4.6"

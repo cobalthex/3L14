@@ -1,7 +1,6 @@
-use std::collections::HashMap;
-use proc_macro2::{Ident, Span};
-use quote::{format_ident, quote};
-use syn::{parse_macro_input, parse_quote, Attribute, Data, DeriveInput, Expr, ExprLit, Fields, Lit, LitStr, Meta};
+use proc_macro2::Ident;
+use quote::quote;
+use syn::{parse_macro_input, Attribute, Data, DeriveInput, Expr, ExprLit, Fields, Lit};
 
 fn get_repr_size(attrs: &[Attribute]) -> Option<Ident>
 {
