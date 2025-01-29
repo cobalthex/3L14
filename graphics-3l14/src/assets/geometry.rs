@@ -44,7 +44,7 @@ impl From<VertexLayout> for wgpu::VertexBufferLayout<'static>
             {
                 const V_ATTRS: [VertexAttribute; 2] = wgpu::vertex_attr_array!
                 [
-                    0 => Float32x2, // clip-space position
+                    0 => Float32x4, // clip-space position
                     1 => Uint32, // color 0
                 ];
                 VertexBufferLayout

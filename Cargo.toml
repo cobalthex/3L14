@@ -77,7 +77,7 @@ jobsys = "0.2.0"
 futures = { version = "0.3.31", features = ["thread-pool"] }
 # egui-wgpu = "0.28.1"
 egui_wgpu_backend = "0.30.0"
-egui = "0.28.1"
+egui = { version = "0.28.1", features = ["persistence"] }
 egui_extras = "0.28.1"
 gltf = "1.4.1"
 presser = "0.3.1"

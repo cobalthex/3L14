@@ -178,7 +178,8 @@ fn main() -> ExitReason
 
             if kbd.is_press(KeyCode::T)
             {
-                draw_camera = Some(camera.clone());
+                let cam = camera.clone();
+                draw_camera = Some(cam);
             }
 
             if input.mouse().is_captured()
@@ -248,12 +249,12 @@ fn main() -> ExitReason
                 puffin::profile_scope!("Render frame");
                 debug_draw.begin(&camera);
 
-                debug_draw.draw_clipspace_line(Vec2::new(-0.7, -0.7), Vec2::new(0.7, 0.2), colors::RED);
+                // debug_draw.draw_clipspace_line(Vec2::new(-0.7, -0.7), Vec2::new(0.7, 0.2), colors::RED);
                 if let Some(cam) = &draw_camera
                 {
-                    debug_draw.draw_frustum(&cam, cam_transform.to_world(), colors::WHITE);
+                    debug_draw.draw_frustum(cam, cam_transform.to_world(), colors::WHITE);
                 }
-                debug_draw.draw_wire_box(Mat4::IDENTITY, colors::MAGENTA);
+                // debug_draw.draw_wire_box(Mat4::IDENTITY, colors::MAGENTA);
 
                 let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
                 {
@@ -311,6 +312,7 @@ fn main() -> ExitReason
                 debug_menu.add(&camera);
                 debug_menu.add(&assets);
                 debug_menu.add(renderer.deref());
+                debug_menu.add(&debug_draw);
                 debug_menu.add(&pipeline_cache);
                 debug_menu.present();
 

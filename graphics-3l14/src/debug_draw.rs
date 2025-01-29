@@ -1,5 +1,8 @@
-use glam::{Mat4, Vec2, Vec3, Vec3Swizzles};
+use std::sync::atomic::{AtomicBool, Ordering};
+use egui::Ui;
+use glam::{Mat4, Vec2, Vec3, Vec3Swizzles, Vec4};
 use wgpu::{include_spirv, BlendState, Buffer, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, FragmentState, FrontFace, IndexFormat, MultisampleState, PolygonMode, PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor, VertexState};
+use debug_3l14::debug_gui::DebugGui;
 use nab_3l14::math::Frustum;
 use nab_3l14::utils::AsU8Slice;
 use crate::{debug_label, Renderer, Rgba};
@@ -24,9 +27,11 @@ const CUBOID_INDICES: [u32; 26] =
     1, 5,
 ];
 
+#[repr(packed)]
 struct DebugLineVertex
 {
-    position: Vec2,
+    // TODO: vec4 nicer here, this type should probably be a pow2 size
+    position: [f32; 4],
     color: u32,
 }
 
@@ -40,6 +45,8 @@ struct DrawLines
 
 pub struct DebugDraw
 {
+    pub is_enabled: AtomicBool,
+
     camera_transform: Mat4,
     lines_pipeline: RenderPipeline,
     lines: DrawLines,
@@ -104,20 +111,21 @@ impl DebugDraw
         let lines_vbuffer = renderer.device().create_buffer(&BufferDescriptor
         {
             label: debug_label!("Debug lines vertices"),
-            size: 16 * max_entries,
+            size: size_of::<DebugLineVertex>() as u64 * max_entries,
             usage: BufferUsages::COPY_DST | BufferUsages::VERTEX,
             mapped_at_creation: false,
         });
         let lines_ibuffer = renderer.device().create_buffer(&BufferDescriptor
         {
             label: debug_label!("Debug lines indices"),
-            size: 4 * max_entries,
+            size: size_of::<u32>() as u64 * max_entries,
             usage: BufferUsages::COPY_DST | BufferUsages::INDEX,
             mapped_at_creation: false,
         });
 
         Self
         {
+            is_enabled: AtomicBool::new(true),
             camera_transform: Mat4::IDENTITY,
             lines_pipeline,
             lines: DrawLines
@@ -139,24 +147,8 @@ impl DebugDraw
 
     pub fn draw_frustum(&mut self, camera: &Camera, world_transform: Mat4, color: Rgba)
     {
-        let start = self.lines.vertices.len() as u32;
-        let mut transform = camera.clip_mtx();
-        let corners = Frustum::get_corners(transform.inverse());
-        transform = (transform * world_transform).inverse();
-        for corner in corners
-        {
-            self.lines.vertices.push(DebugLineVertex
-            {
-                position: transform.transform_vector3(corner).xy(),
-                color: color.into(),
-            });
-        }
-        for i in CUBOID_INDICES
-        {
-            self.lines.indices.push(start + i);
-        }
-
-        // TODO: use draw wire box
+        let mut transform = camera.clip_mtx().inverse();
+        self.draw_wire_box(transform, color);
     }
 
     pub fn draw_wire_box(&mut self, mut transform: Mat4, color: Rgba)
@@ -165,23 +157,23 @@ impl DebugDraw
 
         transform = self.camera_transform * transform;
 
-        const CUBOID_CORNERS: [Vec3; 8] =
+        const CUBOID_CORNERS: [Vec4; 8] =
         [
-            Vec3::new(-1.0, -1.0, -1.0), // near bottom left
-            Vec3::new( 1.0, -1.0, -1.0), // near bottom right
-            Vec3::new(-1.0,  1.0, -1.0), // near top left
-            Vec3::new( 1.0,  1.0, -1.0), // near top right
-            Vec3::new(-1.0, -1.0,  1.0), // far bottom left
-            Vec3::new( 1.0, -1.0,  1.0), // far bottom right
-            Vec3::new(-1.0,  1.0,  1.0), // far top left
-            Vec3::new( 1.0,  1.0,  1.0), // far top right
+            Vec4::new(-1.0, -1.0, -1.0, 1.0), // near bottom left
+            Vec4::new( 1.0, -1.0, -1.0, 1.0), // near bottom right
+            Vec4::new(-1.0,  1.0, -1.0, 1.0), // near top left
+            Vec4::new( 1.0,  1.0, -1.0, 1.0), // near top right
+            Vec4::new(-1.0, -1.0,  1.0, 1.0), // far bottom left
+            Vec4::new( 1.0, -1.0,  1.0, 1.0), // far bottom right
+            Vec4::new(-1.0,  1.0,  1.0, 1.0), // far top left
+            Vec4::new( 1.0,  1.0,  1.0, 1.0), // far top right
         ];
 
         for corner in CUBOID_CORNERS
         {
             self.lines.vertices.push(DebugLineVertex
             {
-                position: transform.project_point3(corner).xy(),
+                position: transform.mul_vec4(corner).into(),
                 color: color.into(),
             });
         }
@@ -197,12 +189,12 @@ impl DebugDraw
 
         self.lines.vertices.push(DebugLineVertex
         {
-            position: a,
+            position: [a.x, a.y, 0.0, 1.0],
             color: color.into(),
         });
         self.lines.vertices.push(DebugLineVertex
         {
-            position: b,
+            position: [b.x, b.y, 0.0, 1.0],
             color: color.into(),
         });
 
@@ -212,19 +204,39 @@ impl DebugDraw
 
     pub fn submit(&mut self, queue: &Queue, render_pass: &mut RenderPass)
     {
+        if !self.is_enabled.load(Ordering::Relaxed) { return; }
+
         puffin::profile_scope!("DebugDraw submission");
 
         let num_indices = self.lines.indices.len() as u32;
         if num_indices > 0
         {
-            // TODO: write verts/indices directly to buffer
-            queue.write_buffer(&self.lines.vbuffer, 0, unsafe { self.lines.vertices.as_u8_slice() });
-            queue.write_buffer(&self.lines.ibuffer, 0, unsafe { self.lines.indices.as_u8_slice() });
+            let vb_slice = unsafe { self.lines.vertices.as_u8_slice() };
+            let ib_slice = unsafe { self.lines.indices.as_u8_slice() };
 
-            render_pass.set_vertex_buffer(0, self.lines.vbuffer.slice(..));
-            render_pass.set_index_buffer(self.lines.ibuffer.slice(..), IndexFormat::Uint32);
+            // TODO: write verts/indices directly to buffer
+            queue.write_buffer(&self.lines.vbuffer, 0, vb_slice);
+            queue.write_buffer(&self.lines.ibuffer, 0, ib_slice);
+
+            render_pass.set_vertex_buffer(0, self.lines.vbuffer.slice(0..(vb_slice.len() as u64)));
+            render_pass.set_index_buffer(self.lines.ibuffer.slice(0..(ib_slice.len() as u64)), IndexFormat::Uint32);
             render_pass.set_pipeline(&self.lines_pipeline);
             render_pass.draw_indexed(0..num_indices, 0, 0..1);
         }
+    }
+}
+impl DebugGui for DebugDraw
+{
+    fn name(&self) -> &str { "Debug drawing" }
+
+    fn debug_gui(&self, ui: &mut Ui)
+    {
+        let mut is_enabled = self.is_enabled.load(Ordering::Relaxed);
+        if ui.checkbox(&mut is_enabled, "Enabled").changed()
+        {
+            self.is_enabled.store(is_enabled, Ordering::Relaxed);
+        }
+
+        ui.label(format!("Line vertex count: {}", self.lines.vertices.len()));
     }
 }
