@@ -1,14 +1,14 @@
 [package]
-name = "debug-3l14"
+name = "debug_3l14"
 description = "Debugging/dev stuff"
 workspace = "../../.."
 edition.workspace = true
 
 [lib]
-path = "."
+path = "lib.rs"
 
 [dependencies]
-nab-3l14.workspace = true
+nab_3l14.workspace = true
 egui.workspace = true
 puffin_egui.workspace = true
 serde.workspace = true

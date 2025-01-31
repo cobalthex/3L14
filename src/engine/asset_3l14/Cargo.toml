@@ -1,15 +1,15 @@
 [package]
-name = "asset-3l14"
+name = "asset_3l14"
 description = "Assets management"
 workspace = "../../.."
 edition.workspace = true
 
 [lib]
-path = "."
+path = "lib.rs"
 
 [dependencies]
-nab-3l14.workspace = true
-debug-3l14.workspace = true
+nab_3l14.workspace = true
+debug_3l14.workspace = true
 crossbeam.workspace = true
 parking_lot.workspace = true
 unicase.workspace = true

@@ -10,7 +10,7 @@ pub enum CameraProjection
     Perspective
     {
         fov: Radians,
-        aspect_ratio: f32,
+        aspect_ratio: f32, // width / height
     },
     Orthographic
     {
@@ -36,6 +36,18 @@ impl CameraProjection
             },
         }
     }
+
+    pub fn aspect_ratio(&self) -> f32
+    {
+        match self
+        {
+            CameraProjection::Perspective { aspect_ratio, .. } => *aspect_ratio,
+            CameraProjection::Orthographic { top, left, right, bottom } =>
+            {
+                (right - left) / (bottom - top)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +65,7 @@ pub struct Camera
 impl Camera
 {
     pub fn transform(&self) -> &Transform { &self.transform }
+    pub fn projection(&self) -> &CameraProjection { &self.projection }
     pub fn clip_mtx(&self) -> Mat4 { self.clip_mtx }
 
     // Update cached values after updating one of the public fields

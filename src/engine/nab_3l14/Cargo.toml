@@ -1,11 +1,11 @@
 [package]
-name = "nab-3l14"
+name = "nab_3l14"
 description = "Nuts & bolts"
 workspace = "../../.."
 edition.workspace = true
 
 [lib]
-path = "."
+path = "lib.rs"
 
 [dependencies]
 chrono.workspace = true

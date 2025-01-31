@@ -1,11 +1,11 @@
 [package]
-name = "containers-3l14"
+name = "containers_3l14"
 description = "Various container types"
 workspace = "../../.."
 edition.workspace = true
 
 [lib]
-path = "."
+path = "lib.rs"
 
 [dependencies]
 crossbeam.workspace = true

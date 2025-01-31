@@ -1,18 +1,18 @@
 [package]
-name = "graphics-3l14"
+name = "graphics_3l14"
 description = "Rendering/graphics"
 workspace = "../../.."
 edition.workspace = true
 
 [lib]
-path = "."
+path = "lib.rs"
 
 [dependencies]
-nab-3l14.workspace = true
-asset-3l14.workspace = true
-containers-3l14.workspace = true
-debug-3l14.workspace = true
-input-3l14.workspace = true # TODO: remove this dependency, needed by renderer::frame()
+nab_3l14.workspace = true
+asset_3l14.workspace = true
+containers_3l14.workspace = true
+debug_3l14.workspace = true
+input_3l14.workspace = true # TODO: remove this dependency, needed by renderer::frame()
 proc_macros_3l14.workspace = true
 bitcode.workspace = true
 egui.workspace = true

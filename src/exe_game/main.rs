@@ -255,7 +255,9 @@ fn main() -> ExitReason
                     debug_draw.draw_frustum(cam, cam_transform.to_world(), colors::WHITE);
                 }
                 // debug_draw.draw_wire_box(Mat4::IDENTITY, colors::MAGENTA);
-                debug_draw.draw_clipspace_circle(Vec2::ZERO, 0.2, colors::YELLOW);
+                // debug_draw.draw_clipspace_circle(Vec2::ZERO, 0.2, colors::YELLOW);
+                // debug_draw.draw_wire_sphere(Mat4::from_scale(Vec3::new(3.0, 3.0, 3.0)), colors::MAGENTA);
+                debug_draw.draw_wire_sphere(Mat4::IDENTITY, colors::MAGENTA);
 
                 let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
                 {

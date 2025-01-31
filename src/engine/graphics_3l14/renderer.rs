@@ -113,6 +113,7 @@ impl Renderer
                 required_features: Features::empty()
                     | Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
                     | Features::PUSH_CONSTANTS
+                    | Features::VERTEX_WRITABLE_STORAGE
                     | (if cfg!(load_shaders_direct) { Features::SPIRV_SHADER_PASSTHROUGH } else { Features::empty() })
                     ,
                 // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.

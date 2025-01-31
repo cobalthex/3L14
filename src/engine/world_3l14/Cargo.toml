@@ -1,16 +1,16 @@
 [package]
-name = "world-3l14"
+name = "world_3l14"
 description = "World/scene abstractions"
 workspace = "../../.."
 edition.workspace = true
 
 [lib]
-path = "."
+path = "lib.rs"
 
 [dependencies]
-nab-3l14.workspace = true
-debug-3l14.workspace = true
-asset-3l14.workspace = true
-graphics-3l14.workspace = true
+nab_3l14.workspace = true
+debug_3l14.workspace = true
+asset_3l14.workspace = true
+graphics_3l14.workspace = true
 egui.workspace = true
 glam.workspace = true
