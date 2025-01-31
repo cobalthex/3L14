@@ -1,0 +1,26 @@
+[package]
+name = "asset-3l14"
+description = "Assets management"
+workspace = "../../.."
+edition.workspace = true
+
+[lib]
+path = "."
+
+[dependencies]
+nab-3l14.workspace = true
+debug-3l14.workspace = true
+crossbeam.workspace = true
+parking_lot.workspace = true
+unicase.workspace = true
+serde.workspace = true
+metrohash.workspace = true
+bitcode.workspace = true
+rand.workspace = true
+log.workspace = true
+egui.workspace = true
+notify.workspace = true
+notify-debouncer-full.workspace = true
+puffin.workspace = true
+array-init.workspace = true
+futures.workspace = true

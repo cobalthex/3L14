@@ -1,0 +1,17 @@
+[package]
+name = "debug-3l14"
+description = "Debugging/dev stuff"
+workspace = "../../.."
+edition.workspace = true
+
+[lib]
+path = "."
+
+[dependencies]
+nab-3l14.workspace = true
+egui.workspace = true
+puffin_egui.workspace = true
+serde.workspace = true
+indexmap.workspace = true
+log.workspace = true
+toml.workspace = true

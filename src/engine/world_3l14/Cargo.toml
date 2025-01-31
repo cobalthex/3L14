@@ -1,0 +1,16 @@
+[package]
+name = "world-3l14"
+description = "World/scene abstractions"
+workspace = "../../.."
+edition.workspace = true
+
+[lib]
+path = "."
+
+[dependencies]
+nab-3l14.workspace = true
+debug-3l14.workspace = true
+asset-3l14.workspace = true
+graphics-3l14.workspace = true
+egui.workspace = true
+glam.workspace = true

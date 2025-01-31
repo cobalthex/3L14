@@ -1,0 +1,11 @@
+[package]
+name = "containers-3l14"
+description = "Various container types"
+workspace = "../../.."
+edition.workspace = true
+
+[lib]
+path = "."
+
+[dependencies]
+crossbeam.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "game_3l14"
-build = "build/build_main.rs"
+build = "src/build/build_main.rs"
 autobins = false
 edition = "2021"
 
@@ -11,15 +11,16 @@ publish = false
 
 [[bin]]
 name = "assets_builder"
-path = "src/assets_builder/main.rs"
+path = "src/exe_assets_builder/main.rs"
 
 [[bin]]
 name = "3L14"
-path = "src/game/main.rs"
+path = "src/exe_game/main.rs"
 
-[[bench]]
-name = "hlists"
-harness = false
+### TODO: test
+[[test]]
+name = "tests"
+path = "src/exe_tests/lib.rs"
 
 #### TODO: these need to be propagated
 [features]
@@ -30,7 +31,8 @@ asset_names = []
 load_shaders_direct = [] # requires API support too
 
 [workspace]
-members = ["*-3l14"]
+resolver = "2"
+members = ["src/engine/*"]
 
 [dependencies]
 asset-3l14.workspace = true
@@ -40,6 +42,7 @@ graphics-3l14.workspace = true
 input-3l14.workspace = true
 nab-3l14.workspace = true
 world-3l14.workspace = true
+proc_macros_3l14.workspace = true
 
 array-init.workspace = true
 clap.workspace = true
@@ -54,16 +57,25 @@ arrayvec.workspace = true
 serde.workspace = true
 unicase.workspace = true
 metrohash.workspace = true
+toml.workspace = true
+walkdir.workspace = true
+bitcode.workspace = true
+chrono.workspace = true
+base64.workspace = true
+image.workspace = true
+hassle-rs.workspace = true
+parking_lot.workspace = true
+intel_tex_2.workspace = true
 
 [workspace.dependencies]
-proc_macros_3l14 = { path = "macros" }
-asset-3l14 = { path = "./asset-3l14" }
-containers-3l14 = { path = "./containers-3l14" }
-debug-3l14 = { path = "./debug-3l14" }
-graphics-3l14 = { path = "./graphics-3l14" }
-input-3l14 = { path = "./input-3l14" }
-nab-3l14 = { path = "./nab-3l14" }
-world-3l14 = { path = "./world-3l14" }
+proc_macros_3l14 = { path = "src/macros" }
+asset-3l14 = { path = "src/engine/asset_3l14" }
+containers-3l14 = { path = "src/engine/containers_3l14" }
+debug-3l14 = { path = "src/engine/debug_3l14" }
+graphics-3l14 = { path = "src/engine/graphics_3l14" }
+input-3l14 = { path = "src/engine/input_3l14" }
+nab-3l14 = { path = "src/engine/nab_3l14" }
+world-3l14 = { path = "src/engine/world_3l14" }
 
 chrono = { version = "0.4.38", features = ["serde"] }
 flagset = "0.4.6"
