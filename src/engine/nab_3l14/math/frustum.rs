@@ -1,12 +1,12 @@
 use std::fmt::{Debug, Formatter};
 use glam::{Mat4, Vec3};
-use crate::math::{Facing, GetFacing, Intersection, Intersects, Plane};
+use crate::math::{Facing, GetFacing, Intersection, Intersects, IsOnOrInside, Plane, Sphere};
 use crate::utils::ShortTypeName;
 
 #[derive(Clone, PartialEq)]
 pub struct Frustum
 {
-    planes: [Plane; 6],
+    pub planes: [Plane; 6], // ordered left, right, top, bottom, near, far
 }
 impl Frustum
 {
@@ -15,41 +15,45 @@ impl Frustum
     // if input is projection, planes are in view space
     // if view projection, planes are in world space
     // if model view projection, planes are in model space
-    pub fn new(col_major_mtx: &Mat4) -> Self
+    #[must_use]
+    pub fn from_matrix(col_major_mtx: &Mat4) -> Self
     {
         let rows = col_major_mtx.transpose(); // glam stores in column-major
         let planes =
         [
-            Plane::from(rows.w_axis + rows.x_axis).normalized(), // left
-            Plane::from(rows.w_axis - rows.x_axis).normalized(), // right
-            Plane::from(rows.w_axis - rows.y_axis).normalized(), // top
-            Plane::from(rows.w_axis + rows.y_axis).normalized(), // bottom
+            // not sure why all of these need to be mirrored...
+            Plane::from(rows.w_axis + rows.x_axis).negated_distance().normalized(), // left
+            Plane::from(rows.w_axis - rows.x_axis).negated_distance().normalized(), // right
+            Plane::from(rows.w_axis - rows.y_axis).negated_distance().normalized(), // top
+            Plane::from(rows.w_axis + rows.y_axis).negated_distance().normalized(), // bottom
 
-            // these seem to work, but feels wrong
-            Plane::from(rows.z_axis).mirrored().normalized(), // near
-            Plane::from(rows.w_axis - rows.z_axis).flipped().normalized(), // far
+            Plane::from(rows.z_axis).negated_distance().normalized(), // near
+            Plane::from(rows.w_axis - rows.z_axis).negated_distance().normalized(), // far
         ];
         Self { planes }
     }
 
-    #[inline] pub fn left(&self) -> Plane { self.planes[0] }
-    #[inline] pub fn right(&self) -> Plane { self.planes[1] }
-    #[inline] pub fn top(&self) -> Plane { self.planes[2] }
-    #[inline] pub fn bottom(&self) -> Plane { self.planes[3] }
-    #[inline] pub fn near(&self) -> Plane { self.planes[4] }
-    #[inline] pub fn far(&self) -> Plane { self.planes[5] }
+    #[inline] #[must_use] pub fn left(&self) -> Plane { self.planes[0] }
+    #[inline] #[must_use] pub fn right(&self) -> Plane { self.planes[1] }
+    #[inline] #[must_use] pub fn top(&self) -> Plane { self.planes[2] }
+    #[inline] #[must_use] pub fn bottom(&self) -> Plane { self.planes[3] }
+    #[inline] #[must_use] pub fn near(&self) -> Plane { self.planes[4] }
+    #[inline] #[must_use] pub fn far(&self) -> Plane { self.planes[5] }
 
-    pub fn get_corners(projected_mtx: Mat4) -> [Vec3; 8]
+    #[must_use]
+    pub fn get_corners(projected_mtx: &Mat4) -> [Vec3; 8]
     {
+        // todo: wrong?
+        let mtx = projected_mtx.inverse();
         [
-            projected_mtx.project_point3(Vec3::new(-1.0, -1.0, -1.0)), // near bottom left
-            projected_mtx.project_point3(Vec3::new( 1.0, -1.0, -1.0)), // near bottom right
-            projected_mtx.project_point3(Vec3::new(-1.0,  1.0, -1.0)), // near top left
-            projected_mtx.project_point3(Vec3::new( 1.0,  1.0, -1.0)), // near top right
-            projected_mtx.project_point3(Vec3::new(-1.0, -1.0,  1.0)), // far bottom left
-            projected_mtx.project_point3(Vec3::new( 1.0, -1.0,  1.0)), // far bottom right
-            projected_mtx.project_point3(Vec3::new(-1.0,  1.0,  1.0)), // far top left
-            projected_mtx.project_point3(Vec3::new( 1.0,  1.0,  1.0)), // far top right
+            mtx.transform_vector3(Vec3::new(-1.0, -1.0, -1.0)), // near bottom left
+            mtx.transform_vector3(Vec3::new( 1.0, -1.0, -1.0)), // near bottom right
+            mtx.transform_vector3(Vec3::new(-1.0,  1.0, -1.0)), // near top left
+            mtx.transform_vector3(Vec3::new( 1.0,  1.0, -1.0)), // near top right
+            mtx.transform_vector3(Vec3::new(-1.0, -1.0,  1.0)), // far bottom left
+            mtx.transform_vector3(Vec3::new( 1.0, -1.0,  1.0)), // far bottom right
+            mtx.transform_vector3(Vec3::new(-1.0,  1.0,  1.0)), // far top left
+            mtx.transform_vector3(Vec3::new( 1.0,  1.0,  1.0)), // far top right
         ]
     }
 }
@@ -71,16 +75,38 @@ impl Intersects<Vec3> for Frustum
 {
     fn get_intersection(&self, other: Vec3) -> Intersection
     {
+        // TODO: radar approach (requires knowing camera point)
+        // http://www.lighthouse3d.com/tutorials/view-frustum-culling/radar-approach-testing-points/
+
         let mut inside = true;
         for p in &self.planes
         {
-             inside &= ! matches!(p.get_facing(other), Facing::Behind);
+            inside &= matches!(p.get_facing(other), Facing::Behind);
         }
         match inside
         {
             true => Intersection::Overlapping,
             false => Intersection::None,
         }
+    }
+}
+impl IsOnOrInside<Sphere> for Frustum
+{
+    fn rhs_is_on_or_inside(&self, other: Sphere) -> bool
+    {
+        // TODO: simd
+        for p in &self.planes
+        {
+            // planes point outward
+            let z = p.get_facing(other);
+            match z
+            {
+                Facing::Behind => { return false },
+                Facing::On => {},
+                Facing::InFront => {},
+            }
+        }
+        true
     }
 }
 
@@ -94,20 +120,14 @@ mod tests
     #[test]
     fn planes()
     {
-        // todo: use Camera?
-
         let projection = Mat4::perspective_lh(Radians::PI_OVER_TWO.0, 1.0, 1.0, 10.0);
         let view = Mat4::look_at_lh(
             Vec3::ZERO,
             Vec3::Z,
             Vec3::Y,
         );
-        
         let view_projection = projection * view;
-
-        let frustum = Frustum::new(&view_projection);
-        println!("{}\n{:?}", view_projection, frustum);
-
+        let frustum = Frustum::from_matrix(&view_projection);
         let recip_sqrt2 = 1.0 / 2.0_f32.sqrt();
 
         // TODO: these values are wrong
@@ -137,6 +157,24 @@ mod tests
                 expected.distance()
             );
         }
+    }
+
+    #[test]
+    fn sphere_inside()
+    {
+        let projection = Mat4::perspective_lh(Radians::PI_OVER_TWO.0, 16.0 / 9.0, 0.1, 100.0);
+        let view = Mat4::look_at_lh(
+            Vec3::new(0.0, 0.0, -10.0),
+            Vec3::Z,
+            Vec3::Y,
+        );
+        let view_projection = projection * view;
+        let frustum = Frustum::from_matrix(&view_projection);
+
+        let sphere = Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0);
+
+        println!("{:?}", frustum.planes);
+        assert!(frustum.rhs_is_on_or_inside(sphere));
     }
 
     // TODO: corners

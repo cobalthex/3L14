@@ -1,6 +1,6 @@
-float4 UnpackColor(uint packed) // assumes R = low bits
+float4 UnpackRgba(uint packed) // assumes R = low bits
 {
-    uint r = packed & 0xff;
+    uint r = (packed >> 0) & 0xff;
     uint g = (packed >> 8) & 0xff;
     uint b = (packed >> 16) & 0xff;
     uint a = (packed >> 24) & 0xff;
@@ -8,7 +8,7 @@ float4 UnpackColor(uint packed) // assumes R = low bits
     return float4(r, g, b, a) / 255.0;
 }
 
-uint PackColor(float4 unpacked) // assumes R = low bits
+uint PackRgba(float4 unpacked) // assumes R = low bits
 {
     return
         ((int)(unpacked.r * 255.0) >> 0) |

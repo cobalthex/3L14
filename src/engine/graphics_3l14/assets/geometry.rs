@@ -1,5 +1,5 @@
 use crate::{debug_label, Renderer};
-use asset_3l14::{AssetLifecycler, AssetLoadRequest, AssetTypeId};
+use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
 use nab_3l14::math::{Sphere, AABB};
@@ -93,6 +93,7 @@ pub struct GeometryFileMesh
 }
 
 // TODO: use structured buffers, possibly non-interleaved
+// TODO: switch back to unified geo
 
 #[derive(Encode, Decode)]
 pub struct GeometryFile
@@ -180,5 +181,5 @@ impl AssetLifecycler for GeometryLifecycler
 impl DebugGui for GeometryLifecycler
 {
     fn name(&self) -> &str { "Geometry" }
-    fn debug_gui(&self, ui: &mut egui::Ui) { }
+    fn debug_gui(&self, _ui: &mut egui::Ui) { }
 }

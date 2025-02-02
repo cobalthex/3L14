@@ -7,6 +7,7 @@ pub struct Windows
 }
 impl Windows
 {
+    #[must_use]
     pub fn new(sdl_video: &VideoSubsystem, app_info: &AppRun<impl CliArgs>) -> Self
     {
         #[cfg(debug_assertions)]

@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Formatter};
 use glam::{Vec3, Vec4, Vec4Swizzles};
-use crate::math::{Facing, GetFacing};
+use crate::math::{Facing, GetFacing, Sphere, WORLD_RIGHT, WORLD_UP};
 use crate::utils::ShortTypeName;
 
 #[derive(Copy, Clone, PartialEq)]
@@ -10,10 +10,16 @@ impl Plane
     // An 'invalid' plane with all zero values, primarily for 'fast' initialization
     pub const NULL: Plane = Plane(Vec4::new(0.0, 0.0, 0.0, 0.0));
 
-    #[inline] pub const fn new(normal: Vec3, distance: f32) -> Self
+    #[inline] #[must_use]
+    pub const fn new(normal: Vec3, distance: f32) -> Self
     {
         Self(Vec4::new(normal.x, normal.y, normal.z, distance))
     }
+
+    #[inline] #[must_use]
+    pub const fn new_raw(x: f32, y: f32, z: f32, d: f32) -> Self { Self(Vec4::new(x, y, z, d)) }
+
+    #[must_use]
     pub fn from_points(a: Vec3, b: Vec3, c: Vec3) -> Self
     {
         let ab = b - a;
@@ -22,17 +28,24 @@ impl Plane
         let cross = Vec3::cross(ab, ac);
         let norm = cross.normalize();
         let dist = -Vec3::dot(norm, a);
-        Self(Vec4::new(norm.x, norm.y, norm.z, dist))
+        Self(norm.extend(dist))
     }
 
-    #[inline] pub fn normal(self) -> Vec3 { self.0.xyz() }
-    #[inline] pub fn distance(self) -> f32 { self.0.w }
+    #[inline] #[must_use]
+    pub fn normal(self) -> Vec3 { self.0.xyz() }
+    #[inline] #[must_use]
+    pub fn distance(self) -> f32 { self.0.w }
 
-    #[inline] pub fn flipped(self) -> Self
+    #[inline] #[must_use]
+    pub fn origin(self) -> Vec3 { self.0.xyz() * self.0.w }
+
+    #[inline] #[must_use]
+    pub fn flipped(self) -> Self
     {
         Self(Vec4::new(-self.0.x, -self.0.y, -self.0.z, self.0.w))
     } // negate the normal
-    #[inline] pub fn mirrored(self) -> Self
+    #[inline] #[must_use]
+    pub fn negated_distance(self) -> Self
     {
         Self(Vec4::new(self.0.x, self.0.y, self.0.z, -self.0.w))
     } // negate the distance
@@ -45,18 +58,20 @@ impl Plane
         let len = self.0.xyz().length_recip();
         self.0 *= len;
     }
+    #[inline] #[must_use]
     pub fn normalized(self) -> Self
     {
         let len = self.0.xyz().length_recip();
         Self(self.0 * len)
     }
 
+    #[inline] #[must_use]
     pub fn dot(self, other: Plane) -> f32
     {
         self.0.dot(other.0)
     }
 
-    // Returns
+    #[must_use]
     pub fn intersecting_point(a: Self, b: Self, c: Self) -> Option<Vec3>
     {
         let nab = a.normal().cross(b.normal());
@@ -70,7 +85,24 @@ impl Plane
         (!result.is_nan()).then_some(result)
     }
 
-    // intersecting_line?
+    // Create a quad with the given half-extents on the plane, centered around the origin
+    #[must_use]
+    pub fn into_quad(self, half_width: f32, half_height: f32) -> [Vec3; 4]
+    {
+        let normal = self.normal();
+        let tan = normal.cross(if normal == WORLD_UP { WORLD_RIGHT } else { WORLD_UP }); // todo: take in up param?
+        let bitan = normal.cross(tan);
+        let origin = self.origin();
+
+        [
+            origin + half_width * tan + half_height * bitan,
+            origin + half_width * tan - half_height * bitan,
+            origin - half_width * tan - half_height * bitan,
+            origin - half_width * tan + half_height * bitan,
+        ]
+    }
+
+// intersecting_line?
 }
 impl Debug for Plane
 {
@@ -105,9 +137,19 @@ impl GetFacing<Vec3> for Plane
 {
     fn get_facing(&self, other: Vec3) -> Facing
     {
-        let dot = self.normal().dot(other) - self.distance();
-        if dot > 0.0 { Facing::InFront }
-        else if dot == 0.0 { Facing::On }
+        let d = self.normal().dot(other) - self.distance();
+        if d > 0.0 { Facing::InFront }
+        else if d == 0.0 { Facing::On }
+        else { Facing::Behind }
+    }
+}
+impl GetFacing<Sphere> for Plane
+{
+    fn get_facing(&self, other: Sphere) -> Facing
+    {
+        let d = self.normal().dot(other.center()) - self.distance();
+        if d >= other.radius() { Facing::InFront }
+        else if d >= -other.radius() { Facing::On }
         else { Facing::Behind }
     }
 }
@@ -130,6 +172,27 @@ mod tests
         assert_eq!(plane.0.xyz(), norm);
         assert_eq!(plane.distance(), dist);
         assert_eq!(plane.0.w, dist);
+    }
+
+    #[test]
+    fn point_facing()
+    {
+        let plane = Plane::new(Vec3::new(1.0, 0.0, 0.0), 2.0);
+
+        assert!(matches!(plane.get_facing(Vec3::new(5.0, 0.0, 0.0)), Facing::InFront));
+        assert!(matches!(plane.get_facing(Vec3::new(2.0, 0.0, 0.0)), Facing::On));
+        assert!(matches!(plane.get_facing(Vec3::new(2.0, 5.0, 0.0)), Facing::On));
+        assert!(matches!(plane.get_facing(Vec3::new(0.0, 0.0, 0.0)), Facing::Behind));
+    }
+
+    #[test]
+    fn sphere_facing()
+    {
+        let plane = Plane::new(Vec3::new(1.0, 0.0, 0.0), 2.0);
+        assert!(matches!(plane.get_facing(Sphere::new(Vec3::new(5.0, 0.0, 0.0), 1.5)), Facing::InFront));
+        assert!(matches!(plane.get_facing(Sphere::new(Vec3::new(2.0, 0.0, 0.0), 1.5)), Facing::On));
+        assert!(matches!(plane.get_facing(Sphere::new(Vec3::new(1.0, 0.0, 0.0), 1.5)), Facing::On));
+        assert!(matches!(plane.get_facing(Sphere::new(Vec3::new(-10.0, 0.0, 0.0), 1.5)), Facing::Behind));
     }
 
     #[test]

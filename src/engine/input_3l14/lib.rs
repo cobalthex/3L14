@@ -2,7 +2,6 @@ use std::fmt::{Debug, Formatter, Write};
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Sub, SubAssign};
 use std::slice::Iter;
 use std::time::Instant;
-use egui::{Pos2, RawInput, Ui};
 use glam::IVec2;
 use sdl2::event::Event;
 use sdl2::keyboard::Mod;
@@ -157,22 +156,18 @@ impl Input
             _ => {}
         }
     }
-}
-impl From<&Input> for RawInput
-{
-    fn from(input: &Input) -> Self
-    {
-        let mut ri = Self::default();
-        ri.modifiers.ctrl = input.keyboard.has_keymod(KeyMods::CTRL);
-        ri.modifiers.shift = input.keyboard.has_keymod(KeyMods::SHIFT);
-        ri.modifiers.alt = input.keyboard.has_keymod(KeyMods::ALT);
-        // todo: iterate keys
 
-        // todo: this should be scaled by zoom apparently
-        let mouse_pos = Pos2
+    pub fn into_egui(&self, zoom_scale_factor: f32) -> egui::RawInput
+    {
+        let mut ri = egui::RawInput::default();
+        ri.modifiers.ctrl = self.keyboard.has_keymod(KeyMods::CTRL);
+        ri.modifiers.shift = self.keyboard.has_keymod(KeyMods::SHIFT);
+        ri.modifiers.alt = self.keyboard.has_keymod(KeyMods::ALT);
+
+        let mouse_pos = egui::Pos2
         {
-            x: input.mouse.position.x as f32,
-            y: input.mouse.position.y as f32,
+            x: self.mouse.position.x as f32 / zoom_scale_factor,
+            y: self.mouse.position.y as f32 / zoom_scale_factor,
         };
 
         ri.events.push(egui::Event::PointerMoved(mouse_pos));
@@ -181,16 +176,16 @@ impl From<&Input> for RawInput
         {
             delta: egui::Vec2
             {
-                x: input.mouse.wheel.x as f32,
-                y: input.mouse.wheel.y as f32
+                x: self.mouse.wheel.x as f32,
+                y: self.mouse.wheel.y as f32
             },
             unit: egui::MouseWheelUnit::Point,
             modifiers: ri.modifiers,
         });
 
-        for i in 0..input.mouse.buttons.len()
+        for i in 0..self.mouse.buttons.len()
         {
-            let pressed = match input.mouse.buttons[i].state
+            let pressed = match self.mouse.buttons[i].state
             {
                 ButtonState::JustOn|ButtonState::On => true,
                 ButtonState::JustOff => false,
@@ -224,7 +219,7 @@ impl From<&Input> for RawInput
 impl DebugGui for Input
 {
     fn name(&self) -> &str { "Input state" }
-    fn debug_gui(&self, ui: &mut Ui)
+    fn debug_gui(&self, ui: &mut egui::Ui)
     {
         ui.horizontal_top(|hui|
         {

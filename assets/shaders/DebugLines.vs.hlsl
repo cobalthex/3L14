@@ -19,6 +19,6 @@ VertexOutput vs_main(uint in_index: SV_VertexID)
 
     VertexOutput out_vertex;
     out_vertex.clip_position = in_vertex.position;
-    out_vertex.color = UnpackColor(in_vertex.color);
+    out_vertex.color = UnpackRgba(in_vertex.color);
     return out_vertex;
 }

@@ -24,12 +24,34 @@ impl Default for Transform
 }
 impl Transform
 {
-    pub fn forward(&self) -> Vec3 { self.rotation * WORLD_FORWARD }
-    pub fn backward(&self) -> Vec3 { self.rotation * -WORLD_FORWARD }
-    pub fn right(&self) -> Vec3 { self.rotation * WORLD_RIGHT }
-    pub fn left(&self) -> Vec3 { self.rotation * -WORLD_RIGHT }
-    pub fn up(&self) -> Vec3 { self.rotation * WORLD_UP }
-    pub fn down(&self) -> Vec3 { self.rotation * -WORLD_UP }
+    // TODO: unit tests
+    #[inline] #[must_use] pub fn forward(&self) -> Vec3
+    {
+        Vec3::new(
+            2.0 * (self.rotation.x * self.rotation.z + self.rotation.w * self.rotation.y),
+            2.0 * (self.rotation.y * self.rotation.z - self.rotation.w * self.rotation.x),
+            1.0 - 2.0 * (self.rotation.x * self.rotation.x + self.rotation.y * self.rotation.y),
+        )
+    }
+    #[inline] #[must_use] pub fn backward(&self) -> Vec3 { -self.forward() }
+    #[inline] #[must_use] pub fn right(&self) -> Vec3
+    {
+        Vec3::new(
+            1.0 - 2.0 * (self.rotation.y * self.rotation.y + self.rotation.z * self.rotation.z),
+            2.0 * (self.rotation.x * self.rotation.y + self.rotation.w * self.rotation.z),
+            2.0 * (self.rotation.x * self.rotation.z - self.rotation.w * self.rotation.y),
+        )
+    }
+    #[inline] #[must_use] pub fn left(&self) -> Vec3 { -self.right() }
+    #[inline] #[must_use] pub fn up(&self) -> Vec3
+    {
+        Vec3::new(
+            2.0 * (self.rotation.x * self.rotation.y - self.rotation.w * self.rotation.z),
+            1.0 - 2.0 * (self.rotation.x * self.rotation.x + self.rotation.z * self.rotation.z),
+            2.0 * (self.rotation.y * self.rotation.z + self.rotation.w * self.rotation.x),
+        )
+    }
+    #[inline] #[must_use] pub fn down(&self) -> Vec3 { -self.up() }
 
     // Apply an in-place rotation to this transform
     pub fn rotate(&mut self, yaw: f32, pitch: f32, roll: f32)
@@ -42,15 +64,28 @@ impl Transform
         self.rotation = Quat::normalize(yaw_quat * self.rotation * pitch_quat * roll_quat);
     }
 
-    pub fn to_view(&self) -> Mat4
+    #[inline] #[must_use]
+    pub fn inverse(&self) -> Transform
+    {
+        Self
+        {
+            position: -self.position,
+            rotation: self.rotation.inverse(),
+            scale: self.scale.recip(),
+        }
+    }
+
+    #[inline] #[must_use]
+    pub fn to_view_mtx(&self) -> Mat4
     {
         let rotation = Mat4::from_quat(self.rotation.inverse());
         let translation = Mat4::from_translation(-self.position);
-        // TODO: scale?
-        rotation * translation
+        // let scale = Mat4::from_scale(self.scale.recip());
+        /*scale * */ rotation * translation
     }
 
-    pub fn to_world(&self) -> Mat4 { Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position) }
+    #[inline] #[must_use]
+    pub fn to_world_mtx(&self) -> Mat4 { Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position) }
 }
 
 impl From<(Vec3, Quat, Vec3)> for Transform
@@ -62,7 +97,7 @@ impl From<(Vec3, Quat, Vec3)> for Transform
 }
 impl From<Transform> for Mat4
 {
-    fn from(t: Transform) -> Self { t.to_world() }
+    fn from(t: Transform) -> Self { t.to_world_mtx() }
 }
 impl From<Mat4> for Transform
 {
@@ -85,7 +120,41 @@ impl From<Transform> for TransformUniform
     {
         Self
         {
-            world: transform.to_world()
+            world: transform.to_world_mtx()
         }
     }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use approx::assert_ulps_eq;
+    use super::*;
+
+    #[test]
+    fn direction_vectors()
+    {
+        let transform = Transform
+        {
+            position: Vec3::ZERO,
+            rotation: Quat::from_axis_angle(Vec3::new(1.0, 2.0, 0.6).normalize(), 1.0),
+            scale: Vec3::ONE,
+        };
+
+        let forward = transform.rotation * WORLD_FORWARD;
+        assert!(forward.abs_diff_eq(transform.forward(), f32::EPSILON));
+        let right = transform.rotation * WORLD_RIGHT;
+        assert!(right.abs_diff_eq(transform.right(), f32::EPSILON));
+        let up = transform.rotation * WORLD_UP;
+        assert!(up.abs_diff_eq(transform.up(), f32::EPSILON));
+
+        let backward = transform.rotation * -WORLD_FORWARD;
+        assert!(backward.abs_diff_eq(transform.backward(), f32::EPSILON));
+        let left = transform.rotation * -WORLD_RIGHT;
+        assert!(left.abs_diff_eq(transform.left(), f32::EPSILON));
+        let down = transform.rotation * -WORLD_UP;
+        assert!(down.abs_diff_eq(transform.down(), f32::EPSILON));
+    }
+
+    // TODO: matrix ops
 }

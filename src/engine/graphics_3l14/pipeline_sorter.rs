@@ -43,6 +43,7 @@ impl PipelineSorter
     }
 
     // process all the entries in this sorter, if returned iter is fully consumed, the sorter should be empty after
+    #[inline] #[must_use]
     pub fn sort(&mut self) -> SorterIter
     {
         SorterIter
@@ -52,14 +53,15 @@ impl PipelineSorter
         }
     }
 
-    pub fn is_empty(&self) -> bool { self.pipeline_draws.is_empty() }
+    #[inline] #[must_use] pub fn is_empty(&self) -> bool { self.pipeline_draws.is_empty() }
 
-    pub fn clear(&mut self)
+    #[inline] pub fn clear(&mut self)
     {
         self.pipeline_draws.clear();
     }
 }
 
+#[must_use]
 fn sort_front_to_back(a: &Draw, b: &Draw) -> Ordering
 {
     match a.depth - b.depth
@@ -71,6 +73,7 @@ fn sort_front_to_back(a: &Draw, b: &Draw) -> Ordering
         _ => unreachable!(),
     }
 }
+#[must_use]
 fn sort_back_to_front(a: &Draw, b: &Draw) -> Ordering
 {
     match a.depth - b.depth

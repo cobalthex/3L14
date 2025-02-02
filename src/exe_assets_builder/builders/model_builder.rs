@@ -133,7 +133,7 @@ impl ModelBuilder
 
         let mut model_bounds_sphere = Sphere::EMPTY;
 
-        let mut mesh_points = Vec::new();
+        let mut mesh_points = Vec::<Vec3>::new();
 
         // todo: iter.map() ?
         for in_prim in in_mesh.primitives()
@@ -153,7 +153,7 @@ impl ModelBuilder
             let mut vertex_data = Vec::new();
             for pos in positions.into_iter()
             {
-                //mesh_points.push(pos.into());
+                mesh_points.push(pos.into());
 
                 let vertex = StaticSimpleVertex
                 {
@@ -336,7 +336,8 @@ impl ModelBuilder
             let mesh_bounds = AABB::new(bb.min.into(), bb.max.into());
             model_bounds_aabb.union_with(mesh_bounds);
 
-            let mesh_sphere = Sphere::from_points(&mesh_points);
+            // TODO
+            let mesh_sphere = Sphere::new(Vec3::ZERO, f32::sqrt(2.0) / 2.0);//Sphere::from_points(&mesh_points);
             mesh_points.clear();
             model_bounds_sphere += mesh_sphere;
 

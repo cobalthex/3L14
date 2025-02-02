@@ -91,12 +91,7 @@ impl<const N_ENTRIES: usize> egui::Widget for &Sparkline<N_ENTRIES>
     fn ui(self, ui: &mut egui::Ui) -> egui::Response
     {
         let desired_size = Vec2::new(200.0, 30.0);
-        let senses = Sense
-        {
-            click: false,
-            drag: false,
-            focusable: false,
-        };
+        let senses = Sense::HOVER;
 
         if self.count < 2
         {

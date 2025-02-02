@@ -150,5 +150,5 @@ impl AssetLifecycler for MaterialLifecycler
 impl DebugGui for MaterialLifecycler
 {
     fn name(&self) -> &str { "Materials" }
-    fn debug_gui(&self, ui: &mut egui::Ui) { }
+    fn debug_gui(&self, _ui: &mut egui::Ui) { }
 }

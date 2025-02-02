@@ -1,13 +1,14 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use egui::Ui;
-use glam::{FloatExt, Mat4, Vec2, Vec3, Vec3Swizzles, Vec4};
-use wgpu::{include_spirv, BindGroup, BindGroupDescriptor, BindGroupEntry, BlendState, Buffer, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, FragmentState, FrontFace, IndexFormat, MultisampleState, PolygonMode, PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor, VertexState};
-use debug_3l14::debug_gui::DebugGui;
-use nab_3l14::math::Frustum;
-use nab_3l14::utils::AsU8Slice;
-use crate::{debug_label, Renderer, Rgba};
 use crate::assets::{ShaderStage, VertexLayout};
 use crate::camera::Camera;
+use crate::{colors, debug_label, Renderer, Rgba};
+use debug_3l14::debug_gui::DebugGui;
+use egui::{Align2, Color32, FontId, Painter, Pos2, Ui};
+use glam::{FloatExt, Mat4, Quat, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles};
+use nab_3l14::math::{Degrees, Frustum, Plane, Radians, WORLD_FORWARD, WORLD_RIGHT, WORLD_UP};
+use nab_3l14::utils::AsU8Slice;
+use std::mem::MaybeUninit;
+use std::sync::atomic::{AtomicBool, Ordering};
+use wgpu::{include_spirv, BindGroup, BindGroupDescriptor, BindGroupEntry, BlendState, Buffer, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, FragmentState, FrontFace, IndexFormat, MultisampleState, PolygonMode, PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor, VertexState};
 
 // Indices to draw lines
 const CUBOID_INDICES: [u32; 26] =
@@ -49,13 +50,17 @@ pub struct DebugDraw
 {
     pub is_enabled: AtomicBool,
 
-    camera_transform: Mat4,
-    cam_aspect_ratio: f32,
+    gui_painter: Option<Painter>,
+
+    camera_forward: Vec3,
+    camera_clip_mtx: Mat4,
+    camera_aspect_ratio: f32,
     lines_pipeline: RenderPipeline,
     lines: DrawLines,
 }
 impl DebugDraw
 {
+    #[must_use]
     pub fn new(renderer: &Renderer) -> Self
     {
         let renderer_surface_format = renderer.surface_format();
@@ -71,7 +76,7 @@ impl DebugDraw
             vertex: VertexState
             {
                 module: &renderer.device().create_shader_module(include_spirv!("../../../assets/shaders/DebugLines.vs.spv")),
-                entry_point: ShaderStage::Vertex.entry_point().expect("Shader stage has no entry-point"),
+                entry_point: ShaderStage::Vertex.entry_point(),
                 compilation_options: Default::default(),
                 buffers: &[],
             },
@@ -96,7 +101,7 @@ impl DebugDraw
             fragment: Some(FragmentState
             {
                 module: &renderer.device().create_shader_module(include_spirv!("../../../assets/shaders/DebugLines.ps.spv")),
-                entry_point: ShaderStage::Pixel.entry_point().expect("Shader stage has no entry-point"),
+                entry_point: ShaderStage::Pixel.entry_point(),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState
                 {
@@ -142,8 +147,10 @@ impl DebugDraw
         Self
         {
             is_enabled: AtomicBool::new(true),
-            camera_transform: Mat4::IDENTITY,
-            cam_aspect_ratio: 1.0,
+            gui_painter: None,
+            camera_clip_mtx: Mat4::IDENTITY,
+            camera_forward: Vec3::Z,
+            camera_aspect_ratio: 1.0,
             lines_pipeline,
             lines: DrawLines
             {
@@ -156,25 +163,46 @@ impl DebugDraw
         }
     }
 
-    pub fn begin(&mut self, camera: &Camera)
+    pub fn begin(&mut self, camera: &Camera, egui_ctx: &egui::Context)
     {
-        self.camera_transform = camera.clip_mtx();
-        self.cam_aspect_ratio = camera.projection().aspect_ratio();
+        self.gui_painter = Some(egui_ctx.layer_painter(egui::LayerId::background()));
+        self.camera_clip_mtx = camera.matrix();
+        self.camera_forward = camera.transform().forward();
+        self.camera_aspect_ratio = camera.projection().aspect_ratio();
         self.lines.vertices.clear();
         self.lines.indices.clear();
     }
 
-    pub fn draw_frustum(&mut self, camera: &Camera, world_transform: Mat4, color: Rgba)
+    pub fn draw_text(&mut self, text: &str, center: Vec3, color: Rgba)
     {
-        let mut transform = camera.clip_mtx().inverse();
-        self.draw_wire_box(transform, color);
+        let Some(painter) = self.gui_painter.as_mut() else { return };
+
+        let mut position = self.camera_clip_mtx.mul_vec4(center.extend(1.0));
+        if position.w < 0.0 { return } // < near clip?
+
+        let clip = painter.clip_rect().size();
+        position.x = ((position.x / position.w + 1.0) / 2.0) * clip.x;
+        position.y = ((-position.y / position.w + 1.0) / 2.0) * clip.y;
+        painter.text(
+            Pos2::new(position.x, position.y),
+            Align2::CENTER_CENTER,
+            text,
+            FontId::proportional(20.0), // todo
+            Color32::from_rgba_unmultiplied(color.red, color.green, color.blue, color.alpha));
+    }
+
+    pub fn draw_frustum(&mut self, camera: &Camera, color: Rgba)
+    {
+        // let clip_mtx = camera.clip_mtx().inverse();
+        let clip_mtx = camera.matrix().inverse();
+        self.draw_wire_box(clip_mtx, color);
     }
 
     pub fn draw_wire_box(&mut self, mut transform: Mat4, color: Rgba)
     {
         let start = self.lines.vertices.len() as u32;
 
-        transform = self.camera_transform * transform;
+        transform = self.camera_clip_mtx * transform;
 
         const CUBOID_CORNERS: [Vec4; 8] =
         [
@@ -205,18 +233,50 @@ impl DebugDraw
         }
     }
 
+    // draw a 3D cross (-x -> x),(-y -> y),(-z -> z)
+    pub fn draw_cross3(&mut self, mut transform: Mat4, color: Rgba)
+    {
+        transform = self.camera_clip_mtx * transform;
+
+        const SCALE: f32 = 0.5;
+        let points =
+        [
+             transform.mul_vec4(Vec4::new(-SCALE,  0.0,  0.0, 1.0)),
+             transform.mul_vec4(Vec4::new( SCALE,  0.0,  0.0, 1.0)),
+             transform.mul_vec4(Vec4::new( 0.0, -SCALE,  0.0, 1.0)),
+             transform.mul_vec4(Vec4::new( 0.0,  SCALE,  0.0, 1.0)),
+             transform.mul_vec4(Vec4::new( 0.0,  0.0, -SCALE, 1.0)),
+             transform.mul_vec4(Vec4::new( 0.0,  0.0,  SCALE, 1.0)),
+        ];
+
+        let start = self.lines.vertices.len() as u32;
+        self.lines.vertices.extend(points.map(|p| DebugLineVertex
+        {
+            position: p.into(),
+            color: color.into(),
+        }));
+        self.lines.indices.reserve(2 * points.len());
+        for i in 0..points.len() as u32
+        {
+            self.lines.indices.push(start + i * 2);
+            self.lines.indices.push(start + i * 2 + 1);
+        }
+    }
+
+    // TODO: capsulify?
     pub fn draw_wire_sphere(&mut self, mut transform: Mat4, mut color: Rgba)
     {
         let start = self.lines.vertices.len() as u32;
 
-        let num_lats = 8;
-        let num_longs = 16;
+        // calc based on size?
+        let num_lats = 6;
+        let num_longs = 12;
 
         let num_verts = (num_longs * (num_lats - 2) + 2) as usize;
         self.lines.vertices.reserve(num_verts);
         self.lines.indices.reserve(num_verts * 4 + num_longs as usize);
 
-        transform = self.camera_transform * transform;
+        transform = self.camera_clip_mtx * transform;
 
         self.lines.vertices.push(DebugLineVertex
         {
@@ -242,10 +302,13 @@ impl DebugDraw
                     color: color.into(),
                 });
 
-                let mut b: u32 = start + (lat - 1) * num_longs + 1;
-                let z = (b + long).saturating_sub(num_longs);
+                let mut b: u32 = (lat - 1) * num_longs + 1;
+                let z = start + (b + long).saturating_sub(num_longs);
+                b += start;
+
                 self.lines.indices.push(b + long);
                 self.lines.indices.push(b + (long + 1) % num_longs);
+
                 self.lines.indices.push(b + long);
                 self.lines.indices.push(z);
             }
@@ -262,6 +325,86 @@ impl DebugDraw
         {
             self.lines.indices.push(end - i - 1);
             self.lines.indices.push(end);
+        }
+    }
+
+    // draw a cone. untransformed, tip points to +Z, base to -Z
+    pub fn draw_wire_cone(&mut self, mut transform: Mat4, color: Rgba)
+    {
+        let start = self.lines.vertices.len() as u32;
+
+        // calc based on size
+        let num_points = 8;
+
+        transform = self.camera_clip_mtx * transform;
+
+        self.lines.vertices.reserve(num_points as usize + 1);
+        self.lines.indices.reserve(num_points as usize * 2);
+
+        self.lines.vertices.push(DebugLineVertex
+        {
+            position: transform.mul_vec4(Vec4::new(0.0, 0.0, 1.0, 1.0)).into(),
+            color: color.into(),
+        });
+
+        let step = std::f32::consts::TAU / num_points as f32;
+        for i in 0..num_points
+        {
+            let theta = step * i as f32;
+            self.lines.vertices.push(DebugLineVertex
+            {
+                position: transform.mul_vec4(Vec4::new(f32::cos(theta), f32::sin(theta), -1.0, 1.0)).into(),
+                color: color.into(),
+            });
+
+            let z = i + 1;
+            self.lines.indices.push(start);
+            self.lines.indices.push(start + z);
+
+            self.lines.indices.push(start + z);
+            self.lines.indices.push(start + z % num_points + 1);
+        }
+    }
+
+    pub fn draw_arrow(&mut self, tail: Vec3, nose: Vec3, wing_normal: Vec3, color: Rgba)
+    {
+        const WING_ANGLE: Radians = Degrees(30.0).to_radians();
+
+        let wing_length = (tail - nose).length();
+        let wing_tangent = (tail - nose) / 3.0;
+
+        // todo: can prob just use (a+b)/2 to make diagonals
+        let left = nose + Quat::from_axis_angle(wing_normal, -WING_ANGLE.0) * wing_tangent;
+        let right = nose + Quat::from_axis_angle(wing_normal, WING_ANGLE.0) * wing_tangent;
+        self.draw_polyline(&[tail, nose, left, nose, right], false, color);
+    }
+
+    // take points by value w/ template size?
+    pub fn draw_polyline(&mut self, points: &[Vec3], connect_ends: bool, color: Rgba)
+    {
+        if points.len() <= 2 { return; } // not bother?
+
+        self.lines.vertices.reserve(points.len());
+        self.lines.indices.reserve(2 * points.len());
+
+        let start = self.lines.vertices.len() as u32;
+        for point in points
+        {
+            self.lines.vertices.push(DebugLineVertex
+            {
+                position: self.camera_clip_mtx.mul_vec4(point.extend(1.0)).into(),
+                color: color.into(),
+            });
+        }
+        for i in 1..points.len() as u32
+        {
+            self.lines.indices.push(start + i - 1);
+            self.lines.indices.push(start + i);
+        }
+        if connect_ends
+        {
+            self.lines.indices.push(start + points.len() as u32 - 1);
+            self.lines.indices.push(start);
         }
     }
 
@@ -303,7 +446,7 @@ impl DebugDraw
                 position:
                 [
                     f32::cos(i as f32 * inc) * radius + center.x,
-                    f32::sin(i as f32 * inc) * radius * self.cam_aspect_ratio + center.y,
+                    f32::sin(i as f32 * inc) * radius * self.camera_aspect_ratio + center.y,
                     0.0,
                     1.0
                 ],

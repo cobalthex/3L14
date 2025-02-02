@@ -1,8 +1,8 @@
 use std::time::Duration;
 use egui::Ui;
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use debug_3l14::debug_gui::DebugGui;
-use nab_3l14::math::{Radians, Transform};
+use nab_3l14::math::{Frustum, Radians, Transform};
 
 #[derive(Debug, Clone)]
 pub enum CameraProjection
@@ -22,7 +22,7 @@ pub enum CameraProjection
 }
 impl CameraProjection
 {
-    pub fn as_matrix(&self, near_clip: f32, far_clip: f32) -> Mat4
+    pub fn to_matrix(&self, near_clip: f32, far_clip: f32) -> Mat4
     {
         match self
         {
@@ -64,9 +64,12 @@ pub struct Camera
 }
 impl Camera
 {
-    pub fn transform(&self) -> &Transform { &self.transform }
-    pub fn projection(&self) -> &CameraProjection { &self.projection }
-    pub fn clip_mtx(&self) -> Mat4 { self.clip_mtx }
+    #[inline] #[must_use] pub fn transform(&self) -> &Transform { &self.transform }
+    #[inline] #[must_use] pub fn projection(&self) -> &CameraProjection { &self.projection }
+    #[inline] #[must_use] pub fn matrix(&self) -> Mat4 { self.clip_mtx } // todo: better name?
+
+    #[inline] #[must_use] pub fn near_clip(&self) -> f32 { self.near_clip }
+    #[inline] #[must_use] pub fn far_clip(&self) -> f32 { self.far_clip }
 
     // Update cached values after updating one of the public fields
     pub fn update_projection(&mut self, projection: CameraProjection, near_clip: f32, far_clip: f32)
@@ -74,14 +77,14 @@ impl Camera
         self.projection = projection;
         self.near_clip = near_clip;
         self.far_clip = far_clip;
-        let projection_mtx = self.projection.as_matrix(self.near_clip, self.far_clip);
-        self.clip_mtx = projection_mtx * self.transform.to_view();
+        let projection_mtx = self.projection.to_matrix(self.near_clip, self.far_clip);
+        self.clip_mtx = projection_mtx * self.transform.to_view_mtx();
     }
 
     pub fn update_view(&mut self, transform: Transform)
     {
         self.transform = transform;
-        self.clip_mtx = self.projection.as_matrix(self.near_clip, self.far_clip) * self.transform.to_view();
+        self.clip_mtx = self.projection.to_matrix(self.near_clip, self.far_clip) * self.transform.to_view_mtx();
     }
 }
 impl Default for Camera
@@ -90,7 +93,7 @@ impl Default for Camera
     {
         let projection = CameraProjection::Perspective { fov: Radians(90.0), aspect_ratio: 16.0 / 9.0 };
         let transform = Transform::default();
-        let clip_mtx = projection.as_matrix(0.1, 1000.0) * transform.to_view();
+        let clip_mtx = projection.to_matrix(0.1, 1000.0) * transform.to_view_mtx();
 
         Self
         {

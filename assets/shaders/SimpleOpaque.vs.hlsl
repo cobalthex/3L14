@@ -33,6 +33,6 @@ VertexOutput vs_main(
     out_vertex.clip_position = mul(ProjView, out_vertex.world_position);
     out_vertex.normal = float4(in_normal, 1);
     out_vertex.texcoord = in_texcoord;
-    out_vertex.color = UnpackColor(color);
+    out_vertex.color = UnpackRgba(color);
     return out_vertex;
 }

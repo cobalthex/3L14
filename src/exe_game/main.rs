@@ -1,27 +1,27 @@
-use std::ops::Deref;
-use clap::Parser;
-use glam::{Mat4, Quat, Vec2, Vec3};
-use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
-use std::time::Duration;
-use wgpu::{BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
 use asset_3l14::{Asset, AssetKey, AssetLifecyclers, AssetPayload, Assets, AssetsConfig};
+use clap::Parser;
 use debug_3l14::debug_gui;
 use debug_3l14::debug_menu::{DebugMenu, DebugMenuMemory};
 use debug_3l14::sparkline::Sparkline;
+use glam::{Mat4, Quat, Vec3, Vec4};
 use graphics_3l14::assets::{GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, TextureLifecycler};
-use graphics_3l14::pipeline_cache::{DebugMode, PipelineCache};
-use graphics_3l14::{colors, render_passes, renderer, Renderer};
 use graphics_3l14::camera::{Camera, CameraProjection};
 use graphics_3l14::debug_draw::DebugDraw;
+use graphics_3l14::pipeline_cache::{DebugMode, PipelineCache};
 use graphics_3l14::uniforms_pool::UniformsPool;
 use graphics_3l14::view::{Draw, View};
 use graphics_3l14::windows::Windows;
+use graphics_3l14::{colors, render_passes, renderer, Renderer, Rgba};
 use input_3l14::{Input, KeyCode, KeyMods};
 use nab_3l14::app;
 use nab_3l14::app::{AppRun, ExitReason};
 use nab_3l14::core_types::{CompletionState, FrameNumber, ToggleState};
-use nab_3l14::math::{Degrees, Transform};
+use nab_3l14::math::{Degrees, Frustum, Plane, Transform};
 use nab_3l14::timing::Clock;
+use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
+use std::ops::Deref;
+use std::time::Duration;
+use wgpu::{BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -99,7 +99,7 @@ fn main() -> ExitReason
         }, 0.1, 1000.0);
         let mut cam_transform = Transform
         {
-            position: Vec3::new(0.0, 2.0, -10.0),
+            position: Vec3::new(0.0, 0.0, -10.0),
             rotation: Quat::default(),
             scale: Vec3::default(),
         };
@@ -115,7 +115,7 @@ fn main() -> ExitReason
 
         let mut debug_draw = DebugDraw::new(&renderer);
 
-        let mut draw_camera = None;
+        let mut clip_camera = None;
 
         let mut frame_number = FrameNumber(0);
         let mut fps_sparkline = Sparkline::<100>::new(); // todo: use
@@ -134,6 +134,7 @@ fn main() -> ExitReason
 
                 input.pre_update();
 
+                // todo: ideally move elsewhere
                 for event in sdl_events.poll_iter()
                 {
                     match event
@@ -174,12 +175,6 @@ fn main() -> ExitReason
             if kbd.is_press(KeyCode::Backquote)
             {
                 input.mouse().set_capture(ToggleState::Toggle);
-            }
-
-            if kbd.is_press(KeyCode::T)
-            {
-                let cam = camera.clone();
-                draw_camera = Some(cam);
             }
 
             if input.mouse().is_captured()
@@ -227,6 +222,12 @@ fn main() -> ExitReason
             {
                 cam_transform.rotation = Quat::IDENTITY;
             }
+            if kbd.is_press(KeyCode::T)
+            {
+                let mut cam = camera.clone();
+                cam.update_projection(cam.projection().clone(), 0.1, 50.0);
+                clip_camera = Some(cam);
+            }
             camera.update_view(cam_transform.clone());
 
             obj_rot *= Quat::from_rotation_y(0.5 * frame_time.delta_time.as_secs_f32());
@@ -247,17 +248,26 @@ fn main() -> ExitReason
             let render_frame = renderer.frame(frame_number, &input);
             {
                 puffin::profile_scope!("Render frame");
-                debug_draw.begin(&camera);
 
-                // debug_draw.draw_clipspace_line(Vec2::new(-0.7, -0.7), Vec2::new(0.7, 0.2), colors::RED);
-                if let Some(cam) = &draw_camera
+                debug_draw.begin(&camera, renderer.debug_gui());
+
+                if let Some(cam) = &clip_camera
                 {
-                    debug_draw.draw_frustum(cam, cam_transform.to_world(), colors::WHITE);
+                    for corner in Frustum::get_corners(&cam.projection().to_matrix(0.1, 50.0))
+                    {
+                        debug_draw.draw_cross3(Mat4::from_translation(corner), colors::RED);
+                    }
+
+                    debug_draw.draw_frustum(cam, colors::WHITE);
+                    let mut light = 0.0;
+                    for plane in Frustum::from_matrix(&cam.matrix()).planes
+                    {
+                        let z = cam.matrix().transform_point3(plane.origin());
+                        debug_draw.draw_polyline(&plane.into_quad(4.0, 4.0), true, Rgba::from_hsla(30.0, 0.7, light, 1.0));
+                        debug_draw.draw_arrow(plane.origin(), plane.origin() + plane.normal() * 2.0, Vec3::Y, colors::MAGENTA);
+                        light += 1.0 / 6.0;
+                    }
                 }
-                // debug_draw.draw_wire_box(Mat4::IDENTITY, colors::MAGENTA);
-                // debug_draw.draw_clipspace_circle(Vec2::ZERO, 0.2, colors::YELLOW);
-                // debug_draw.draw_wire_sphere(Mat4::from_scale(Vec3::new(3.0, 3.0, 3.0)), colors::MAGENTA);
-                debug_draw.draw_wire_sphere(Mat4::IDENTITY, colors::MAGENTA);
 
                 let mut encoder = renderer.device().create_command_encoder(&CommandEncoderDescriptor::default());
                 {
@@ -268,17 +278,23 @@ fn main() -> ExitReason
                             Some(colors::CORNFLOWER_BLUE));
 
                         let view = &mut views[frame_number.0 as usize % views.len()];
-                        view.start(frame_time.total_runtime, &camera, DebugMode::None);
+                        view.begin(frame_time.total_runtime, &camera, clip_camera.as_ref().unwrap_or(&camera), DebugMode::None);
 
                         if let AssetPayload::Available(model) = test_model.payload()
                         {
                             if model.all_dependencies_loaded()
                             {
-                                let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(3.0, 0.0, 0.0));
+                                let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(25.0, 0.0, 0.0));
                                 view.draw(obj_world, model.clone());
+                                debug_draw.draw_wire_box(obj_world, colors::WHITE);
 
-                                obj_world = Mat4::from_rotation_translation(obj_rot.inverse(), Vec3::new(-3.0, 0.0, -2.0));
+                                let geo = model.geometry.payload().unwrap();
+                                let sp_txfm = obj_world * Mat4::from_scale(Vec3::splat(geo.bounds_sphere.radius()));
+                                debug_draw.draw_wire_sphere(sp_txfm, colors::TOMATO);
+
+                                obj_world = Mat4::from_rotation_translation(obj_rot.inverse(), Vec3::new(-5.0, 0.0, -2.0));
                                 view.draw(obj_world, model);
+                                debug_draw.draw_wire_box(obj_world, colors::WHITE);
                             }
                         }
 
@@ -307,7 +323,7 @@ fn main() -> ExitReason
                     viewport_size: renderer.display_size().into(),
                 };
 
-                let mut debug_menu = DebugMenu::new(&mut debug_menu_memory, &render_frame.debug_gui);
+                let mut debug_menu = DebugMenu::new(&mut debug_menu_memory, renderer.debug_gui());
                 debug_menu.add(&app_stats);
                 debug_menu.add(&fps_sparkline);
                 debug_menu.add(&debug_gui::FrameProfiler);

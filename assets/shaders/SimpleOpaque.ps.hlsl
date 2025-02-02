@@ -31,7 +31,7 @@ float4 ps_main(PixelInput in_pixel) : SV_Target
         LightType_Point,
         float3(0, 5, -5),
         float3(0.2673, 0.5345, 0.8018),
-        PackColor(float4(1, 1, 1, 1)),
+        PackRgba(float4(1, 1, 1, 1)),
     };
     float3 ambient = 0.03;
 

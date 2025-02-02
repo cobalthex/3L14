@@ -28,6 +28,7 @@ pub struct UniformsPool
 }
 impl UniformsPool
 {
+    #[must_use]
     pub fn new(renderer: Arc<Renderer>) -> Self
     {
         let max_ubo_size = renderer.device().limits().max_uniform_buffer_binding_size as usize;
@@ -83,6 +84,7 @@ impl UniformsPool
         }
     }
 
+    #[must_use]
     fn create_pool_entry<T: 'static>(&self, bind_group_layout: &BindGroupLayout, max_count: Option<usize>) -> UniformBufferEntry
     {
         assert!(!std::mem::needs_drop::<T>());
@@ -121,12 +123,14 @@ impl UniformsPool
         }
     }
 
+    #[inline] #[must_use]
     pub fn take_camera(&self) -> ObjectPoolEntryGuard<'_, UniformBufferEntry>
     {
         // re-evaluate max count here?
         self.cameras.take(|_| self.create_pool_entry::<CameraUniform>(&self.camera_bind_layout, Some(2)))
     }
 
+    #[inline] #[must_use]
     pub fn take_transforms(&self) -> ObjectPoolEntryGuard<'_, UniformBufferEntry>
     {
         self.transforms.take(|_| self.create_pool_entry::<TransformUniform>(&self.transform_bind_layout, None))
@@ -181,7 +185,7 @@ impl<'p> WriteTyped for QueueWriteBufferView<'p>
     {
         unsafe
         {
-            let mut ptr = self.as_mut_ptr() as *mut T;
+            let ptr = self.as_mut_ptr() as *mut T;
             std::ptr::write_unaligned(ptr.add(index), value);
         }
     }

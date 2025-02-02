@@ -3,12 +3,15 @@ pub enum Intersection
 {
     None,
     Overlapping,
-    EdgesTouching,
-    // Fully contained?
+    FullyContained,
+    // FullyContains?
 }
+
+// TODO: can probably simplify these somewhat
 
 // TODO: rename these to be more clear of who contains who
 
+// TODO: problematic?
 pub trait Intersects<T>
 {
     fn get_intersection(&self, other: T) -> Intersection;
@@ -16,9 +19,10 @@ pub trait Intersects<T>
 
 pub trait IsOnOrInside<T>
 {
-    fn other_is_on_or_inside(&self, other: T) -> bool;
+    fn rhs_is_on_or_inside(&self, other: T) -> bool;
 }
 
+#[derive(Debug)]
 pub enum Facing
 {
     Behind,
@@ -26,6 +30,7 @@ pub enum Facing
     InFront,
 }
 
+// todo: better name
 pub trait GetFacing<T>
 {
     fn get_facing(&self, other: T) -> Facing;
@@ -38,4 +43,7 @@ pub trait CenterDistance<T>
     fn center_distance_sq(&self, other: T) -> f32;
 }
 
-// TODO: can probably simplify these somewhat
+pub trait CanSee<TOther>
+{
+    fn can_see(&self, other: TOther) -> bool; // can this object see 'other'. This should return true for anything partially or fully visible
+}

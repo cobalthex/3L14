@@ -1,14 +1,14 @@
 use crate::pipeline_sorter::PipelineSorter;
-use crate::{debug_label, pipeline_sorter, Renderer};
+use crate::{debug_label, pipeline_sorter, render_passes, Renderer};
 use arrayvec::ArrayVec;
-use glam::{Mat4, Vec4Swizzles};
+use glam::{Mat4, Vec3, Vec4Swizzles};
 use std::sync::Arc;
 use std::time::Duration;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, QueueWriteBufferView, RenderPass};
 use asset_3l14::Asset;
-use nab_3l14::math::{Frustum, TransformUniform};
+use nab_3l14::math::{CanSee, Frustum, IsOnOrInside, Sphere, TransformUniform};
 use crate::assets::Model;
-use crate::camera::{Camera, CameraUniform};
+use crate::camera::{Camera, CameraProjection, CameraUniform};
 use crate::pipeline_cache::{DebugMode, PipelineCache};
 use crate::uniforms_pool::{UniformsPoolEntryGuard, WgpuBufferWriter, WriteTyped};
 
@@ -25,25 +25,107 @@ pub trait Draw<T>
     fn draw(&mut self, transform: Mat4, what: T) -> bool;
 }
 
+#[derive(Default)]
+struct CameraClip
+{
+    eye: Vec3,
+    forward: Vec3,
+    right: Vec3,
+    up: Vec3,
+    near_clip: f32,
+    far_clip: f32,
+    depth_scalar: f32,
+    aspect_ratio: f32,
+}
+impl CameraClip
+{
+    pub fn new(camera: &Camera) -> Self
+    {
+        let t = camera.transform();
+
+        let (fov, aspect_ratio) = match camera.projection()
+        {
+            CameraProjection::Perspective { fov, aspect_ratio } => (fov.0, *aspect_ratio),
+            CameraProjection::Orthographic { left, top, right, bottom } =>
+            {
+                // perspective: W = depth * tan(fov_x /2), H = depth * tan(fov_y / 2)
+                // ortho: W = (right - left) / 2, H = (bottom - top) / 2
+                todo!()
+            }
+        };
+
+        Self
+        {
+            eye: t.position,
+            forward: t.forward(),
+            right: t.right(),
+            up: t.up(),
+            near_clip: camera.near_clip(),
+            far_clip: camera.far_clip(),
+            depth_scalar: f32::tan(fov / 2.0),
+            aspect_ratio,
+        }
+    }
+}
+impl CanSee<Vec3> for CameraClip
+{
+    #[inline]
+    fn can_see(&self, pos: Vec3) -> bool { self.can_see(Sphere::new(pos, 0.0)) }
+}
+impl CanSee<Sphere> for CameraClip
+{
+    // TODO: does this work for orthographic?
+    fn can_see(&self, other: Sphere) -> bool
+    {
+        let v = other.center() - self.eye;
+        let r = other.radius(); // todo: needs perspective correction
+        // TODO: simd (3x3 row matrix of r,u,f * v)
+        let z = v.dot(self.forward);
+        if z < self.near_clip - r || z > self.far_clip + r
+        {
+            return false;
+        }
+
+        let y = v.dot(self.up);
+        let vdist = z * self.depth_scalar;
+        if y.abs() > vdist + r
+        {
+            return false;
+        }
+
+        let x = v.dot(self.right);
+        let hdist = vdist * self.aspect_ratio;
+        if x.abs() > hdist + r
+        {
+            return false;
+        }
+
+        true
+    }
+}
+
 // TODO: This needs to exist until the frame has been submitted fully
 pub struct View<'f>
 {
+    // TODO: move debug_draw into here?
     renderer: Arc<Renderer>,
     pipeline_cache: &'f PipelineCache,
     runtime: Duration,
     debug_mode: DebugMode,
-    camera: Camera,
-    clip_frustum: Frustum,
+    camera_mtx: Mat4,
+    camera_pos: Vec3,
+    camera_clip: CameraClip,
     sorter: PipelineSorter,
     used_uniforms_pools: Vec<UniformsPoolEntryGuard<'f>>,
     // current_txfms_writer: CurrentUniformsWriter<'f>,
 }
 impl<'f> View<'f>
 {
+    #[must_use]
     pub fn new(renderer: Arc<Renderer>, pipeline_cache: &'f PipelineCache) -> Self
     {
         let used_uniforms = vec![pipeline_cache.uniforms.take_transforms()];
-        let rc = renderer.clone();
+        // let rc = renderer.clone();
         // let current_txfms_writer = CurrentUniformsWriter
         // {
         //     writer: used_uniforms[0].write(rc.queue()),
@@ -56,8 +138,9 @@ impl<'f> View<'f>
             pipeline_cache,
             runtime: Duration::new(0, 0),
             debug_mode: DebugMode::None,
-            camera: Camera::default(),
-            clip_frustum: Frustum::NULL,
+            camera_mtx: Mat4::IDENTITY,
+            camera_pos: Vec3::ZERO,
+            camera_clip: CameraClip::default(),
             sorter: PipelineSorter::default(),
             used_uniforms_pools: used_uniforms,
             // current_txfms_writer,
@@ -65,12 +148,13 @@ impl<'f> View<'f>
         }
     }
 
-    pub fn start(&mut self, runtime: Duration, camera: &Camera, debug_mode: DebugMode)
+    pub fn begin(&mut self, runtime: Duration, camera: &Camera, clip_camera: &Camera, debug_mode: DebugMode)
     {
         self.runtime = runtime;
         self.debug_mode = debug_mode;
-        self.camera = camera.clone();
-        self.clip_frustum = Frustum::new(&self.camera.clip_mtx()); // TODO: optionally take in manual frustum
+        self.camera_mtx = camera.matrix();
+        self.camera_pos = camera.transform().position;
+        self.camera_clip = CameraClip::new(clip_camera);
         self.sorter.clear();
         self.used_uniforms_pools.clear();
     }
@@ -86,7 +170,7 @@ impl<'f> View<'f>
         {
             let mut camera_writer = camera.write(self.renderer.queue());
             // TODO: view/proj order may be arch dependent?
-            camera_writer.write_typed(0, CameraUniform::new(self.camera.clip_mtx(), self.runtime));
+            camera_writer.write_typed(0, CameraUniform::new(self.camera_mtx, self.runtime));
         }
 
         for (pipeline_hash, draws) in self.sorter.sort()
@@ -147,23 +231,28 @@ impl<'f> Draw<Arc<Model>> for View<'f>
 {
     fn draw(&mut self, object_transform: Mat4, model: Arc<Model>) -> bool
     {
-        // TODO: verify this math all works
-        let ct = self.camera.transform();
-        let rad = object_transform.x_axis.x.max(object_transform.y_axis.y.max(object_transform.z_axis.z));
-        let depth = object_transform.w_axis.xyz().distance_squared(ct.position) - (rad * rad);
-
         // this may be heavy-handed
         if !model.all_dependencies_loaded()
         {
             return false;
         }
 
+        let geo = model.geometry.payload().unwrap();
+        let geo_transform = geo.bounds_sphere.transform(&(object_transform));
+        if !self.camera_clip.can_see(geo_transform)
+        {
+            return false;
+        }
+
+        // TODO: verify this math all works
+        let rad = object_transform.x_axis.x.max(object_transform.y_axis.y.max(object_transform.z_axis.z));
+        let depth = object_transform.w_axis.xyz().distance_squared(self.camera_pos) - (rad * rad);
+
         // todo: these need to reuse between draw calls
         let mut uniforms = self.pipeline_cache.uniforms.take_transforms();
         let mut next_uniform = 0;
         let mut uniforms_writer = uniforms.write(self.renderer.queue());
 
-        let geo = model.geometry.payload().unwrap();
         for mesh_index in 0..model.mesh_count
         {
             if next_uniform >= uniforms.count as usize
@@ -186,14 +275,14 @@ impl<'f> Draw<Arc<Model>> for View<'f>
             next_uniform += 1;
 
             let (mtl, vsh, psh) =
-                {
-                    let surf = &model.surfaces[mesh_index as usize];
-                    (
-                        surf.material.payload().unwrap(),
-                        surf.vertex_shader.payload().unwrap(),
-                        surf.pixel_shader.payload().unwrap(),
-                    )
-                };
+            {
+                let surf = &model.surfaces[mesh_index as usize];
+                (
+                    surf.material.payload().unwrap(),
+                    surf.vertex_shader.payload().unwrap(),
+                    surf.pixel_shader.payload().unwrap(),
+                )
+            };
 
             let textures = mtl.textures.iter().map(|t| t.payload().unwrap()).collect();
 

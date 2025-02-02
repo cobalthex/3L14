@@ -38,6 +38,7 @@ impl PipelineCache
 {
     pub fn default_sampler(&self) -> &Sampler { &self.default_sampler }
 
+    #[must_use]
     pub fn new(renderer: Arc<Renderer>) -> Self
     {
         let default_sampler = Self::create_sampler(&renderer);
@@ -95,6 +96,7 @@ impl PipelineCache
         pipeline_hash
     }
 
+    #[must_use]
     fn create_pipeline(
         &self,
         vertex_layout: VertexLayout,
@@ -143,7 +145,7 @@ impl PipelineCache
             vertex: VertexState
             {
                 module: &vertex_shader.module,
-                entry_point: ShaderStage::Vertex.entry_point().expect("Shader stage has no entry-point"),
+                entry_point: ShaderStage::Vertex.entry_point(),
                 compilation_options: PipelineCompilationOptions::default(),
                 buffers: &[vertex_layout.into()],
             },
@@ -176,7 +178,7 @@ impl PipelineCache
             fragment: Some(FragmentState
             {
                 module: &pixel_shader.module,
-                entry_point: ShaderStage::Pixel.entry_point().expect("Shader stage has no entry-point"),
+                entry_point: ShaderStage::Pixel.entry_point(),
                 compilation_options: PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState
                 {
@@ -191,6 +193,7 @@ impl PipelineCache
     }
 
     // todo
+    #[must_use]
     fn create_sampler(renderer: &Renderer) -> Sampler
     {
         renderer.device().create_sampler(&SamplerDescriptor

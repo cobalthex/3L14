@@ -89,7 +89,7 @@ pub struct DebugMenuMemory
 }
 impl DebugMenuMemory
 {
-    pub fn generation(&self) -> usize { self.generation }
+    #[inline] #[must_use] pub fn generation(&self) -> usize { self.generation }
 
     // returns true if wrote, false if not dirty
     // will always update dirty state, even on failure
@@ -124,6 +124,7 @@ impl DebugMenuMemory
         true
     }
 
+    #[must_use]
     pub fn load(path: impl AsRef<Path>) -> Self
     {
         let mut fread = match std::fs::File::open(&path)

@@ -1,4 +1,3 @@
-use nab_3l14::utils;
 use bitcode::{Decode, Encode};
 use egui::Ui;
 use proc_macros_3l14::Asset;
@@ -130,6 +129,7 @@ impl AssetLifecycler for TextureLifecycler
             label: None,
             format: None,
             dimension: None,
+            usage: None,
             aspect: Default::default(),
             base_mip_level: 0,
             mip_level_count: None,
