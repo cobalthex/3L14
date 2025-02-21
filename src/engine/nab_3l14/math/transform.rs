@@ -24,7 +24,6 @@ impl Default for Transform
 }
 impl Transform
 {
-    // TODO: unit tests
     #[inline] #[must_use] pub fn forward(&self) -> Vec3
     {
         Vec3::new(
@@ -128,7 +127,7 @@ impl From<Transform> for TransformUniform
 #[cfg(test)]
 mod tests
 {
-    use approx::assert_ulps_eq;
+    use approx::{assert_abs_diff_eq};
     use super::*;
 
     #[test]
@@ -142,16 +141,16 @@ mod tests
         };
 
         let forward = transform.rotation * WORLD_FORWARD;
-        assert!(forward.abs_diff_eq(transform.forward(), f32::EPSILON));
+        assert_abs_diff_eq!(forward, transform.forward());
         let right = transform.rotation * WORLD_RIGHT;
-        assert!(right.abs_diff_eq(transform.right(), f32::EPSILON));
+        assert_abs_diff_eq!(right, transform.right());
         let up = transform.rotation * WORLD_UP;
-        assert!(up.abs_diff_eq(transform.up(), f32::EPSILON));
+        assert_abs_diff_eq!(up, transform.up());
 
         let backward = transform.rotation * -WORLD_FORWARD;
-        assert!(backward.abs_diff_eq(transform.backward(), f32::EPSILON));
+        assert_abs_diff_eq!(backward, transform.backward());
         let left = transform.rotation * -WORLD_RIGHT;
-        assert!(left.abs_diff_eq(transform.left(), f32::EPSILON));
+        assert_abs_diff_eq!(left, transform.left());
         let down = transform.rotation * -WORLD_UP;
         assert!(down.abs_diff_eq(transform.down(), f32::EPSILON));
     }

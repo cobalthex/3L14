@@ -7,7 +7,7 @@ use metrohash::MetroHash64;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use glam::Vec3;
@@ -180,7 +180,7 @@ impl ModelBuilder
                 {
                     match in_indices
                     {
-                        ReadIndices::U8(u8s) => todo!("is this common?"),
+                        ReadIndices::U8(_u8s) => todo!("is this common?"),
                         ReadIndices::U16(u16s) =>
                         {
                             index_format = IndexFormat::U16;
@@ -280,7 +280,7 @@ impl ModelBuilder
 
                 let shader_source = std::fs::read_to_string(&shader_file)?;
                 let mut shader_module = InlineWriteHash::<MetroHash64, _>::new(Vec::new());
-                let vshader = self.shader_compiler.compile_hlsl(&mut shader_module, ShaderCompilation
+                let _ = self.shader_compiler.compile_hlsl(&mut shader_module, ShaderCompilation
                 {
                     source_text: &shader_source,
                     filename: &shader_file, // todo: for debugging, use asset key?

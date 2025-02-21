@@ -1,12 +1,11 @@
-use crate::assets::{ShaderStage, VertexLayout};
+use crate::assets::ShaderStage;
 use crate::camera::Camera;
 use crate::{colors, debug_label, Renderer, Rgba};
 use debug_3l14::debug_gui::DebugGui;
 use egui::{Align2, Color32, FontId, Painter, Pos2, Ui};
-use glam::{FloatExt, Mat4, Quat, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles};
+use glam::{FloatExt, Mat4, Quat, Vec2, Vec3, Vec4};
 use nab_3l14::math::{Degrees, Frustum, Plane, Radians, WORLD_FORWARD, WORLD_RIGHT, WORLD_UP};
 use nab_3l14::utils::AsU8Slice;
-use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicBool, Ordering};
 use wgpu::{include_spirv, BindGroup, BindGroupDescriptor, BindGroupEntry, BlendState, Buffer, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, FragmentState, FrontFace, IndexFormat, MultisampleState, PolygonMode, PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor, VertexState};
 
@@ -264,7 +263,7 @@ impl DebugDraw
     }
 
     // TODO: capsulify?
-    pub fn draw_wire_sphere(&mut self, mut transform: Mat4, mut color: Rgba)
+    pub fn draw_wire_sphere(&mut self, mut transform: Mat4, color: Rgba)
     {
         let start = self.lines.vertices.len() as u32;
 

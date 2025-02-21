@@ -2,7 +2,7 @@
 name = "game_3l14"
 build = "src/build/build_main.rs"
 autobins = false
-edition = "2021"
+edition = "2024"
 
 [workspace.package]
 version = "0.1.0"
@@ -78,21 +78,15 @@ nab_3l14 = { path = "./src/engine/nab_3l14" }
 world_3l14 = { path = "./src/engine/world_3l14" }
 
 chrono = { version = "0.4.38", features = ["serde"] }
-flagset = "0.4.6"
-glam = { version = "0.29.2", features = ["serde"] }
-nameof = "1.2.2"
+glam = { version = "0.29.2", features = ["serde", "approx"] }
 parking_lot = "0.12.3"
 sdl2 = { version = "0.37.0", features = ["ttf", "raw-window-handle"] }
 wgpu = { version = "24.0.1", features = ["spirv"] }
-paste = "1.0.15"
-jobsys = "0.2.0"
 futures = { version = "0.3.31", features = ["thread-pool"] }
 egui-wgpu = "0.31.0"
 #egui_wgpu_backend = "0.33.0"
 egui = { version = "0.31.0", features = ["persistence"] }
-egui_extras = "0.28.1"
 gltf = "1.4.1"
-presser = "0.3.1"
 clap = { version = "4.5.20", features = ["derive"] }
 approx = "0.5.1"
 unicase = "2.8.0"
@@ -107,11 +101,9 @@ indexmap = "2.6.0"
 arc-swap = { version = "1.7.1", features = ["weak"] }
 log = { version = "0.4.22", features = ["std", "kv", "max_level_debug"] }
 notify = "8.0.0"
-type-map = "0.5.0"
 notify-debouncer-full = "0.5.0"
 rand = "0.9.0"
 metrohash = "1.0.6"
-ddsfile = "0.5.2"
 serde = { version = "1.0.214", features = ["derive"] }
 bitcode = { version = "0.6.3", features = ["arrayvec", "glam", "std"] }
 image = "0.25.5"
@@ -121,7 +113,6 @@ base64 = "0.22.1"
 walkdir = "2.5.0"
 colog = "1.3.0"
 arrayvec = { version = "0.7.6", features = ["serde"] }
-polonius-the-crab = "0.4.2"
 intel_tex_2 = "0.4.0"
 
 [dev-dependencies]

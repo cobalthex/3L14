@@ -1,11 +1,11 @@
 use super::*;
 use bitcode::Encode;
 use metrohash::MetroHash64;
-use serde::{Deserializer, Serializer};
 use std::collections::HashMap;
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt::{Debug, Display, Formatter};
+use std::fs::File;
 use std::hash::Hasher;
 use std::io;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
@@ -135,7 +135,7 @@ impl AssetsBuilder
             }
         }.canonicalize().map_err(BuildError::SourceIOError)?;
 
-        let rel_path = canonical_path.strip_prefix(&self.config.sources_root).map_err(|e| BuildError::InvalidSourcePath)?;
+        let rel_path = canonical_path.strip_prefix(&self.config.sources_root).map_err(|_| BuildError::InvalidSourcePath)?;
 
         let file_ext = rel_path.extension().unwrap_or(OsStr::new("")).to_string_lossy();
 
@@ -145,7 +145,7 @@ impl AssetsBuilder
         let source_meta_file_path = canonical_path.with_extension(
             format!("{}.{}", file_ext.as_ref(), AssetsBuilderConfig::SOURCE_META_FILE_EXTENSION));
 
-        let source_meta = match std::fs::File::open(&source_meta_file_path)
+        let source_meta = match File::open(&source_meta_file_path)
         {
             Ok(mut fin) =>
             {
@@ -179,7 +179,7 @@ impl AssetsBuilder
 
         let mut source_read =
         {
-            let fin = std::fs::File::open(&canonical_path).map_err(BuildError::SourceIOError)?;
+            let fin = File::open(&canonical_path).map_err(BuildError::SourceIOError)?;
             InlineWriteHash::<MetroHash64, _>::new(Box::new(fin)) // note: seek() makes this hash a bit nondeterministic, but it should be stable as long as the builder/file hasn't changed
         };
 
@@ -254,12 +254,12 @@ pub struct BuildOutput<W: BuildOutputWrite>
 }
 impl<W: BuildOutputWrite> Write for BuildOutput<W>
 {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> { self.writer.write(buf) } // todo: inline hash?
-    fn flush(&mut self) -> std::io::Result<()> { self.writer.flush() }
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> { self.writer.write(buf) } // todo: inline hash?
+    fn flush(&mut self) -> io::Result<()> { self.writer.flush() }
 }
 impl<W: BuildOutputWrite> Seek for BuildOutput<W>
 {
-    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> { self.writer.seek(pos) }
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> { self.writer.seek(pos) }
 }
 impl<W: BuildOutputWrite> BuildOutput<W>
 {
@@ -282,7 +282,7 @@ impl<W: BuildOutputWrite> BuildOutput<W>
     }
 
     // Serialize some size-prefixed data to the stream using the default serializer, writes all or nothing
-    pub fn serialize<T: Encode>(&mut self, value: &T) -> Result<(), impl Error>
+    pub fn serialize<T: Encode>(&mut self, value: &T) -> io::Result<()>
     {
         let val = bitcode::encode(value);
         varint::encode_into(val.len() as u64, &mut self.writer)?;
@@ -347,7 +347,7 @@ impl<'b> BuildOutputs<'b>
 
     // Produce an output from this build. Assets of the same type have sequential derived IDs
     #[inline]
-    pub fn add_output(&mut self, asset_type: AssetTypeId) -> Result<BuildOutput<impl BuildOutputWrite>, BuildError>
+    pub fn add_output(&mut self, asset_type: AssetTypeId) -> Result<BuildOutput<impl BuildOutputWrite + use<'b>>, BuildError>
     {
         let derived_id: AssetKeyDerivedId =
         {
@@ -361,7 +361,7 @@ impl<'b> BuildOutputs<'b>
 
     // Produce an output from ths build that is referenced by a calculable hash. By default, will only return an output if the hash doesn't already exist
     #[inline]
-    pub fn add_synthetic(&mut self, asset_type: AssetTypeId, asset_hash: AssetKeySynthHash, force_build: bool) -> Result<Option<BuildOutput<impl BuildOutputWrite>>, BuildError>
+    pub fn add_synthetic(&mut self, asset_type: AssetTypeId, asset_hash: AssetKeySynthHash, force_build: bool) -> Result<Option<BuildOutput<impl BuildOutputWrite + use<'b>>>, BuildError>
     {
         let asset_key = AssetKey::synthetic(asset_type, asset_hash);
         
@@ -375,13 +375,13 @@ impl<'b> BuildOutputs<'b>
         self.add_asset(asset_key).map(|a| Some(a))
     }
 
-    fn add_asset(&mut self, asset_key: AssetKey) -> Result<BuildOutput<impl BuildOutputWrite>, BuildError>
+    fn add_asset(&mut self, asset_key: AssetKey) -> Result<BuildOutput<impl BuildOutputWrite + use<'b>>, BuildError>
     {
         let output_path = self.abs_output_dir.join(asset_key.as_file_name());
-        let output_writer = std::fs::File::create(&output_path).map_err(BuildError::OutputIOError)?;
+        let output_writer = File::create(&output_path).map_err(BuildError::OutputIOError)?;
 
         let output_meta_path = self.abs_output_dir.join(asset_key.as_meta_file_name());
-        let output_meta_writer = std::fs::File::create(&output_meta_path).map_err(BuildError::OutputIOError)?;
+        let output_meta_writer = File::create(&output_meta_path).map_err(BuildError::OutputIOError)?;
 
         let output = BuildOutput
         {
@@ -417,10 +417,10 @@ impl<'b> SourceInput<'b>
 }
 impl<'b> Read for SourceInput<'b>
 {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.input.read(buf) }
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> { self.input.read(buf) }
 }
 impl<'b> Seek for SourceInput<'b>
 {
-    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> { self.input.seek(pos) }
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> { self.input.seek(pos) }
 }
 // todo:

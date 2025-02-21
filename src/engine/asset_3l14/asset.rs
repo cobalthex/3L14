@@ -3,7 +3,7 @@ use metrohash::MetroHash64;
 use rand::RngCore;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt::{Debug, Display, Formatter, Write};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use unicase::UniCase;
@@ -67,7 +67,7 @@ impl AssetKeySourceId
     pub fn generate() -> Self
     {
         let mut bytes = [0u8; size_of::<Self>()];
-        rand::thread_rng().fill_bytes(&mut bytes[0..((AssetKey::SOURCE_ID_BITS / 8) as usize)]);
+        rand::rng().fill_bytes(&mut bytes[0..((AssetKey::SOURCE_ID_BITS / 8) as usize)]);
         Self(AssetKeySourceIdRepr::from_le_bytes(bytes))
     }
 
