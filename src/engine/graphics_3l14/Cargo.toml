@@ -4,6 +4,10 @@ description = "Rendering/graphics"
 workspace = "../../.."
 edition.workspace = true
 
+[features]
+debug_gpu_labels = []
+load_shaders_direct = [] # requires API support too
+
 [lib]
 path = "lib.rs"
 

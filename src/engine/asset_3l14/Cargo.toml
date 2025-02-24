@@ -4,6 +4,10 @@ description = "Assets management"
 workspace = "../../.."
 edition.workspace = true
 
+[features]
+debug_asset_lifetimes = []
+asset_names = []
+
 [lib]
 path = "lib.rs"
 

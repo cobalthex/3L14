@@ -22,14 +22,6 @@ path = "src/exe_game/main.rs"
 name = "tests"
 path = "src/exe_tests/lib.rs"
 
-#### TODO: these need to be propagated
-[features]
-default = []
-debug_asset_lifetimes = []
-debug_gpu_labels = []
-asset_names = []
-load_shaders_direct = [] # requires API support too
-
 [workspace]
 resolver = "2"
 members = ["./src/engine/*"]
