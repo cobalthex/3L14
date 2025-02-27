@@ -9,6 +9,7 @@ path = "lib.rs"
 
 [dependencies]
 nab_3l14.workspace = true
+math_3l14.workspace = true
 debug_3l14.workspace = true
 asset_3l14.workspace = true
 graphics_3l14.workspace = true

@@ -1,12 +1,12 @@
 use crate::pipeline_sorter::PipelineSorter;
 use crate::{debug_label, pipeline_sorter, render_passes, Renderer};
 use arrayvec::ArrayVec;
-use glam::{Mat4, Vec3, Vec4Swizzles};
+use glam::{Mat4, Vec2, Vec3, Vec4Swizzles};
 use std::sync::Arc;
 use std::time::Duration;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, QueueWriteBufferView, RenderPass};
 use asset_3l14::Asset;
-use nab_3l14::math::{CanSee, Frustum, IsOnOrInside, Sphere, TransformUniform};
+use math_3l14::{CanSee, Frustum, IsOnOrInside, Sphere, TransformUniform};
 use crate::assets::Model;
 use crate::camera::{Camera, CameraProjection, CameraUniform};
 use crate::pipeline_cache::{DebugMode, PipelineCache};
@@ -35,6 +35,7 @@ struct CameraClip
     near_clip: f32,
     far_clip: f32,
     depth_scalar: f32,
+    sphere_scalar: Vec2,
     aspect_ratio: f32,
 }
 impl CameraClip
@@ -43,15 +44,22 @@ impl CameraClip
     {
         let t = camera.transform();
 
-        let (fov, aspect_ratio) = match camera.projection()
+        let (half_fov, aspect_ratio) = match camera.projection()
         {
-            CameraProjection::Perspective { fov, aspect_ratio } => (fov.0, *aspect_ratio),
+            CameraProjection::Perspective { fov, aspect_ratio } => (fov.0 / 2.0, *aspect_ratio),
             CameraProjection::Orthographic { left, top, right, bottom } =>
             {
                 // perspective: W = depth * tan(fov_x /2), H = depth * tan(fov_y / 2)
                 // ortho: W = (right - left) / 2, H = (bottom - top) / 2
                 todo!()
             }
+        };
+
+        let depth_scalar = f32::tan(half_fov);
+        let scale_x =
+        {
+            let q = depth_scalar * aspect_ratio;
+            f32::sqrt(q * q + 1.0) // equivalent to 1.0 / cos(atan(depth_scalar * ratio))
         };
 
         Self
@@ -62,7 +70,8 @@ impl CameraClip
             up: t.up(),
             near_clip: camera.near_clip(),
             far_clip: camera.far_clip(),
-            depth_scalar: f32::tan(fov / 2.0),
+            depth_scalar,
+            sphere_scalar: Vec2::new(scale_x, 1.0 / f32::cos(half_fov)),
             aspect_ratio,
         }
     }
@@ -78,7 +87,7 @@ impl CanSee<Sphere> for CameraClip
     fn can_see(&self, other: Sphere) -> bool
     {
         let v = other.center() - self.eye;
-        let r = other.radius(); // todo: needs perspective correction
+        let r = other.radius();
         // TODO: simd (3x3 row matrix of r,u,f * v)
         let z = v.dot(self.forward);
         if z < self.near_clip - r || z > self.far_clip + r
@@ -86,18 +95,25 @@ impl CanSee<Sphere> for CameraClip
             return false;
         }
 
-        let y = v.dot(self.up);
-        let vdist = z * self.depth_scalar;
-        if y.abs() > vdist + r
+        let zd = z * self.depth_scalar;
+
         {
-            return false;
+            let y = v.dot(self.up);
+            let rdy = self.sphere_scalar.y * r;
+            if y.abs() > zd + rdy
+            {
+                return false;
+            }
         }
 
-        let x = v.dot(self.right);
-        let hdist = vdist * self.aspect_ratio;
-        if x.abs() > hdist + r
         {
-            return false;
+            let x = v.dot(self.right);
+            let rdx = self.sphere_scalar.x * r;
+            let hdist = zd * self.aspect_ratio;
+            if x.abs() > hdist + rdx
+            {
+                return false;
+            }
         }
 
         true

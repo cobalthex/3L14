@@ -1,7 +1,7 @@
 use glam::Vec3;
 use asset_3l14::AssetHandle;
 use graphics_3l14::assets::Model;
-use nab_3l14::math::{Radians, AABB};
+use math_3l14::{Radians, AABB};
 
 pub struct SpatialMapIter<'s, T>
 {

@@ -2,11 +2,12 @@
 name = "game_3l14"
 build = "src/build/build_main.rs"
 autobins = false
-edition = "2024"
+edition.workspace = true
+version.workspace = true
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 publish = false
 
 [[bin]]
@@ -32,6 +33,7 @@ containers_3l14.workspace = true
 debug_3l14.workspace = true
 graphics_3l14.workspace = true
 input_3l14.workspace = true
+math_3l14.workspace = true
 nab_3l14.workspace = true
 world_3l14.workspace = true
 proc_macros_3l14.workspace = true
@@ -66,6 +68,7 @@ containers_3l14 = { path = "./src/engine/containers_3l14" }
 debug_3l14 = { path = "./src/engine/debug_3l14" }
 graphics_3l14 = { path = "./src/engine/graphics_3l14" }
 input_3l14 = { path = "./src/engine/input_3l14" }
+math_3l14 = { path = "./src/engine/math_3l14" }
 nab_3l14 = { path = "./src/engine/nab_3l14" }
 world_3l14 = { path = "./src/engine/world_3l14" }
 
@@ -108,7 +111,6 @@ arrayvec = { version = "0.7.6", features = ["serde"] }
 intel_tex_2 = "0.4.0"
 
 [dev-dependencies]
-criterion = { version = "0.5.1" }
 
 [build-dependencies]
 symlink = "0.1.0"

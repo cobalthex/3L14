@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use glam::{Vec3, Vec4, Vec4Swizzles};
-use crate::math::{Facing, GetFacing, Sphere, WORLD_RIGHT, WORLD_UP};
-use crate::utils::ShortTypeName;
+use crate::{Facing, GetFacing, Sphere, WORLD_RIGHT, WORLD_UP};
+use nab_3l14::utils::ShortTypeName;
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct Plane(pub Vec4);

@@ -82,22 +82,25 @@ pub struct AppRun<TCliArgs: CliArgs>
 }
 impl<TCliArgs: CliArgs> AppRun<TCliArgs>
 {
-    pub fn startup(app_name: &'static str) -> Self
+    pub fn startup(app_name: &'static str, app_version: &'static str) -> Self
     {
         #[cfg(debug_assertions)]
         let default_log_levels = (log::LevelFilter::Warn, log::LevelFilter::Debug);
         #[cfg(not(debug_assertions))]
         let default_log_levels = (log::LevelFilter::Warn, log::LevelFilter::Info);
+        let app_crate = crate_name::<TCliArgs>();
         colog::basic_builder()
             .filter_level(default_log_levels.0)
-            .filter_module(crate_name::<TCliArgs>(), default_log_levels.1)
+            .filter_module(app_crate, default_log_levels.1)
+            // TODO: all 3L14 crates
+            .filter_module(crate_name::<Self>(), default_log_levels.1)
             .parse_default_env()
             .init();
 
         let app_run = Self
         {
             app_name,
-            version_str: env!("CARGO_PKG_VERSION"),
+            version_str: app_version,
             start_time: chrono::Local::now(),
             args: TCliArgs::parse(),
             pid: std::process::id(),
@@ -105,8 +108,8 @@ impl<TCliArgs: CliArgs> AppRun<TCliArgs>
             exit_reason: AtomicI32::new(ExitReason::NormalExit as i32),
         };
 
-        log::info!(target: "app",
-            ": Starting {} v{} [{}] (PID {}){} at {}",
+        log::info!(target: app_crate,
+            "=== Starting {} v{} [{}] (PID {}){} at {} ===",
             app_run.app_name,
             app_run.version_str,
             shitty_join(" ", std::env::args()),

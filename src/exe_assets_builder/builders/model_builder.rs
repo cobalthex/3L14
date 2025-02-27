@@ -14,7 +14,7 @@ use glam::Vec3;
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use unicase::UniCase;
 use graphics_3l14::assets::{GeometryFile, GeometryFileMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat, VertexLayout};
-use nab_3l14::math::{Sphere, AABB};
+use math_3l14::{Sphere, AABB};
 use nab_3l14::utils::alloc_slice::alloc_u8_slice;
 use nab_3l14::utils::as_u8_array;
 use nab_3l14::utils::inline_hash::InlineWriteHash;

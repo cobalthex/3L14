@@ -2,7 +2,7 @@ use std::time::Duration;
 use egui::Ui;
 use glam::{Mat4, Vec3};
 use debug_3l14::debug_gui::DebugGui;
-use nab_3l14::math::{Frustum, Radians, Transform};
+use math_3l14::{Frustum, Radians, Transform};
 
 #[derive(Debug, Clone)]
 pub enum CameraProjection
@@ -117,7 +117,19 @@ impl DebugGui for Camera
             // ui.label(format!("Position: {:.2?}", self.debug_transform.position));
             // ui.label(format!("Forward: {:.2?}", self.debug_transform.forward()));
         }
-        ui.label(format!("Projection: {:?}", self.projection));
+        match self.projection
+        {
+            CameraProjection::Perspective { fov, aspect_ratio } =>
+            {
+                ui.heading("Perspective");
+                ui.label(format!("FOV: {:.02}\naspect ratio: {:.02}", fov.to_degrees(), aspect_ratio));
+            },
+            CameraProjection::Orthographic { left, top, right, bottom } =>
+            {
+                ui.heading("Orthographic");
+                ui.label(format!("left: {}\ntop: {}\nright: {}\nbottom: {}", left, top, right, bottom));
+            }
+        };
     }
 }
 

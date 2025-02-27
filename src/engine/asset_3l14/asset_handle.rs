@@ -196,15 +196,15 @@ impl UntypedAssetHandle
     pub unsafe fn dealloc<A: Asset>(self)
     {
         debug_assert!(!self.0.is_null());
-        debug_assert_eq!(A::asset_type(), (&*self.0).key.asset_type());
+        debug_assert_eq!(A::asset_type(), unsafe { &*self.0 }.key.asset_type());
 
-        (*self.0).store_payload::<A>(AssetPayload::Pending); // clears the stored payload
+        unsafe { &*self.0 }.store_payload::<A>(AssetPayload::Pending); // clears the stored payload
 
         #[cfg(feature = "debug_asset_lifetimes")]
-        log::debug!("{:?} de-alloc asset handle", (&*self.0).key);
+        log::debug!("{:?} de-alloc asset handle", unsafe { &*self.0 }.key);
 
-        let layout = Layout::for_value(&*self.0);
-        std::alloc::dealloc(self.0 as *mut u8, layout);
+        let layout = Layout::for_value(unsafe { &*self.0 });
+        unsafe { std::alloc::dealloc(self.0 as *mut u8, layout) };
     }
 }
 impl AsRef<AssetHandleInner> for UntypedAssetHandle

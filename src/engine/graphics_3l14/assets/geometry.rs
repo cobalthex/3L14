@@ -2,7 +2,7 @@ use crate::{debug_label, Renderer};
 use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
-use nab_3l14::math::{Sphere, AABB};
+use math_3l14::{Sphere, AABB};
 use proc_macros_3l14::Asset;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

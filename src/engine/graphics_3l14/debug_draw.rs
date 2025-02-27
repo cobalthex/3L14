@@ -4,7 +4,7 @@ use crate::{colors, debug_label, Renderer, Rgba};
 use debug_3l14::debug_gui::DebugGui;
 use egui::{Align2, Color32, FontId, Painter, Pos2, Ui};
 use glam::{FloatExt, Mat4, Quat, Vec2, Vec3, Vec4};
-use nab_3l14::math::{Degrees, Frustum, Plane, Radians, WORLD_FORWARD, WORLD_RIGHT, WORLD_UP};
+use math_3l14::{Degrees, Frustum, Plane, Radians, WORLD_FORWARD, WORLD_RIGHT, WORLD_UP};
 use nab_3l14::utils::AsU8Slice;
 use std::sync::atomic::{AtomicBool, Ordering};
 use wgpu::{include_spirv, BindGroup, BindGroupDescriptor, BindGroupEntry, BlendState, Buffer, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, FragmentState, FrontFace, IndexFormat, MultisampleState, PolygonMode, PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor, VertexState};

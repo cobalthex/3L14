@@ -18,7 +18,7 @@ pub fn flags_enum_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStr
 }
 
 #[proc_macro_derive(LayoutHash)]
-pub fn layout_hash_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream { type_layout_hash::layout_hash(input) }
+pub fn type_layout_hash_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream { type_layout_hash::type_layout_hash(input) }
 
 #[proc_macro_derive(Asset)] // todo: better name?
 pub fn asset_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream { asset_derive::asset_derive(input) }

@@ -6,7 +6,7 @@ use syn::{parse_macro_input, DeriveInput};
 
 pub const TYPE_LAYOUT_HASH_SEED: u64 = 0x1337C0DE00000000; // NOTE: This will change all usages if this changes
 
-pub fn layout_hash(input: TokenStream) -> TokenStream
+pub fn type_layout_hash(input: TokenStream) -> TokenStream
 {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;

@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use glam::{Mat4, Vec3};
-use crate::math::{Facing, GetFacing, Intersection, Intersects, IsOnOrInside, Plane, Sphere};
-use crate::utils::ShortTypeName;
+use crate::{Facing, GetFacing, Intersection, Intersects, IsOnOrInside, Plane, Sphere};
+use nab_3l14::utils::ShortTypeName;
 
 #[derive(Clone, PartialEq)]
 pub struct Frustum
@@ -114,7 +114,7 @@ impl IsOnOrInside<Sphere> for Frustum
 mod tests
 {
     use glam::Vec3;
-    use crate::math::Radians;
+    use crate::Radians;
     use super::*;
 
     #[test]

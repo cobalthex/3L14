@@ -119,13 +119,6 @@ pub(super) struct RegisteredAssetType
     pub type_name: &'static str,
     pub dealloc_fn: fn(UntypedAssetHandle),
 }
-impl RegisteredAssetType
-{
-    fn drop_fn_impl<A: Asset>(untyped_handle: UntypedAssetHandle)
-    {
-        unsafe { untyped_handle.dealloc::<A>(); }
-    }
-}
 
 #[derive(Default)]
 pub struct AssetLifecyclers

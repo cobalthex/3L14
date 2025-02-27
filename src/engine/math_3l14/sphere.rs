@@ -1,8 +1,8 @@
 use std::fmt::{Debug, Formatter};
 use bitcode::{Decode, Encode};
 use glam::{Mat4, Vec3, Vec4, Vec4Swizzles};
-use crate::math::{CenterDistance, Intersection, Intersects, IsOnOrInside};
-use crate::utils::ShortTypeName;
+use crate::{CenterDistance, Intersection, Intersects, IsOnOrInside};
+use nab_3l14::utils::ShortTypeName;
 // todo: union { struct { center, radius }, simd }?
 
 #[derive(Default, Clone, Copy, PartialEq, Encode, Decode)]
@@ -274,7 +274,6 @@ impl std::ops::Add<Sphere> for Sphere
 impl std::ops::AddAssign<Sphere> for Sphere
 {
     // Note: Combining multiple spheres can become over-sized due to the 'greedy' nature of this algorithm (geometric iterative expansion)
-    #[no_mangle]
     fn add_assign(&mut self, other: Sphere)
     {
         let dist = self.center().distance(other.center());

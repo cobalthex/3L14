@@ -18,7 +18,7 @@ impl Error for AllocError { }
 unsafe fn alloc_slice_internal<T>(n: usize) -> Result<(*mut u8, usize), AllocError>
 {
     let layout = Layout::array::<T>(n).map_err(AllocError::Layout)?;
-    let ptr = std::alloc::alloc(layout);
+    let ptr = unsafe { std::alloc::alloc(layout) };
     if ptr.is_null()
     {
         return Err(AllocError::Alloc);
@@ -31,17 +31,17 @@ unsafe fn alloc_slice_internal<T>(n: usize) -> Result<(*mut u8, usize), AllocErr
 /// It is up to the caller to safely initialize the data before it is dropped
 pub unsafe fn alloc_slice_uninit<T>(n: usize) -> Result<Box<[T]>, AllocError>
 {
-    let alloc = alloc_slice_internal::<T>(n)?;
+    let alloc = unsafe { alloc_slice_internal::<T>(n)? };
 
     // necessary? (allocator may do already)
     #[cfg(debug_assertions)]
     {
         const DEBUG_UNINIT_FILL_PATTERN: u8 = 0x89;
-        alloc.0.write_bytes(DEBUG_UNINIT_FILL_PATTERN, alloc.1);
+        unsafe { alloc.0.write_bytes(DEBUG_UNINIT_FILL_PATTERN, alloc.1) };
     }
     // should this pre-fill with T?
 
-    Ok(Box::from_raw(std::slice::from_raw_parts_mut(alloc.0.cast::<T>(), n)))
+    Ok(unsafe { Box::from_raw(std::slice::from_raw_parts_mut(alloc.0.cast::<T>(), n)) })
 }
 
 pub fn alloc_slice_default<T: Default>(n: usize) -> Result<Box<[T]>, AllocError>

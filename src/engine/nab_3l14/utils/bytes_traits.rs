@@ -6,26 +6,26 @@ impl<'a, T> AsU8Slice<'a> for Vec<T>
 {
     unsafe fn as_u8_slice(&'a self) -> &'a [u8]
     {
-        std::slice::from_raw_parts(self.as_ptr() as *const u8, self.len() * size_of::<T>())
+        unsafe { std::slice::from_raw_parts(self.as_ptr() as *const u8, self.len() * size_of::<T>()) }
     }
 }
 impl<'a, T> AsU8Slice<'a> for &'a [T]
 {
     unsafe fn as_u8_slice(&'a self) -> &'a [u8]
     {
-        std::slice::from_raw_parts(self.as_ptr() as *const u8, size_of_val(*self))
+        unsafe { std::slice::from_raw_parts(self.as_ptr() as *const u8, size_of_val(*self)) }
     }
 }
 impl<'a, T> AsU8Slice<'a> for [T]
 {
     unsafe fn as_u8_slice(&self) -> &'a [u8]
     {
-        std::slice::from_raw_parts(self.as_ptr() as *const u8, size_of_val(self))
+        unsafe { std::slice::from_raw_parts(self.as_ptr() as *const u8, size_of_val(self)) }
     }
 }
 pub const unsafe fn as_u8_array<T>(t: &T) -> &[u8]
 {
-    std::slice::from_raw_parts(t as *const T as *const u8, size_of::<T>())
+    unsafe { std::slice::from_raw_parts(t as *const T as *const u8, size_of::<T>()) }
 }
 
 pub trait IntoU8Box
@@ -34,11 +34,11 @@ pub trait IntoU8Box
 }
 impl<T> IntoU8Box for Box<[T]>
 {
-    unsafe fn into_u8_box(self) -> Box<[u8]> { Box::from_raw(Box::into_raw(self) as *mut [u8]) }
+    unsafe fn into_u8_box(self) -> Box<[u8]> { unsafe { Box::from_raw(Box::into_raw(self) as *mut [u8]) } }
 }
 impl<T> IntoU8Box for Vec<T>
 {
-    unsafe fn into_u8_box(self) -> Box<[u8]> { Box::from_raw(Box::into_raw(self.into_boxed_slice()) as *mut [u8]) }
+    unsafe fn into_u8_box(self) -> Box<[u8]> { unsafe { Box::from_raw(Box::into_raw(self.into_boxed_slice()) as *mut [u8]) } }
 }
 
 #[cfg(test)]
@@ -69,7 +69,7 @@ mod tests
 
 pub const unsafe fn as_typed_slice<T>(u8_slice: &[u8]) -> &[T]
 {
-    std::slice::from_raw_parts(u8_slice.as_ptr() as *const T, u8_slice.len() / size_of::<T>())
+    unsafe { std::slice::from_raw_parts(u8_slice.as_ptr() as *const T, u8_slice.len() / size_of::<T>()) }
 }
 // TODO: const
 pub unsafe fn as_typed_slice_mut<T>(u8_slice: &mut [u8]) -> &mut [T]
@@ -77,7 +77,7 @@ pub unsafe fn as_typed_slice_mut<T>(u8_slice: &mut [u8]) -> &mut [T]
     // TODO: broken
     let len = u8_slice.len()  / size_of::<T>();
     let p = u8_slice.as_mut_ptr() as *mut T;
-    std::slice::from_raw_parts_mut(p, len)
+    unsafe { std::slice::from_raw_parts_mut(p, len) }
 }
 pub unsafe fn as_typed_array<T, const N: usize>(u8_slice: &[u8]) -> &[T; N]
 {

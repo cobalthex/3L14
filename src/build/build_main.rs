@@ -1,8 +1,10 @@
+mod winres;
+mod crates_codegen;
+
 use std::{env, fs, io};
 use std::ffi::OsStr;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use winres::WindowsResource;
 
 fn main()
 {
@@ -10,29 +12,21 @@ fn main()
 
     if env::var_os("CARGO_CFG_WINDOWS").is_some()
     {
-        WindowsResource::new()
-        .set_manifest(r#"
-<assembly xmlns="urn:schemas-microsoft-com:asm.v1" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3" manifestVersion="1.0">
-    <asmv3:application>
-        <asmv3:windowsSettings>
-            <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
-            <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
-            <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true</dpiAware>
-            <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
-        </asmv3:windowsSettings>
-    </asmv3:application>
-</assembly>
-        "#)
-        .set_icon("res/App.ico")
-            .compile().expect("! Failed to compile windows resource definitions");
+        winres::generate_windows_resources();
     }
 
     let project_root: PathBuf = env::var("CARGO_MANIFEST_DIR").expect("! Failed to get project root").into();
+    let out_dir =
+    {
+        // construct with Env:CARGO_MANIFEST_DIR \target\ Env:PROFILE ?
+        let mut out_dir: PathBuf = env::var("OUT_DIR").expect("! Failed to get build target dir").into();
+        out_dir.push("../../.."); // gross
+        out_dir.canonicalize().expect("! Failed to canonicalize Env:OUT_DIR")
+    };
+    let generated_dir: PathBuf = out_dir.join("generated");
+    fs::create_dir_all(&generated_dir).expect("! Failed to create generated dir");
 
-    // construct with Env:CARGO_MANIFEST_DIR \target\ Env:PROFILE ?
-    let mut out_dir: PathBuf = env::var("OUT_DIR").expect("! Failed to get build target dir").into();
-    out_dir.push("../../.."); // gross
-    out_dir = out_dir.canonicalize().expect("! Failed to canonicalize Env:OUT_DIR");
+    crates_codegen::crates_codegen(&generated_dir);
 
     let mut assets_symlink_target = out_dir.clone();
     assets_symlink_target.push("assets");

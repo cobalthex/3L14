@@ -4,7 +4,7 @@ use std::sync::Arc;
 use egui::Ui;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, QueueWriteBufferView, RenderPass, ShaderStages};
 use containers_3l14::{ObjectPool, ObjectPoolEntryGuard};
-use nab_3l14::math::TransformUniform;
+use math_3l14::TransformUniform;
 use nab_3l14::utils::ShortTypeName;
 use crate::camera::CameraUniform;
 

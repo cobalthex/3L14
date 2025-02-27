@@ -1,0 +1,14 @@
+[package]
+name = "math_3l14"
+description = "Various math primitives/ops"
+workspace = "../../.."
+edition.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+bitcode.workspace = true
+glam.workspace = true
+nab_3l14.workspace = true
+approx.workspace = true

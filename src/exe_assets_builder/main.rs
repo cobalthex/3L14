@@ -43,7 +43,7 @@ struct CliArgs
 
 fn main()
 {
-    let app_run = AppRun::<CliArgs>::startup("Assets Builder");
+    let app_run = AppRun::<CliArgs>::startup("Assets Builder", env!("CARGO_PKG_VERSION"));
     set_panic_hook(false);
 
     let Ok(assets_root) = Path::new("assets").canonicalize() else { return; }; // TODO: error handling

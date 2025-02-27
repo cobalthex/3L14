@@ -3,7 +3,7 @@ use clap::Parser;
 use debug_3l14::debug_gui;
 use debug_3l14::debug_menu::{DebugMenu, DebugMenuMemory};
 use debug_3l14::sparkline::Sparkline;
-use glam::{Mat4, Quat, Vec3, Vec4};
+use glam::{FloatExt, Mat4, Quat, Vec3, Vec4};
 use graphics_3l14::assets::{GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, TextureLifecycler};
 use graphics_3l14::camera::{Camera, CameraProjection};
 use graphics_3l14::debug_draw::DebugDraw;
@@ -16,7 +16,7 @@ use input_3l14::{Input, KeyCode, KeyMods};
 use nab_3l14::app;
 use nab_3l14::app::{AppRun, ExitReason};
 use nab_3l14::core_types::{CompletionState, FrameNumber, ToggleState};
-use nab_3l14::math::{Degrees, Frustum, Plane, Transform};
+use math_3l14::{Degrees, Frustum, Plane, Radians, Transform};
 use nab_3l14::timing::Clock;
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use std::ops::Deref;
@@ -33,7 +33,7 @@ struct CliArgs
 
 fn main() -> ExitReason
 {
-    let app_run = AppRun::<CliArgs>::startup("3L14");
+    let app_run = AppRun::<CliArgs>::startup("3L14", env!("CARGO_PKG_VERSION"));
     {
         #[cfg(debug_assertions)]
         let keep_alive = app_run.args.keep_alive_on_panic;
@@ -179,9 +179,13 @@ fn main() -> ExitReason
 
             if input.mouse().is_captured()
             {
-                const MOUSE_SCALE: f32 = 0.015;
-                let yaw = input.mouse().position_delta.x as f32 * MOUSE_SCALE; // left to right
-                let pitch = input.mouse().position_delta.y as f32 * MOUSE_SCALE; // down to up
+                // todo: apply slight curve to input scale
+                // TODO: scale by FOV
+                const MOUSE_SCALE: f32 = 0.005;
+                let md = input.mouse().position_delta;
+                let mdl = (md.length_squared() as f32).sqrt();
+                let yaw = (md.x as f32 * MOUSE_SCALE); // left to right
+                let pitch = (md.y as f32 * MOUSE_SCALE); // down to up
                 let roll = 0.0;
                 cam_transform.rotate(yaw, pitch, roll);
             }
@@ -211,13 +215,6 @@ fn main() -> ExitReason
             {
                 cam_transform.position += cam_transform.down() * speed;
             }
-            if kbd.is_press(KeyCode::Z)
-            {
-                let rounding = std::f32::consts::FRAC_PI_4;
-                let (axis, mut angle) = cam_transform.rotation.to_axis_angle();
-                angle = f32::round(angle / rounding) * rounding;
-                cam_transform.rotation = Quat::from_axis_angle(axis, angle);
-            }
             if kbd.is_press(KeyCode::X)
             {
                 cam_transform.rotation = Quat::IDENTITY;
@@ -228,6 +225,15 @@ fn main() -> ExitReason
                 cam.update_projection(cam.projection().clone(), 0.1, 50.0);
                 clip_camera = Some(cam);
             }
+
+            if let CameraProjection::Perspective { fov, aspect_ratio} = camera.projection()
+            {
+                let mut fov2 = *fov;
+                let is_zoomed = kbd.is_down(KeyCode::Z);
+                fov2 = Degrees(f32::lerp(fov.to_degrees_f32(), if is_zoomed { 30.0 } else { 90.0 }, frame_time.delta_time.as_secs_f32() * 5.0)).into();
+                camera.update_projection(CameraProjection::Perspective { fov: fov2, aspect_ratio: *aspect_ratio }, camera.near_clip(), camera.far_clip());
+            }
+
             camera.update_view(cam_transform.clone());
 
             obj_rot *= Quat::from_rotation_y(0.5 * frame_time.delta_time.as_secs_f32());
