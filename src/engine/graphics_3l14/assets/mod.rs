@@ -12,3 +12,6 @@ pub use model::*;
 
 pub mod geometry;
 pub use geometry::*;
+
+pub mod skeleton;
+pub use skeleton::*;

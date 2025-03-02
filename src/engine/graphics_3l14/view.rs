@@ -234,9 +234,10 @@ impl<'f> View<'f>
                 });
                 render_pass.set_bind_group(2, &mtl_bind_group, &[]);
 
-                render_pass.set_vertex_buffer(0, mesh.vertices.slice(0..));
-                render_pass.set_index_buffer(mesh.indices.slice(0..), mesh.index_format);
-                render_pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                // bind sub-buffers?
+                render_pass.set_vertex_buffer(0, draw.geometry.vertices.slice(..));
+                render_pass.set_index_buffer(draw.geometry.indices.slice(..), draw.geometry.index_format);
+                render_pass.draw_indexed(mesh.index_range.0..mesh.index_range.1, mesh.vertex_range.0 as i32, 0..1);
             }
         }
 
@@ -303,7 +304,7 @@ impl<'f> Draw<Arc<Model>> for View<'f>
             let textures = mtl.textures.iter().map(|t| t.payload().unwrap()).collect();
 
             let pipeline_hash = self.pipeline_cache.get_or_create(
-                &geo.meshes[mesh_index as usize],
+                &geo,
                 &mtl,
                 &vsh,
                 &psh,

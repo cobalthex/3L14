@@ -88,7 +88,7 @@ fn main() -> ExitReason
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        let model_key: AssetKey = 0x008000008dd00f81.into();
+        let model_key: AssetKey = 0x009000008dd00f81.into();
         let test_model = assets.load::<Model>(model_key);
 
         let mut camera = Camera::default();

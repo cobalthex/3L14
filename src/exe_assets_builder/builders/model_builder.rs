@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use glam::Vec3;
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use unicase::UniCase;
-use graphics_3l14::assets::{GeometryFile, GeometryFileMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat, VertexLayout};
+use graphics_3l14::assets::{GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat, VertexLayout};
 use math_3l14::{Sphere, AABB};
 use nab_3l14::utils::alloc_slice::alloc_u8_slice;
 use nab_3l14::utils::as_u8_array;
@@ -129,6 +129,11 @@ impl ModelBuilder
         let mut surfaces = Vec::new();
         let mut model_bounds_aabb = AABB::MAX_MIN;
 
+        let mut vertex_data = Vec::new();
+        let mut total_vertex_count = 0;
+        let mut index_data = Vec::new();
+        let mut total_index_count = 0;
+
         let vertex_layout = VertexLayout::StaticSimple; // TODO: figure out from model
 
         let mut model_bounds_sphere = Sphere::EMPTY;
@@ -149,8 +154,7 @@ impl ModelBuilder
             let mut tex_coords = prim_reader.read_tex_coords(0).map(|t| t.into_f32());
             let mut colors = prim_reader.read_colors(0).map(|c| c.into_rgba_u8());
 
-            let mut vertex_count = 0;
-            let mut vertex_data = Vec::new();
+            let mut mesh_vertex_count = 0;
             for pos in positions.into_iter()
             {
                 mesh_points.push(pos.into());
@@ -165,14 +169,13 @@ impl ModelBuilder
 
                 // TODO: byte order
                 vertex_data.write_all(unsafe { as_u8_array(&vertex) })?;
-                vertex_count += 1;
+                mesh_vertex_count += 1;
             };
 
             // TODO: create indices if missing
 
             let index_format;
-            let mut index_count = 0;
-            let mut indices = Vec::new();
+            let mut mesh_index_count = 0;
             match prim_reader.read_indices()
             {
                 None => todo!("Need to add create-index fallback support"),
@@ -186,8 +189,8 @@ impl ModelBuilder
                             index_format = IndexFormat::U16;
                             for i in u16s
                             {
-                                indices.write_all(&i.to_le_bytes())?;
-                                index_count += 1;
+                                index_data.write_all(&i.to_le_bytes())?;
+                                mesh_index_count += 1;
                             }
                         }
                         ReadIndices::U32(u32s) =>
@@ -195,8 +198,8 @@ impl ModelBuilder
                             index_format = IndexFormat::U32;
                             for i in u32s
                             {
-                                indices.write_all(&i.to_le_bytes())?;
-                                index_count += 1;
+                                index_data.write_all(&i.to_le_bytes())?;
+                                mesh_index_count += 1;
                             }
                         }
                     };
@@ -333,25 +336,24 @@ impl ModelBuilder
                 pshader_output.finish()?;
             }
 
-            let mesh_bounds = AABB::new(bb.min.into(), bb.max.into());
-            model_bounds_aabb.union_with(mesh_bounds);
+            let mesh_bounds_aabb = AABB::new(bb.min.into(), bb.max.into());
+            model_bounds_aabb.union_with(mesh_bounds_aabb);
 
             // TODO
-            let mesh_sphere = Sphere::new(Vec3::ZERO, f32::sqrt(2.0) / 2.0);//Sphere::from_points(&mesh_points);
+            let mesh_bounds_sphere = Sphere::new(Vec3::ZERO, 1.0);//Sphere::from_points(&mesh_points);
             mesh_points.clear();
-            model_bounds_sphere += mesh_sphere;
+            model_bounds_sphere += mesh_bounds_sphere;
 
-            meshes.push(GeometryFileMesh
+            meshes.push(GeometryMesh
             {
-                bounds_aabb: mesh_bounds,
-                bounds_sphere: mesh_sphere,
-                vertex_layout,
-                index_format,
-                vertex_count,
-                index_count,
-                vertices: vertex_data.into_boxed_slice(),
-                indices: indices.into_boxed_slice(),
+                bounds_aabb: mesh_bounds_aabb,
+                bounds_sphere: mesh_bounds_sphere,
+                vertex_range: (total_vertex_count, total_vertex_count + mesh_vertex_count),
+                index_range: (total_index_count, total_index_count + mesh_index_count),
             });
+
+            total_vertex_count += mesh_vertex_count;
+            total_index_count += mesh_index_count;
 
             surfaces.push(ModelFileSurface
             {
@@ -369,6 +371,10 @@ impl ModelBuilder
             {
                 bounds_aabb: model_bounds_aabb,
                 bounds_sphere: model_bounds_sphere,
+                vertex_layout,
+                vertices: vertex_data.into_boxed_slice(),
+                index_format: IndexFormat::U16,
+                indices: index_data.into_boxed_slice(),
                 meshes: meshes.into_boxed_slice(),
             })?;
             geom_output.finish()?

@@ -120,6 +120,7 @@ pub(super) struct RegisteredAssetType
     pub dealloc_fn: fn(UntypedAssetHandle),
 }
 
+// TODO: allow one lifecycler to own multiple asset types?
 #[derive(Default)]
 pub struct AssetLifecyclers
 {

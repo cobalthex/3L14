@@ -1,4 +1,4 @@
-use crate::assets::{GeometryMesh, Material, Shader, ShaderStage, VertexLayout};
+use crate::assets::{Geometry, Material, Shader, ShaderStage, VertexLayout};
 use crate::uniforms_pool::UniformsPool;
 use crate::{debug_label, Renderer};
 use debug_3l14::debug_gui::DebugGui;
@@ -63,7 +63,7 @@ impl PipelineCache
 
     pub fn get_or_create(
         &self,
-        geometry: &GeometryMesh,
+        geometry: &Geometry,
         material: &Material,
         vertex_shader: &Shader,
         pixel_shader: &Shader,

@@ -1,3 +1,4 @@
+use std::ops::Range;
 use crate::{debug_label, Renderer};
 use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use bitcode::{Decode, Encode};
@@ -6,8 +7,9 @@ use math_3l14::{Sphere, AABB};
 use proc_macros_3l14::Asset;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use egui::epaint::Vertex;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{Buffer, BufferUsages, VertexAttribute, VertexBufferLayout, VertexStepMode};
+use wgpu::{Buffer, BufferSlice, BufferUsages, VertexAttribute, VertexBufferLayout, VertexStepMode};
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode, Hash)]
@@ -75,22 +77,7 @@ impl From<IndexFormat> for wgpu::IndexFormat
             IndexFormat::U32 => wgpu::IndexFormat::Uint32,
         }
     }
-}
-
-// TODO: switch back to unified geo
-
-#[derive(Encode, Decode)]
-pub struct GeometryFileMesh
-{
-    pub bounds_aabb: AABB,
-    pub bounds_sphere: Sphere,
-    pub vertex_layout: VertexLayout,
-    pub index_format: IndexFormat,
-    pub vertex_count: u32,
-    pub index_count: u32,
-    pub vertices: Box<[u8]>,
-    pub indices: Box<[u8]>,
-}
+    }
 
 // TODO: use structured buffers, possibly non-interleaved
 // TODO: switch back to unified geo
@@ -98,22 +85,22 @@ pub struct GeometryFileMesh
 #[derive(Encode, Decode)]
 pub struct GeometryFile
 {
-    // note: it may be nice to split vertices into multiple buffers( p,n,t in one buffer, others in a second buffer)
     pub bounds_aabb: AABB,
     pub bounds_sphere: Sphere,
-    pub meshes: Box<[GeometryFileMesh]>,
+    pub vertex_layout: VertexLayout, // does it ever make sense for this to be per-mesh?
+    pub vertices: Box<[u8]>,
+    pub index_format: IndexFormat,
+    pub indices: Box<[u8]>,
+    pub meshes: Box<[GeometryMesh]>,
 }
 
+#[derive(Encode, Decode)]
 pub struct GeometryMesh
 {
-    pub bounds_aabb: AABB,
+    pub bounds_aabb: AABB, // note; these are untransformed
     pub bounds_sphere: Sphere,
-    pub vertex_layout: VertexLayout,
-    pub index_format: wgpu::IndexFormat,
-    pub vertex_count: u32,
-    pub index_count: u32,
-    pub vertices: Buffer,
-    pub indices: Buffer,
+    pub vertex_range: (u32, u32), // start, end
+    pub index_range: (u32, u32), // start, end
 }
 
 #[derive(Asset)]
@@ -121,6 +108,11 @@ pub struct Geometry
 {
     pub bounds_aabb: AABB, // note; these are untransformed
     pub bounds_sphere: Sphere,
+    pub vertex_layout: VertexLayout, // does it ever make sense for this to be per-mesh?
+    pub index_format: wgpu::IndexFormat,
+    // all meshes in this model are slices of this buffer
+    pub vertices: Buffer,
+    pub indices: Buffer,
     pub meshes: Box<[GeometryMesh]>,
 }
 
@@ -142,39 +134,33 @@ impl AssetLifecycler for GeometryLifecycler
     fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn std::error::Error>>
     {
         let mf = request.deserialize::<GeometryFile>()?;
-        let meshes = (&mf.meshes).iter().map(|mesh|
-        {
-            let vbuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
-            {
-                label: debug_label!(format!("{:?} vertices", request.asset_key).as_str()),
-                contents: &mesh.vertices,
-                usage: BufferUsages::VERTEX,
-            });
 
-            let ibuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
-            {
-                label: debug_label!(format!("{:?} indices", request.asset_key).as_str()),
-                contents: &mesh.indices,
-                usage: BufferUsages::INDEX,
-            });
-            GeometryMesh
-            {
-                bounds_aabb: mesh.bounds_aabb,
-                bounds_sphere: mesh.bounds_sphere,
-                vertex_layout: mesh.vertex_layout,
-                index_format: mesh.index_format.into(),
-                vertex_count: mesh.vertex_count,
-                index_count: mesh.index_count,
-                vertices: vbuffer,
-                indices: ibuffer,
-            }
+        let vbuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
+        {
+            label: debug_label!(format!("{:?} vertices", request.asset_key).as_str()),
+            contents: mf.vertices.as_ref(),
+            usage: BufferUsages::VERTEX,
+        });
+        let ibuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
+        {
+            label: debug_label!(format!("{:?} indices", request.asset_key).as_str()),
+            contents: mf.indices.as_ref(),
+            usage: BufferUsages::INDEX,
         });
 
         Ok(Geometry
         {
             bounds_aabb: mf.bounds_aabb,
             bounds_sphere: mf.bounds_sphere,
-            meshes: meshes.collect(),
+            vertex_layout: mf.vertex_layout,
+            index_format: match mf.index_format
+            {
+                IndexFormat::U16 => wgpu::IndexFormat::Uint16,
+                IndexFormat::U32 => wgpu::IndexFormat::Uint32,
+            },
+            vertices: vbuffer,
+            indices: ibuffer,
+            meshes: mf.meshes,
         })
     }
 }
