@@ -18,7 +18,7 @@ impl Sphere
 
     #[inline] #[must_use] pub fn center(&self) -> Vec3 { self.0.xyz() }
     #[inline] #[must_use] pub fn radius(&self) -> f32 { self.0.w }
-    #[inline] #[must_use] pub fn radius_sq(&self) -> f32 { self.0.w * self.0.w }
+    #[inline] #[must_use] pub fn radius_squared(&self) -> f32 { self.0.w * self.0.w }
 
     #[inline] #[must_use]
     pub fn expanded(self, add_radius: f32) -> Self
@@ -197,7 +197,7 @@ impl Intersects<Vec3> for Sphere
     fn get_intersection(&self, other: Vec3) -> Intersection
     {
         let dist = self.center().distance_squared(other);
-        if dist <= self.radius_sq()
+        if dist <= self.radius_squared()
         {
             Intersection::FullyContained
         }
@@ -305,7 +305,7 @@ mod tests
         let sphere = Sphere::new(Vec3::new(0.0, 2.0, 0.0), 5.0);
         assert_eq!(sphere.center(), Vec3::new(0.0, 2.0, 0.0));
         assert_eq!(sphere.radius(), 5.0);
-        assert_eq!(sphere.radius_sq(), 5.0 * 5.0);
+        assert_eq!(sphere.radius_squared(), 5.0 * 5.0);
     }
 
     #[test]

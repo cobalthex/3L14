@@ -1,6 +1,6 @@
 pub mod bytes_traits;
 
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 pub use bytes_traits::*;
 
 pub mod async_completion;
@@ -61,7 +61,7 @@ impl Display for FormatBinary
                 (self.bytes, "")
             }
         };
-        div.0.fmt(f)?;
+        Display::fmt(&div.0, f)?;
         if f.alternate() { f.write_str(" ")?; }
         f.write_str(div.1)
     }
@@ -112,3 +112,16 @@ impl<T> ShortTypeName for T
     }
 }
 
+pub struct NoOpDebug<T>(pub T);
+impl<T> Debug for NoOpDebug<T>
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { f.write_str(T::short_type_name()) }
+}
+impl<T> AsRef<T> for NoOpDebug<T>
+{
+    fn as_ref(&self) -> &T { &self.0 }
+}
+impl<T> AsMut<T> for NoOpDebug<T>
+{
+    fn as_mut(&mut self) -> &mut T { &mut self.0 }
+}

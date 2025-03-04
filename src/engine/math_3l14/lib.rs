@@ -18,3 +18,6 @@ pub use frustum::*;
 
 mod geometry_tests;
 pub use geometry_tests::*;
+
+mod dual_quat;
+pub use dual_quat::*;
