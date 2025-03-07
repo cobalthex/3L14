@@ -89,6 +89,12 @@ impl DualQuat
             dual: -(self.dual * real_inv),
         }
     }
+
+    #[inline] #[must_use]
+    pub fn dot(&self, other: &Self) -> f32
+    {
+        self.real.dot(other.real) + self.real.dot(other.dual) + self.dual.dot(other.real)
+    }
 }
 impl From<&Mat4> for DualQuat
 {
@@ -142,11 +148,11 @@ impl Add<DualQuat> for DualQuat
 #[cfg(test)]
 mod tests
 {
-    use approx::assert_relative_eq;
+    use approx::{assert_relative_eq, assert_relative_ne};
     use super::*;
 
     #[test]
-    pub fn create_extract()
+    fn create_extract()
     {
         let r = Quat::from_rotation_y(0.345);
         let t = Vec3::new(1.0, 2.0, 3.0);
@@ -157,5 +163,38 @@ mod tests
         assert_relative_eq!(dq.translation(), t);
     }
 
-    // TODO: multiply, add, conjugate, length, normalization, inverse
+    #[test]
+    fn simple_normalize()
+    {
+        let dq = DualQuat
+        {
+            real: Quat::from_xyzw(1.0, 2.0, 3.0, 4.0),
+            dual: Quat::from_xyzw(0.5, 1.0, 1.5, 2.0),
+        };
+
+        assert_relative_eq!(dq.simple_length(), dq.real.length());
+        assert_relative_ne!(dq.true_length(), dq.real.length());
+
+        let dq_n = dq.simple_normalized();
+        assert_relative_eq!(dq_n.simple_length(), 1.0);
+        assert_relative_ne!(dq_n.true_length(), 1.0);
+    }
+
+    #[test]
+    fn true_normalize()
+    {
+        let dq = DualQuat
+        {
+            real: Quat::from_xyzw(1.0, 2.0, 3.0, 4.0),
+            dual: Quat::from_xyzw(0.5, 1.0, 1.5, 2.0),
+        };
+
+        assert_relative_eq!(dq.true_length(), 8.215838); // determine mathematically?
+
+        let dq_n = dq.true_normalized();
+        assert_relative_eq!(dq_n.simple_length(), 1.0);
+        assert_relative_eq!(dq_n.true_length(), 1.0);
+    }
+
+    // TODO: multiply, add, conjugate, length, inverse, dot
 }
