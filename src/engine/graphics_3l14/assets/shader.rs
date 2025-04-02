@@ -22,7 +22,7 @@ pub enum ShaderStage
     Compute,
 }
 
-#[derive(Encode, Decode)]
+#[derive(Encode, Decode, Debug)]
 pub struct ShaderFile
 {
     pub stage: ShaderStage,
@@ -58,7 +58,8 @@ impl AssetLifecycler for ShaderLifecycler
     {
         let shader_file: ShaderFile = request.deserialize()?;
 
-        let module = match cfg!(load_shaders_direct) &&
+        let module = match
+            cfg!(feature = "load_shaders_directly") &&
             self.renderer.supports_feature(wgpu::Features::SPIRV_SHADER_PASSTHROUGH)
         {
             true => unsafe

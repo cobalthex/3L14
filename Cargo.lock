@@ -1254,6 +1254,7 @@ dependencies = [
  "futures",
  "glam",
  "input_3l14",
+ "log",
  "math_3l14",
  "metrohash",
  "nab_3l14",

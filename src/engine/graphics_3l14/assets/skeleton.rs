@@ -1,11 +1,11 @@
-use std::sync::Arc;
-use bitcode::{Decode, Encode};
-use egui::Ui;
-use asset_3l14::{AssetLifecycler, AssetLoadRequest};
-use debug_3l14::debug_gui::DebugGui;
-use proc_macros_3l14::Asset;
-use crate::assets::{Geometry, GeometryLifecycler};
 use crate::Renderer;
+use asset_3l14::{AssetLifecycler, AssetLoadRequest};
+use bitcode::{Decode, Encode};
+use debug_3l14::debug_gui::DebugGui;
+use egui::Ui;
+use proc_macros_3l14::Asset;
+use std::sync::Arc;
+use wgpu::Buffer;
 
 #[derive(Encode, Decode)]
 pub struct SkeletonFile
@@ -17,7 +17,8 @@ pub struct SkeletonFile
 #[derive(Asset)]
 pub struct Skeleton
 {
-
+    pub joints: Buffer,
+    pub weights: Buffer,
 }
 
 pub struct SkeletonLifecycler

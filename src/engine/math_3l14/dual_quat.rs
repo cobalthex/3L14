@@ -1,4 +1,4 @@
-use std::ops::{Add, Mul};
+use std::ops::{Add, Div, Mul};
 use bitcode::{Decode, Encode};
 use glam::{Mat4, Quat, Vec3};
 
@@ -22,6 +22,11 @@ impl DualQuat
 
     #[inline] #[must_use] pub fn rotation(&self) -> Quat { self.real }
     #[inline] #[must_use] pub fn translation(&self) -> Vec3 { 2.0 * (self.dual * self.real.conjugate()).xyz() }
+
+    #[inline] #[must_use]
+    pub fn transform_vector3(&self, direction: Vec3) -> Vec3 { self.rotation() * direction }
+    #[inline] #[must_use]
+    pub fn transform_point3(&self, point: Vec3) -> Vec3 { self.rotation() * point + self.translation() }
 
     #[inline] #[must_use] pub fn simple_length(&self) -> f32 { self.real.length() }
     #[inline] #[must_use] pub fn simple_length_squared(&self) -> f32 { self.real.length_squared() }
@@ -104,7 +109,6 @@ impl From<&Mat4> for DualQuat
         Self::new(rotation, translation)
     }
 }
-
 impl Mul<DualQuat> for DualQuat
 {
     type Output = DualQuat;
@@ -115,6 +119,21 @@ impl Mul<DualQuat> for DualQuat
         {
             real: self.real * rhs.real,
             dual: self.real * rhs.dual + self.dual * rhs.real,
+        }
+    }
+}
+impl Div<DualQuat> for DualQuat
+{
+    type Output = DualQuat;
+
+    // TODO: verify
+    fn div(self, rhs: DualQuat) -> Self::Output
+    {
+        let den = (rhs.real * rhs.real).inverse();
+        Self::Output
+        {
+            real: (self.real * rhs.real) * den,
+            dual: (rhs.real * self.dual - self.real * rhs.dual) * den,
         }
     }
 }
@@ -195,6 +214,22 @@ mod tests
         assert_relative_eq!(dq_n.simple_length(), 1.0);
         assert_relative_eq!(dq_n.true_length(), 1.0);
     }
+
+    #[test]
+    fn transforms()
+    {
+        let r = Quat::from_rotation_y(1.345);
+        let t = Vec3::new(1.0, 40.0, 3.0);
+
+        let m = Mat4::from_rotation_translation(r, t);
+        let dq = DualQuat::new(r, t);
+
+        let test = Vec3::new(10.0, 3.032, 8.5);
+
+        assert_relative_eq!(m.transform_vector3(test), dq.transform_vector3(test));
+        assert_relative_eq!(m.transform_point3(test), dq.transform_point3(test));
+    }
+
 
     // TODO: multiply, add, conjugate, length, inverse, dot
 }

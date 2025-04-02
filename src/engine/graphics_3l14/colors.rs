@@ -1,3 +1,4 @@
+use std::ops::BitXor;
 use bitcode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use crate::colors;
@@ -180,8 +181,23 @@ impl From<Rgba> for wgpu::Color
         }
     }
 }
+impl BitXor for Rgba
+{
+    type Output = Self;
+    fn bitxor(self, rhs: Self) -> Self::Output
+    {
+        Self
+        {
+            red: self.red ^ rhs.red,
+            green: self.green ^ rhs.green,
+            blue: self.blue ^ rhs.blue,
+            alpha: self.alpha ^ rhs.alpha,
+        }
+    }
+}
 
 pub const TRANSPARENT_BLACK: Rgba = Rgba { red: 0, green: 0, blue: 0, alpha: 0 };
+pub const TRANSPARENT_WHITE: Rgba = Rgba { red: 255, green: 255, blue: 255, alpha: 0 };
 pub const BLACK: Rgba = Rgba { red: 0, green: 0, blue: 0, alpha: 255 };
 pub const WHITE: Rgba = Rgba { red: 255, green: 255, blue: 255, alpha: 255 };
 pub const GRAY: Rgba = Rgba { red: 144, green: 144, blue: 144, alpha: 255 };
@@ -195,3 +211,4 @@ pub const CORNFLOWER_BLUE: Rgba = Rgba { red: 100, green: 149, blue: 237, alpha:
 pub const GOOD_PURPLE: Rgba = Rgba { red: 64, green: 72, blue: 255, alpha: 255 };
 pub const BAD_RED: Rgba = Rgba { red: 102, green: 6, blue: 32, alpha: 255 };
 pub const TOMATO: Rgba = Rgba { red: 255, green: 99, blue: 71, alpha: 255 };
+pub const LIME: Rgba = Rgba { red: 200, green: 255, blue: 0, alpha: 255 };

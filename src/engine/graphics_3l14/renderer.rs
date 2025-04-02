@@ -17,10 +17,10 @@ use nab_3l14::core_types::FrameNumber;
 pub const MAX_CONSECUTIVE_FRAMES: usize = 3;
 
 #[macro_export]
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug_gpu_labels")]
 macro_rules! debug_label { ($label:expr) => { Some($label) }; }
 #[macro_export]
-#[cfg(not(debug_assertions))]
+#[cfg(not(feature = "debug_gpu_labels"))]
 macro_rules! debug_label { ($label:expr) => { None }; } // check for/mitigate dead code warnings?
 
 struct RenderFrameData
@@ -78,6 +78,11 @@ impl Renderer
     {
         puffin::profile_function!();
 
+        #[cfg(debug_assertions)]
+        log::debug!("Enabled features:\n\tDebug GPU labels: {}\n\tLoad shaders directly: {}",
+            cfg!(feature = "debug_gpu_labels)"),
+            cfg!(feature = "load_shaders_directly"));
+
         let allow_msaa = true; // should be in some settings somewhere
 
         let bin_dir = std::env::current_exe().ok().map(|mut p| { p.pop(); p });
@@ -114,7 +119,7 @@ impl Renderer
                     | Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
                     | Features::PUSH_CONSTANTS
                     | Features::VERTEX_WRITABLE_STORAGE
-                    | (if cfg!(load_shaders_direct) { Features::SPIRV_SHADER_PASSTHROUGH } else { Features::empty() })
+                    | (if cfg!(feature = "load_shaders_directly") { Features::SPIRV_SHADER_PASSTHROUGH } else { Features::empty() })
                     ,
                 // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
                 required_limits: Limits

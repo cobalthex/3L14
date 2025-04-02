@@ -1,4 +1,3 @@
-use std::ops::Range;
 use crate::{debug_label, Renderer};
 use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use bitcode::{Decode, Encode};
@@ -7,9 +6,8 @@ use math_3l14::{Sphere, AABB};
 use proc_macros_3l14::Asset;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use egui::epaint::Vertex;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{Buffer, BufferSlice, BufferUsages, VertexAttribute, VertexBufferLayout, VertexStepMode};
+use wgpu::{Buffer, BufferUsages, VertexAttribute, VertexBufferLayout, VertexStepMode};
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode, Hash)]

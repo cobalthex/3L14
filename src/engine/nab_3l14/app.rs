@@ -92,8 +92,16 @@ impl<TCliArgs: CliArgs> AppRun<TCliArgs>
         colog::basic_builder()
             .filter_level(default_log_levels.0)
             .filter_module(app_crate, default_log_levels.1)
-            // TODO: all 3L14 crates
             .filter_module(crate_name::<Self>(), default_log_levels.1)
+            // TODO: automate this
+            .filter_module("asset_3l14", default_log_levels.1)
+            .filter_module("containers_3l14", default_log_levels.1)
+            .filter_module("debug_3l14", default_log_levels.1)
+            .filter_module("graphics_3l14", default_log_levels.1)
+            .filter_module("input_3l14", default_log_levels.1)
+            .filter_module("math_3l14", default_log_levels.1)
+            .filter_module("nab_3l14", default_log_levels.1)
+            .filter_module("world_3l14", default_log_levels.1)
             .parse_default_env()
             .init();
 

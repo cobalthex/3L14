@@ -6,7 +6,7 @@ edition.workspace = true
 
 [features]
 debug_gpu_labels = []
-load_shaders_direct = [] # requires API support too
+load_shaders_directly = [] # requires API support too
 
 [lib]
 path = "lib.rs"
@@ -33,3 +33,4 @@ arc-swap.workspace = true
 #egui_wgpu_backend.workspace = true
 egui-wgpu.workspace = true
 futures.workspace = true
+log.workspace = true

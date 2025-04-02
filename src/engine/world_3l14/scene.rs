@@ -21,13 +21,27 @@ impl<T> SpatialMap<T>
     }
 }
 
+#[derive(Default)] // temp?
+struct Statics
+{
+    geo: Vec<AssetHandle<Model>>,
+    lights: Vec<Light>,
+}
+
 pub struct Scene
 {
-    pub static_geo: Vec<AssetHandle<Model>>,
+    statics: Statics,
+    
 }
 impl Scene
 {
-
+    pub fn new() -> Self
+    {
+        Self
+        {
+            statics: Statics::default(),
+        }
+    }
 }
 
 pub enum Light

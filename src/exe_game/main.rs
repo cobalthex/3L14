@@ -286,13 +286,22 @@ fn main() -> ExitReason
                         let view = &mut views[frame_number.0 as usize % views.len()];
                         view.begin(frame_time.total_runtime, &camera, clip_camera.as_ref().unwrap_or(&camera), DebugMode::None);
 
+                        debug_draw.draw_solid_cube(Mat4::IDENTITY, colors::RED);
+                        debug_draw.draw_wire_cube(Mat4::IDENTITY, colors::YELLOW);
+
+                        debug_draw.draw_solid_cone(Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0)), colors::GOOD_PURPLE);
+                        debug_draw.draw_wire_cone(Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0)), colors::MAGENTA);
+
+                        debug_draw.draw_solid_sphere(Mat4::from_translation(Vec3::new(-3.0, 0.0, 0.0)), colors::LIME);
+                        debug_draw.draw_wire_sphere(Mat4::from_translation(Vec3::new(-3.0, 0.0, 0.0)), colors::GREEN);
+
                         if let AssetPayload::Available(model) = test_model.payload()
                         {
                             if model.all_dependencies_loaded()
                             {
                                 let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(25.0, 0.0, 0.0));
                                 view.draw(obj_world, model.clone());
-                                debug_draw.draw_wire_box(obj_world, colors::WHITE);
+                                debug_draw.draw_wire_cube(obj_world, colors::WHITE);
 
                                 let geo = model.geometry.payload().unwrap();
                                 let sp_txfm = obj_world * Mat4::from_scale(Vec3::splat(geo.bounds_sphere.radius()));
@@ -300,7 +309,7 @@ fn main() -> ExitReason
 
                                 obj_world = Mat4::from_rotation_translation(obj_rot.inverse(), Vec3::new(-5.0, 0.0, -2.0));
                                 view.draw(obj_world, model);
-                                debug_draw.draw_wire_box(obj_world, colors::WHITE);
+                                debug_draw.draw_wire_cube(obj_world, colors::WHITE);
                             }
                         }
 
@@ -352,7 +361,9 @@ fn main() -> ExitReason
             }
         }
     }
-    
+
+    std::thread::sleep(Duration::from_micros(10)); // allow logs to flush -- TEMP
+
     drop(renderer);
     drop(windows);
     drop(assets);

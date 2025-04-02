@@ -233,18 +233,15 @@ impl AssetsStorage
                                     .expect("Unsupported asset type!"); // this should fail in load()
 
                                 let asset_file_path = self.asset_key_to_file_path(inner.key());
-                                let reader = match Self::open_asset_from_file(asset_file_path)
+                                match Self::open_asset_from_file(asset_file_path)
                                 {
-                                    Ok(read) => read,
+                                    Ok(read) => lifecycler.load_untyped(self.clone(), untyped_handle, Box::new(read)),
                                     Err(err) =>
                                     {
-                                        log::warn!("Failed to read asset file {:?}: {err}", self.asset_key_to_file_path(inner.key()));
+                                        log::warn!("Failed to read {:?} asset file {:?}: {err}", inner.asset_type(), self.asset_key_to_file_path(inner.key()));
                                         lifecycler.error_untyped(untyped_handle, AssetLoadError::Fetch);
-                                        return;
                                     }
                                 };
-
-                                lifecycler.load_untyped(self.clone(), untyped_handle, Box::new(reader));
                             },
                             AssetLifecycleRequest::LoadFromMemory(untyped_handle, reader) =>
                             {

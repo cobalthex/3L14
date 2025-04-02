@@ -1,9 +1,11 @@
+use std::fmt::{Debug, Formatter};
 use std::error::Error;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use graphics_3l14::assets::ShaderStage;
 use hassle_rs::{Dxc, DxcCompiler, DxcIncludeHandler, DxcLibrary, DxcValidator, Dxil, HassleError};
 use parking_lot::Mutex;
+use nab_3l14::utils::ShortTypeName;
 
 pub struct ShaderCompilation<'s>
 {
@@ -13,6 +15,19 @@ pub struct ShaderCompilation<'s>
     pub debug: bool,
     pub emit_symbols: bool,
     pub defines: Vec<(&'s str, Option<&'s str>)>,
+}
+impl<'s> Debug for ShaderCompilation<'s>
+{
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error>
+    {
+        fmt.debug_struct(Self::short_type_name())
+            .field("filename", &self.filename)
+            .field("stage", &self.stage)
+            .field("debug", &self.debug)
+            .field("emit_symbols", &self.emit_symbols)
+            .field("defines", &self.defines)
+            .finish()
+    }
 }
 
 // shader feature flags (turn into constants)
@@ -72,14 +87,12 @@ impl ShaderCompiler
         })
     }
 
-    pub fn compile_hlsl(&self, output: &mut impl Write, compilation: ShaderCompilation) -> Result<usize, Box<dyn Error>>
+    pub fn compile_hlsl(&self, output: &mut impl Write, mut compilation: ShaderCompilation) -> Result<usize, Box<dyn Error>>
     {
         // note: mut self only needed for include header, can split out if necessary
 
         let entry_point = compilation.stage.entry_point();
         let profile = format!("{}_6_0", compilation.stage.prefix().expect("Shader stage does not have a profile prefix!"));
-
-        let mut defines = compilation.defines;
 
         let mut dxc_args = vec![
             "-spirv", // emit Spir-V
@@ -88,7 +101,7 @@ impl ShaderCompiler
 
         if compilation.debug
         {
-            defines.push(("DEBUG", Some("1")));
+            compilation.defines.push(("DEBUG", Some("1")));
             dxc_args.push("-Od");
         }
 
@@ -109,6 +122,8 @@ impl ShaderCompiler
         let mut includer = self.includer.lock();
         let file_path = includer.shaders_root.join(compilation.filename);
 
+        log::debug!("[DXC] Compiling {:?} with arguments {:?}", compilation, dxc_args);
+
         let blob = self.dxc_library.create_blob_with_encoding_from_str(compilation.source_text).map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
 
         // todo: compile_with_debug
@@ -119,7 +134,7 @@ impl ShaderCompiler
             &profile,
             &dxc_args,
             Some(&mut *includer),
-            &defines,
+            &compilation.defines,
         )
         {
             Err(result) =>
@@ -138,6 +153,7 @@ impl ShaderCompiler
         let blob_encoding = self.dxc_library.create_blob_with_encoding(&spirv).map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
 
         let module = spirv;
+
         // TODO: currently broken
         // let module = match self.dxc_validator.validate(blob_encoding.into())
         // {
@@ -150,6 +166,7 @@ impl ShaderCompiler
         //     }
         // }.map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
         output.write_all(&module)?;
+
         Ok(module.len())
     }
 }

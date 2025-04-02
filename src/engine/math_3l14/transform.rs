@@ -1,5 +1,5 @@
 use glam::{Mat4, Quat, Vec3};
-
+use crate::DualQuat;
 // TODO: Vec3A?
 
 pub const WORLD_RIGHT: Vec3 = Vec3 { x: 1.0, y: 0.0, z: 0.0 };
@@ -85,6 +85,13 @@ impl Transform
 
     #[inline] #[must_use]
     pub fn to_world_mtx(&self) -> Mat4 { Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position) }
+
+    // Ignores scale
+    #[inline] #[must_use]
+    pub fn to_dual_quat(&self) -> DualQuat
+    {
+        DualQuat::new(self.rotation, self.position)
+    }
 }
 
 impl From<(Vec3, Quat, Vec3)> for Transform

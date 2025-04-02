@@ -18,3 +18,4 @@ pub mod uniforms_pool;
 pub mod debug_draw;
 
 pub mod camera;
+pub mod dynamic_geo;
