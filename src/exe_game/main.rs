@@ -14,7 +14,7 @@ use graphics_3l14::windows::Windows;
 use graphics_3l14::{colors, render_passes, renderer, Renderer, Rgba};
 use input_3l14::{Input, KeyCode, KeyMods};
 use nab_3l14::app;
-use nab_3l14::app::{AppRun, ExitReason};
+use nab_3l14::app::{AppFolder, AppRun, ExitReason};
 use nab_3l14::core_types::{CompletionState, FrameNumber, ToggleState};
 use math_3l14::{Degrees, Frustum, Plane, Radians, Transform};
 use nab_3l14::timing::Clock;
@@ -67,6 +67,7 @@ fn main() -> ExitReason
 
     let assets_config = AssetsConfig
     {
+        assets_root: app_run.get_app_folder(AppFolder::Assets),
         enable_fs_watcher: cfg!(debug_assertions)
     };
     let assets = Assets::new(AssetLifecyclers::default()
@@ -88,7 +89,7 @@ fn main() -> ExitReason
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        let model_key: AssetKey = 0x009000008dd00f81.into();
+        let model_key: AssetKey = 0x009000007528b6e9.into();
         let test_model = assets.load::<Model>(model_key);
 
         let mut camera = Camera::default();

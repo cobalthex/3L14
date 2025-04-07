@@ -7,13 +7,14 @@ use metrohash::MetroHash64;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use glam::Vec3;
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use unicase::UniCase;
-use graphics_3l14::assets::{GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat, VertexLayout};
+use graphics_3l14::assets::{GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat};
+use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl};
 use math_3l14::{Sphere, AABB};
 use nab_3l14::utils::alloc_slice::alloc_u8_slice;
 use nab_3l14::utils::as_u8_array;
@@ -24,18 +25,11 @@ struct ShaderHash
 {
     stage: ShaderStage,
     material_class: MaterialClass,
-    vertex_layout: VertexLayout,
+    vertex_layout_hash: u64, // all the layouts used hashed together
     // custom file name
 }
 
-#[repr(C)]
-struct StaticSimpleVertex
-{
-    position: [f32; 3],
-    normal: [f32; 3],
-    tex_coord: [f32; 2],
-    color: [u8; 4],
-}
+// bit flags for which vertex types are avail?
 
 #[derive(Debug)]
 pub enum ModelImportError
@@ -110,9 +104,9 @@ impl AssetBuilder for ModelBuilder
             let buffers =  gltf::import_buffers(&document, None, blob)?;
             let images = gltf::import_images(&document, None, &buffers)?;
 
-            for gltf_mesh in document.meshes()
+            for gltf_node in document.nodes()
             {
-                self.parse_gltf(gltf_mesh, &buffers, &images, outputs)?;
+                self.parse_gltf(gltf_node   , &buffers, &images, outputs)?;
             }
         }
 
@@ -121,20 +115,39 @@ impl AssetBuilder for ModelBuilder
 }
 impl ModelBuilder
 {
-    fn parse_gltf(&self, in_mesh: gltf::Mesh, buffers: &Vec<gltf::buffer::Data>, images: &Vec<gltf::image::Data>, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn parse_gltf(&self, in_node: gltf::Node, buffers: &Vec<gltf::buffer::Data>, images: &Vec<gltf::image::Data>, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
+        // pass in node?
+        let Some(in_mesh) = in_node.mesh() else { return Ok(()); };
+        let in_skin = in_node.skin();
+
         let mut model_output = outputs.add_output(AssetTypeId::Model)?;
 
         let mut meshes = Vec::new();
         let mut surfaces = Vec::new();
         let mut model_bounds_aabb = AABB::MAX_MIN;
 
-        let mut vertex_data = Vec::new();
+        // TODO: split up this file
+        // TODO: rethink vertex parsing
+
+        let mut static_vertex_data = Vec::new();
+        let mut skinned_vertex_data = Vec::new();
         let mut total_vertex_count = 0;
         let mut index_data = Vec::new();
         let mut total_index_count = 0;
 
-        let vertex_layout = VertexLayout::StaticSimple; // TODO: figure out from model
+        let vertex_layout_hash =
+        {
+            let mut hasher = MetroHash64::new();
+            StaticVertex::layout().hash(&mut hasher);
+            // TODO: verify vertex data is available
+            // TODO: perhaps generate VertexLayout and have it hash
+            if in_skin.is_some()
+            {
+                StaticVertex::layout().hash(&mut hasher);
+            }
+            hasher.finish()
+        };
 
         let mut model_bounds_sphere = Sphere::EMPTY;
 
@@ -159,20 +172,48 @@ impl ModelBuilder
             {
                 mesh_points.push(pos.into());
 
-                let vertex = StaticSimpleVertex
+                // todo: verify matching attrib counts?
+                let static_vertex = StaticVertex
                 {
                     position: pos,
                     normal: normals.as_mut().and_then(|mut r| r.next()).unwrap_or([0.0, 0.0, 1.0]),
                     tex_coord: tex_coords.as_mut().and_then(|mut r| r.next()).unwrap_or([0.0, 0.0]),
                     color: colors.as_mut().and_then(|mut r| r.next()).unwrap_or([u8::MAX, u8::MAX, u8::MAX, u8::MAX]),
                 };
-
-                // TODO: byte order
-                vertex_data.write_all(unsafe { as_u8_array(&vertex) })?;
+                static_vertex_data.write_all(unsafe { as_u8_array(&static_vertex) })?;
                 mesh_vertex_count += 1;
             };
 
-            // TODO: create indices if missing
+            if in_skin.is_some()
+            {
+                let mut maybe_joints = prim_reader.read_joints(0);
+                let mut maybe_weights = prim_reader.read_weights(0);
+                if maybe_joints.is_none() || maybe_weights.is_none()
+                {
+                    log::warn!("gLTF node '{}' (#{}) has a skin but no bone influence data",
+                        in_node.name().unwrap_or_default(),
+                        in_node.index());
+                }
+                else
+                {
+                    // TODO: make sure vertex counts match
+                    let mut joints = maybe_joints.unwrap().into_u16();
+                    let mut weights = maybe_weights.unwrap().into_f32();
+                    for joint in joints
+                    {
+                        // todo: verify matching attrib counts?
+                        let skinned_vertex = SkinnedVertex
+                        {
+                            indices: joint,
+                            weights: weights.next().unwrap_or([0.0, 0.0, 0.0, 0.0]),
+                        };
+
+                        skinned_vertex_data.write_all(unsafe { as_u8_array(&skinned_vertex) })?;
+                    }
+                }
+            }
+
+            // TODO: create indices if missing (?)
 
             let index_format;
             let mut mesh_index_count = 0;
@@ -272,7 +313,7 @@ impl ModelBuilder
             {
                 stage: ShaderStage::Vertex,
                 material_class,
-                vertex_layout,
+                vertex_layout_hash,
             });
             const FORCE_BUILD_SHADERS: bool = true;
             if let Some(mut vshader_output) = outputs.add_synthetic(AssetTypeId::Shader, vertex_shader_key, FORCE_BUILD_SHADERS)?
@@ -307,7 +348,7 @@ impl ModelBuilder
             {
                 stage: ShaderStage::Pixel,
                 material_class,
-                vertex_layout,
+                vertex_layout_hash,
             });
             if let Some(mut pshader_output) = outputs.add_synthetic(AssetTypeId::Shader, pixel_shader_key, FORCE_BUILD_SHADERS)?
             {
@@ -371,8 +412,8 @@ impl ModelBuilder
             {
                 bounds_aabb: model_bounds_aabb,
                 bounds_sphere: model_bounds_sphere,
-                vertex_layout,
-                vertices: vertex_data.into_boxed_slice(),
+                static_vertices: static_vertex_data.into_boxed_slice(),
+                skinned_vertices: if skinned_vertex_data.len() > 0 { Some(skinned_vertex_data.into_boxed_slice()) } else { None },
                 index_format: IndexFormat::U16,
                 indices: index_data.into_boxed_slice(),
                 meshes: meshes.into_boxed_slice(),

@@ -46,7 +46,7 @@ mod flags_tests
     use proc_macros_3l14::Flags;
 
     #[repr(u8)]
-    #[derive(Flags, Copy, Clone)]
+    #[derive(Flags)]
     pub enum BasicEnum
     {
         A = 1,
@@ -56,13 +56,13 @@ mod flags_tests
     }
 
     #[repr(u8)]
-    #[derive(Flags, Copy, Clone)]
+    #[derive(Flags, Debug)]
     pub enum FlagEnum
     {
-        A = 0b0001,
-        B = 0b0010,
-        C = 0b0100,
-        D = 0b1000,
+        A = 0b000001,
+        B = 0b000010,
+        C = 0b000100,
+        D = 0b100000,
     }
 
     #[test]
@@ -81,8 +81,18 @@ mod flags_tests
         assert!(!flags.has_flag(FlagEnum::C));
 
         assert!(FlagEnum::all_flags().has_flag(FlagEnum::A | FlagEnum::B | FlagEnum::C | FlagEnum::D));
-        assert_eq!(FlagEnum::all_flags() as u8, 0b1111);
-        assert_eq!(FlagEnum::bits_used(), 4);
+        assert_eq!(FlagEnum::all_flags() as u8, 0b100111);
+        assert_eq!(FlagEnum::bits_used(), 6);
+    }
+
+    #[test]
+    fn iterating()
+    {
+        let flags = FlagEnum::B | FlagEnum::D;
+        let mut iter = flags.iter_set_flags();
+        assert_eq!(iter.next(), Some(FlagEnum::B));
+        assert_eq!(iter.next(), Some(FlagEnum::D));
+        assert_eq!(iter.next(), None);
     }
 }
 

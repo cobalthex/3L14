@@ -109,6 +109,7 @@ walkdir = "2.5.0"
 colog = "1.3.0"
 arrayvec = { version = "0.7.6", features = ["serde"] }
 intel_tex_2 = "0.4.0"
+directories = "6.0.0"
 
 [dev-dependencies]
 

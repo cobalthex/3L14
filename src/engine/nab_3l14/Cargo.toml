@@ -8,6 +8,7 @@ edition.workspace = true
 path = "lib.rs"
 
 [dependencies]
+proc_macros_3l14.workspace = true
 chrono.workspace = true
 clap.workspace = true
 log.workspace = true
@@ -19,3 +20,5 @@ parking_lot.workspace = true
 approx.workspace = true
 glam.workspace = true
 bitcode.workspace = true
+sdl2.workspace = true
+directories.workspace = true

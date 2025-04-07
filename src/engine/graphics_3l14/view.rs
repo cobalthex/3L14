@@ -235,7 +235,7 @@ impl<'f> View<'f>
                 render_pass.set_bind_group(2, &mtl_bind_group, &[]);
 
                 // bind sub-buffers?
-                render_pass.set_vertex_buffer(0, draw.geometry.vertices.slice(..));
+                render_pass.set_vertex_buffer(0, draw.geometry.static_vertices.slice(..));
                 render_pass.set_index_buffer(draw.geometry.indices.slice(..), draw.geometry.index_format);
                 render_pass.draw_indexed(mesh.index_range.0..mesh.index_range.1, mesh.vertex_range.0 as i32, 0..1);
             }

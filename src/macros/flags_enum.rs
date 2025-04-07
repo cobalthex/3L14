@@ -1,3 +1,4 @@
+use std::ops::{BitAnd, Shr};
 use proc_macro2::Ident;
 use quote::quote;
 use syn::{parse_macro_input, Attribute, Data, DeriveInput, Expr, ExprLit, Fields, Lit};
@@ -34,7 +35,6 @@ fn get_repr_size(attrs: &[Attribute]) -> Option<Ident>
             repr
         }).next()
 }
-
 
 pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 {
@@ -88,9 +88,32 @@ pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
             {
                 unsafe { ::std::mem::transmute(#known_values as #repr_size) }
             }
+            // The number of bits required to represent this enum, this includes unused bits in the middle (e.g. bits 1001 = 4 used)
             pub const fn bits_used() -> u8
             {
                 #bits_used
+            }
+
+            // iterate all the flags active in this enum
+            pub const fn iter_set_flags(self) -> ::nab_3l14::enum_helpers::FlagsEnumIter<Self>
+            {
+                ::nab_3l14::enum_helpers::FlagsEnumIter::new(self)
+            }
+        }
+        impl ::nab_3l14::enum_helpers::FlagsEnum<#type_name> for #type_name
+        {
+            #[inline] fn bits_used_trait() -> u8 { Self::bits_used() }
+            #[inline] fn get_flag_for_bit(self, bit: u8) -> Option<#type_name>
+            {
+                let val = (1 as #repr_size) << bit;
+                if ((self as #repr_size) & val) == val
+                {
+                    Some(unsafe { std::mem::transmute(val) })
+                }
+                else
+                {
+                    None
+                }
             }
         }
         impl ::std::ops::BitOr for #type_name
@@ -102,6 +125,13 @@ pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
                 unsafe { ::std::mem::transmute(n) }
             }
         }
+        impl ::std::ops::BitOrAssign for #type_name
+        {
+            fn bitor_assign(&mut self, other: Self)
+            {
+                *self = (*self | other) as Self;
+            }
+        }
         impl ::std::ops::BitAnd for #type_name
         {
             type Output = Self;
@@ -111,6 +141,13 @@ pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
                 unsafe { ::std::mem::transmute(n) }
             }
         }
+        impl ::std::ops::BitAndAssign for #type_name
+        {
+            fn bitand_assign(&mut self, other: Self)
+            {
+                *self = (*self & other) as Self;
+            }
+        }
         impl ::std::ops::BitXor for #type_name
         {
             type Output = Self;
@@ -118,6 +155,13 @@ pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
             {
                 let n = (self as #repr_size) ^ (other as #repr_size);
                 unsafe { ::std::mem::transmute(n) }
+            }
+        }
+        impl ::std::ops::BitXorAssign for #type_name
+        {
+            fn bitxor_assign(&mut self, other: Self)
+            {
+                *self = (*self ^ other) as Self;
             }
         }
         impl ::std::ops::Not for #type_name
@@ -136,6 +180,17 @@ pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
                 other as Self
             }
         }
+        impl PartialEq for #type_name
+        {
+            fn eq(&self, other: &Self) -> bool { (*self as #repr_size) == (*other as #repr_size) }
+        }
+        impl Eq for #type_name { }
+        impl Clone for #type_name
+        {
+            fn clone(&self) -> Self { *self }
+        }
+        impl Copy for #type_name { }
+        // implement Ord/PartialOrd ?
     };
     expanded.into()
 }

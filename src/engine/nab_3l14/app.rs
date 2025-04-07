@@ -1,8 +1,22 @@
+use std::env::current_dir;
 use std::fmt::Debug;
 use std::io::Read;
+use std::panic::PanicHookInfo;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicI32, Ordering};
+use sdl2::messagebox::MessageBoxFlag;
+use proc_macros_3l14::FancyEnum;
 
+pub enum AppFolder
+{
+    Assets,
+    Cache,
+    PerMachineSettings,
+    PerUserSettings
+}
+
+// TODO: move out of here
 #[macro_export]
 macro_rules! iif_debug {
     ($a:expr, $b:expr) =>
@@ -42,22 +56,6 @@ where I: Iterator,
     out
 }
 
-#[derive(Debug)]
-#[repr(i32)]
-pub enum ExitReason
-{
-    Unset = !1, // this should never be set
-    NormalExit = 0,
-    Panic = -99,
-}
-impl std::process::Termination for ExitReason
-{
-    fn report(self) -> ExitCode
-    {
-        (self as u8).into()
-    }
-}
-
 pub trait CliArgs: clap::Parser + Debug { }
 impl<T: clap::Parser + Debug> CliArgs for T { }
 
@@ -77,6 +75,8 @@ pub struct AppRun<TCliArgs: CliArgs>
     pub args: TCliArgs,
     pub pid: u32,
     pub is_elevated: bool,
+
+    pub app_dir: PathBuf, // where the app exe is located (distinct from working dir)
 
     exit_reason: AtomicI32,
 }
@@ -105,6 +105,13 @@ impl<TCliArgs: CliArgs> AppRun<TCliArgs>
             .parse_default_env()
             .init();
 
+        let app_dir =
+        {
+            let mut path = std::env::current_exe().expect("Failed to get the bin dir");
+            path.pop();
+            path
+        };
+
         let app_run = Self
         {
             app_name,
@@ -113,6 +120,7 @@ impl<TCliArgs: CliArgs> AppRun<TCliArgs>
             args: TCliArgs::parse(),
             pid: std::process::id(),
             is_elevated: is_root::is_root(),
+            app_dir: app_dir,
             exit_reason: AtomicI32::new(ExitReason::NormalExit as i32),
         };
 
@@ -136,6 +144,20 @@ impl<TCliArgs: CliArgs> AppRun<TCliArgs>
     {
         unsafe { std::mem::transmute(self.exit_reason.load(Ordering::SeqCst)) }
     }
+
+    // Get the path to an app-specific folder
+    // Cache results where possible
+    pub fn get_app_folder(&self, folder: AppFolder) -> PathBuf
+    {
+        match folder
+        {
+            AppFolder::Assets => self.app_dir.join("assets"),
+            // todo: directories::project_dirs
+            AppFolder::Cache => todo!(),
+            AppFolder::PerMachineSettings => todo!(),
+            AppFolder::PerUserSettings => todo!(),
+        }
+    }
 }
 impl<TCliArgs: CliArgs> Drop for AppRun<TCliArgs>
 {
@@ -150,6 +172,48 @@ impl<TCliArgs: CliArgs> Drop for AppRun<TCliArgs>
     }
 }
 
+#[derive(Debug)]
+#[repr(i32)]
+pub enum ExitReason
+{
+    Unset = !1, // this should never be set
+    NormalExit = 0,
+    Panic = -99,
+}
+impl std::process::Termination for ExitReason
+{
+    fn report(self) -> ExitCode
+    {
+        (self as u8).into()
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Panic<'p>(&'p PanicHookInfo<'p>);
+impl From<Panic<'_>> for u16 { fn from(_: Panic<'_>) -> Self { 1u16 }  }
+impl Debug for Panic<'_>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result
+    {
+        // TODO: payload_as_str()
+        if let Some(payload_str) = self.0.payload().downcast_ref::<&str>()
+        {
+            f.write_fmt(format_args!("{payload_str}\n"));
+        }
+        else if let Some(payload_str) = self.0.payload().downcast_ref::<String>()
+        {
+            f.write_fmt(format_args!("{payload_str}\n"));
+        }
+
+        if let Some(location) = self.0.location()
+        {
+            Debug::fmt(&location, f)?
+        }
+
+        Ok(())
+    }
+}
+
 pub fn set_panic_hook(wait_for_exit: bool)
 {
     let default_panic_hook = std::panic::take_hook();
@@ -157,18 +221,38 @@ pub fn set_panic_hook(wait_for_exit: bool)
     std::panic::set_hook(Box::new(move |panic|
     {
         default_panic_hook(panic);
-        
-        if wait_for_exit
-        {
-            println!("<<< Press enter to exit >>>");
-            let _ = std::io::stdin().read(&mut [0u8]); // wait to exit
-        }
 
-        eprintln!("Exiting (PID {}) at {} with reason {:?}",
-                  std::process::id(),
-                  chrono::Local::now(),
-                  ExitReason::Panic);
-
-        std::process::exit(ExitReason::Panic as i32);
+        // todo: proper panic value?
+        fatal_error(FatalError::Panic, Panic(panic))
     }));
+}
+
+#[derive(FancyEnum, Clone, Copy, PartialEq)]
+pub enum FatalError
+{
+    #[enum_prop(short_name = "PNC")]
+    Panic = 0,
+    #[enum_prop(short_name = "MEM")]
+    Memory,
+}
+
+// TODO: perhaps this can generate the fatal_error from the calling crate
+// Exit the game with a fatal error,
+pub fn fatal_error(fatal_error: FatalError, code: impl Into<u16> + Debug + Copy) -> !
+{
+    let mut error_msg = format!("{}-{:04X}", fatal_error.short_name().unwrap(), code.into());
+    if cfg!(debug_assertions)
+    {
+        error_msg.push_str(&format!("\n\n{:#?}", code));
+    }
+
+    eprintln!("!!! FATAL: {}", error_msg);
+    let _ = sdl2::messagebox::show_simple_message_box(MessageBoxFlag::ERROR, "Fatal Error!", &error_msg, None);
+
+    eprintln!("Exiting (PID {}) at {} with reason {:?}",
+              std::process::id(),
+              chrono::Local::now(),
+              ExitReason::Panic);
+
+    std::process::exit(ExitReason::Panic as i32)
 }

@@ -20,7 +20,7 @@ pub enum TextureType
 }
 
 #[repr(u8)]
-#[derive(Flags, Clone, Copy, PartialEq)]
+#[derive(Flags)]
 pub enum ChannelMapping
 {
     Red   = 0b0001,

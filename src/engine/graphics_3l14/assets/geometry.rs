@@ -3,59 +3,18 @@ use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
 use math_3l14::{Sphere, AABB};
-use proc_macros_3l14::Asset;
+use proc_macros_3l14::{Asset, Flags};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{Buffer, BufferUsages, VertexAttribute, VertexBufferLayout, VertexStepMode};
 
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode, Hash)]
+#[derive(Flags)]
+#[repr(u16)]
 pub enum VertexLayout
 {
-    StaticSimple,
-    DebugLines,
-}
-impl From<VertexLayout> for wgpu::VertexBufferLayout<'static>
-{
-    fn from(value: VertexLayout) -> Self
-    {
-        match value
-        {
-            VertexLayout::StaticSimple =>
-            {
-                const V_ATTRS: [VertexAttribute; 4] = wgpu::vertex_attr_array!
-                [
-                    0 => Float32x3, // position
-                    1 => Float32x3, // normal
-                    // tangent?
-                    2 => Float32x2, // texcoord 0
-                    3 => Uint32, // color 0
-                ];
-                VertexBufferLayout
-                {
-                    array_stride: V_ATTRS.iter().fold(0, |a, e| a + e.format.size()),
-                    step_mode: VertexStepMode::Vertex,
-                    attributes: &V_ATTRS,
-                }
-            },
-
-            VertexLayout::DebugLines =>
-            {
-                const V_ATTRS: [VertexAttribute; 2] = wgpu::vertex_attr_array!
-                [
-                    0 => Float32x4, // clip-space position
-                    1 => Uint32, // color 0
-                ];
-                VertexBufferLayout
-                {
-                    array_stride: V_ATTRS.iter().fold(0, |a, e| a + e.format.size()),
-                    step_mode: VertexStepMode::Vertex,
-                    attributes: &V_ATTRS,
-                }
-            }
-        }
-    }
+    Static      = 0b00000001,
+    Skinned     = 0b00000010,
 }
 
 #[repr(u8)]
@@ -75,7 +34,7 @@ impl From<IndexFormat> for wgpu::IndexFormat
             IndexFormat::U32 => wgpu::IndexFormat::Uint32,
         }
     }
-    }
+}
 
 // TODO: use structured buffers, possibly non-interleaved
 // TODO: switch back to unified geo
@@ -85,8 +44,8 @@ pub struct GeometryFile
 {
     pub bounds_aabb: AABB,
     pub bounds_sphere: Sphere,
-    pub vertex_layout: VertexLayout, // does it ever make sense for this to be per-mesh?
-    pub vertices: Box<[u8]>,
+    pub static_vertices: Box<[u8]>,
+    pub skinned_vertices: Option<Box<[u8]>>,
     pub index_format: IndexFormat,
     pub indices: Box<[u8]>,
     pub meshes: Box<[GeometryMesh]>,
@@ -106,10 +65,11 @@ pub struct Geometry
 {
     pub bounds_aabb: AABB, // note; these are untransformed
     pub bounds_sphere: Sphere,
-    pub vertex_layout: VertexLayout, // does it ever make sense for this to be per-mesh?
+    pub vertex_layout: VertexLayout,
     pub index_format: wgpu::IndexFormat,
     // all meshes in this model are slices of this buffer
-    pub vertices: Buffer,
+    pub static_vertices: Buffer,
+    pub skinned_vertices: Option<Buffer>,
     pub indices: Buffer,
     pub meshes: Box<[GeometryMesh]>,
 }
@@ -133,13 +93,25 @@ impl AssetLifecycler for GeometryLifecycler
     {
         let mf = request.deserialize::<GeometryFile>()?;
 
-        let vbuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
+        let mut vertex_layout = VertexLayout::Static;
+
+        let static_verts = self.renderer.device().create_buffer_init(&BufferInitDescriptor
         {
-            label: debug_label!(format!("{:?} vertices", request.asset_key).as_str()),
-            contents: mf.vertices.as_ref(),
+            label: debug_label!(format!("{:?} static vertices", request.asset_key).as_str()),
+            contents: mf.static_vertices.as_ref(),
             usage: BufferUsages::VERTEX,
         });
-        let ibuffer = self.renderer.device().create_buffer_init(&BufferInitDescriptor
+        let skinned_verts = if let Some(skinned_vertices) = mf.skinned_vertices.as_ref()
+        {
+            vertex_layout |= VertexLayout::Skinned;
+            Some(self.renderer.device().create_buffer_init(&BufferInitDescriptor
+            {
+                label: debug_label!(format!("{:?} skinned vertices", request.asset_key).as_str()),
+                contents: skinned_vertices,
+                usage: BufferUsages::VERTEX,
+            }))
+        } else { None };
+        let indices = self.renderer.device().create_buffer_init(&BufferInitDescriptor
         {
             label: debug_label!(format!("{:?} indices", request.asset_key).as_str()),
             contents: mf.indices.as_ref(),
@@ -150,14 +122,15 @@ impl AssetLifecycler for GeometryLifecycler
         {
             bounds_aabb: mf.bounds_aabb,
             bounds_sphere: mf.bounds_sphere,
-            vertex_layout: mf.vertex_layout,
+            vertex_layout,
             index_format: match mf.index_format
             {
                 IndexFormat::U16 => wgpu::IndexFormat::Uint16,
                 IndexFormat::U32 => wgpu::IndexFormat::Uint32,
             },
-            vertices: vbuffer,
-            indices: ibuffer,
+            static_vertices: static_verts,
+            skinned_vertices: skinned_verts,
+            indices,
             meshes: mf.meshes,
         })
     }

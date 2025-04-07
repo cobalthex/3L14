@@ -269,6 +269,7 @@ impl AssetsStorage
 
 pub struct AssetsConfig
 {
+    pub assets_root: PathBuf,
     pub enable_fs_watcher: bool,
 }
 impl AssetsConfig
@@ -276,7 +277,7 @@ impl AssetsConfig
     #[cfg(test)]
     pub fn test() -> Self
     {
-        Self { enable_fs_watcher: false }
+        Self { assets_root: PathBuf::from("TEST_DIR"), enable_fs_watcher: false }
     }
 }
 
@@ -308,12 +309,8 @@ impl Assets
 {
     pub fn new(asset_lifecyclers: AssetLifecyclers, config: AssetsConfig) -> Self
     {
-        let mut assets_root = std::env::current_exe().expect("Failed to get the bin dir");
-        assets_root.pop();
-        assets_root.push("assets"); // canonicalize?
-
         #[cfg(debug_assertions)]
-        log::debug!("Serving assets from {assets_root:?}");
+        log::debug!("Serving assets from {:?}", config.assets_root);
 
         // TODO: pqueue
 
@@ -326,7 +323,7 @@ impl Assets
             lifecycle_channel: lifecycle_send,
             notification_channel: unbounded::<AssetNotification>(),
 
-            assets_root,
+            assets_root: config.assets_root,
         });
 
 
