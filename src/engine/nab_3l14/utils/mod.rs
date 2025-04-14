@@ -100,7 +100,7 @@ pub trait ShortTypeName
 }
 impl<T> ShortTypeName for T
 {
-    #[inline]
+    #[inline] #[must_use]
     fn short_type_name() -> &'static str
     {
         let type_name = std::any::type_name::<T>();

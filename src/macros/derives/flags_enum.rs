@@ -2,6 +2,7 @@ use std::ops::{BitAnd, Shr};
 use proc_macro2::Ident;
 use quote::quote;
 use syn::{parse_macro_input, Attribute, Data, DeriveInput, Expr, ExprLit, Fields, Lit};
+use crate::has_derive::has_derive;
 
 fn get_repr_size(attrs: &[Attribute]) -> Option<Ident>
 {
@@ -52,12 +53,15 @@ pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 
     let mut known_values = 0u128;
 
+    let mut variant_names = Vec::new();
+
     for variant in variants
     {
-        let variant_name = &variant.ident;
+        let variant_ident = &variant.ident;
+        variant_names.push(quote!(Self::#variant_ident => stringify!(#variant_ident)));
 
         let Fields::Unit = variant.fields else { panic!("#[derive(Flags)]{type_name} must have unit variants only"); };
-        let Some((_, disc))  = &variant.discriminant else { panic!("{type_name} variant {variant_name} must have a discriminant"); };
+        let Some((_, disc))  = &variant.discriminant else { panic!("{type_name} variant {variant_ident} must have a discriminant"); };
 
         let Expr::Lit(ExprLit { lit: Lit::Int(int), .. }) = disc else { continue; };
         let Ok(n) = int.base10_parse::<u128>() else { continue; };
@@ -65,7 +69,6 @@ pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 
         known_values |= n;
     }
-
     // negative values don't seem to count towards size of enum...
 
     if known_values == 0
@@ -74,6 +77,9 @@ pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     }
 
     let bits_used = (u128::BITS - known_values.leading_zeros()) as u8;
+
+    // let found_debug_derive = has_derive("Debug", &derive.attrs);
+    // TODO: conditionally disable debug drive if already present? (or panic)
 
     let expanded = quote!
     {
@@ -86,7 +92,7 @@ pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
             }
             pub const fn all_flags() -> Self
             {
-                unsafe { ::std::mem::transmute(#known_values as #repr_size) }
+                unsafe { ::core::mem::transmute(#known_values as #repr_size) }
             }
             // The number of bits required to represent this enum, this includes unused bits in the middle (e.g. bits 1001 = 4 used)
             pub const fn bits_used() -> u8
@@ -102,13 +108,15 @@ pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
         }
         impl ::nab_3l14::enum_helpers::FlagsEnum<#type_name> for #type_name
         {
+            type Repr = #repr_size;
+
             #[inline] fn bits_used_trait() -> u8 { Self::bits_used() }
-            #[inline] fn get_flag_for_bit(self, bit: u8) -> Option<#type_name>
+            #[inline] fn get_flag_for_bit(self, bit: u8) -> ::core::option::Option<#type_name>
             {
                 let val = (1 as #repr_size) << bit;
                 if ((self as #repr_size) & val) == val
                 {
-                    Some(unsafe { std::mem::transmute(val) })
+                    Some(unsafe { ::core::mem::transmute(val) })
                 }
                 else
                 {
@@ -116,81 +124,120 @@ pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
                 }
             }
         }
-        impl ::std::ops::BitOr for #type_name
+        impl ::core::ops::BitOr for #type_name
         {
             type Output = Self;
             fn bitor(self, other: Self) -> Self::Output
             {
                 let n = (self as #repr_size) | (other as #repr_size);
-                unsafe { ::std::mem::transmute(n) }
+                unsafe { ::core::mem::transmute(n) }
             }
         }
-        impl ::std::ops::BitOrAssign for #type_name
+        impl ::core::ops::BitOrAssign for #type_name
         {
             fn bitor_assign(&mut self, other: Self)
             {
                 *self = (*self | other) as Self;
             }
         }
-        impl ::std::ops::BitAnd for #type_name
+        impl ::core::ops::BitAnd for #type_name
         {
             type Output = Self;
             fn bitand(self, other: Self) -> Self::Output
             {
                 let n = (self as #repr_size) & (other as #repr_size);
-                unsafe { ::std::mem::transmute(n) }
+                unsafe { ::core::mem::transmute(n) }
             }
         }
-        impl ::std::ops::BitAndAssign for #type_name
+        impl ::core::ops::BitAndAssign for #type_name
         {
             fn bitand_assign(&mut self, other: Self)
             {
                 *self = (*self & other) as Self;
             }
         }
-        impl ::std::ops::BitXor for #type_name
+        impl ::core::ops::BitXor for #type_name
         {
             type Output = Self;
             fn bitxor(self, other: Self) -> Self::Output
             {
                 let n = (self as #repr_size) ^ (other as #repr_size);
-                unsafe { ::std::mem::transmute(n) }
+                unsafe { ::core::mem::transmute(n) }
             }
         }
-        impl ::std::ops::BitXorAssign for #type_name
+        impl ::core::ops::BitXorAssign for #type_name
         {
             fn bitxor_assign(&mut self, other: Self)
             {
                 *self = (*self ^ other) as Self;
             }
         }
-        impl ::std::ops::Not for #type_name
+        impl ::core::ops::Not for #type_name
         {
             type Output = Self;
             fn not(self) -> Self::Output
             {
                 let n = !(self as #repr_size);
-                unsafe { ::std::mem::transmute(n) }
+                unsafe { ::core::mem::transmute(n) }
             }
         }
-        impl From<#type_name> for #repr_size
+        impl ::core::convert::From<#type_name> for #repr_size
         {
             fn from(other: #type_name) -> Self
             {
                 other as Self
             }
         }
-        impl PartialEq for #type_name
+        impl ::core::cmp::PartialEq for #type_name
         {
             fn eq(&self, other: &Self) -> bool { (*self as #repr_size) == (*other as #repr_size) }
         }
-        impl Eq for #type_name { }
-        impl Clone for #type_name
+        impl ::core::cmp::Eq for #type_name { }
+        impl ::core::clone::Clone for #type_name
         {
             fn clone(&self) -> Self { *self }
         }
-        impl Copy for #type_name { }
+        impl ::core::marker::Copy for #type_name { }
         // implement Ord/PartialOrd ?
+
+        //try_from (validates all values)?
+
+        impl ::core::convert::From<#repr_size> for #type_name
+        {
+            fn from(value: #repr_size) -> Self
+            {
+                unsafe { std::mem::transmute(value) }
+            }
+        }
+
+        // TODO: check if (and error) if deriving bitcode encode/decode, currently incompatible
+
+        // TODO: conditionally enable?
+        impl ::core::fmt::Debug for #type_name
+        {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::result::Result<(), ::core::fmt::Error>
+            {
+                // TODO: alt formatting
+                f.write_fmt(format_args!("{}[", <Self as nab_3l14::utils::ShortTypeName>::short_type_name()))?;
+
+                let mut rest = false;
+                for flag in self.iter_set_flags()
+                {
+                    if (rest)
+                    {
+                        f.write_str("|")?;
+                    }
+                    rest = true;
+
+                    f.write_str(match flag
+                    {
+                        #(#variant_names,)*
+                    })?;
+                }
+                f.write_str("]")?;
+                Ok(())
+            }
+        }
     };
     expanded.into()
 }

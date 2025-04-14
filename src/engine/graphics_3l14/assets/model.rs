@@ -1,4 +1,4 @@
-use crate::assets::{Geometry, Material, Shader};
+use crate::assets::{Geometry, Material, Shader, Skeleton};
 use crate::Renderer;
 use asset_3l14::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadRequest, AssetTypeId};
 use bitcode::{Decode, Encode};
@@ -18,6 +18,7 @@ pub struct ModelFileSurface
 pub struct ModelFile
 {
     pub geometry: AssetKey,
+    pub skeleton: Option<AssetKey>,
     pub surfaces: Box<[ModelFileSurface]>,
 }
 
@@ -32,6 +33,7 @@ pub struct Model
 {
     pub mesh_count: u32,
     pub geometry: AssetHandle<Geometry>,
+    pub skeleton: Option<AssetHandle<Skeleton>>,
     pub surfaces: Box<[Surface]>,
 }
 impl Asset for Model
@@ -72,6 +74,7 @@ impl AssetLifecycler for ModelLifecycler
         {
             mesh_count: model_file.surfaces.len() as u32, // store explicitly in file?
             geometry: request.load_dependency(model_file.geometry),
+            skeleton: model_file.skeleton.map(|skel| request.load_dependency(skel)),
             surfaces: model_file.surfaces.iter().map(|s|
             {
                 Surface

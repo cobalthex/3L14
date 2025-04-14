@@ -1,4 +1,3 @@
-
 #[cfg(test)]
 mod enum_tests
 {
@@ -56,7 +55,7 @@ mod flags_tests
     }
 
     #[repr(u8)]
-    #[derive(Flags, Debug)]
+    #[derive(Flags)]
     pub enum FlagEnum
     {
         A = 0b000001,

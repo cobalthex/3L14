@@ -111,8 +111,7 @@ impl Renderer
         println!("Creating render device with {:?}", adapter_info);
 
         // Create the logical device and command queue
-        let (device, queue) =
-            adapter.request_device(&DeviceDescriptor
+        let (device, queue) = adapter.request_device(&DeviceDescriptor
             {
                 label: debug_label!("Primary WGPU device"),
                 required_features: Features::empty()
@@ -128,6 +127,7 @@ impl Renderer
                     .. Default::default()
                 }.using_resolution(adapter.limits()),
                 memory_hints: MemoryHints::Performance,
+                // trace: Trace::Off,
             },
             None,
             ).await

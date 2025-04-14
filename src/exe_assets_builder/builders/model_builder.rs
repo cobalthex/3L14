@@ -10,13 +10,14 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use unicase::UniCase;
-use graphics_3l14::assets::{GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat};
-use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl};
-use math_3l14::{Sphere, AABB};
-use nab_3l14::utils::alloc_slice::alloc_u8_slice;
+use wgpu::VertexBufferLayout;
+use graphics_3l14::assets::{GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, SkeletonFile, TextureFile, TextureFilePixelFormat, VertexLayout};
+use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
+use math_3l14::{DualQuat, Sphere, AABB};
+use nab_3l14::utils::alloc_slice::{alloc_slice_default, alloc_u8_slice};
 use nab_3l14::utils::as_u8_array;
 use nab_3l14::utils::inline_hash::InlineWriteHash;
 
@@ -130,24 +131,21 @@ impl ModelBuilder
         // TODO: split up this file
         // TODO: rethink vertex parsing
 
-        let mut static_vertex_data = Vec::new();
-        let mut skinned_vertex_data = Vec::new();
-        let mut total_vertex_count = 0;
-        let mut index_data = Vec::new();
-        let mut total_index_count = 0;
+        let mut vertex_layout = VertexLayout::Static;
+        if in_skin.is_some() { vertex_layout |= VertexLayout::Skinned; }
 
+        // acts as versioning for the vertex formats
         let vertex_layout_hash =
         {
             let mut hasher = MetroHash64::new();
-            StaticVertex::layout().hash(&mut hasher);
-            // TODO: verify vertex data is available
-            // TODO: perhaps generate VertexLayout and have it hash
-            if in_skin.is_some()
-            {
-                StaticVertex::layout().hash(&mut hasher);
-            }
+            VertexLayoutBuilder::from(vertex_layout).hash(&mut hasher);
             hasher.finish()
         };
+
+        let mut vertex_data = Vec::new();
+        let mut total_vertex_count = 0;
+        let mut index_data = Vec::new();
+        let mut total_index_count = 0;
 
         let mut model_bounds_sphere = Sphere::EMPTY;
 
@@ -180,19 +178,28 @@ impl ModelBuilder
                     tex_coord: tex_coords.as_mut().and_then(|mut r| r.next()).unwrap_or([0.0, 0.0]),
                     color: colors.as_mut().and_then(|mut r| r.next()).unwrap_or([u8::MAX, u8::MAX, u8::MAX, u8::MAX]),
                 };
-                static_vertex_data.write_all(unsafe { as_u8_array(&static_vertex) })?;
+                vertex_data.write_all(unsafe { as_u8_array(&static_vertex) })?;
                 mesh_vertex_count += 1;
             };
 
+            // TODO: interleave
             if in_skin.is_some()
             {
                 let mut maybe_joints = prim_reader.read_joints(0);
                 let mut maybe_weights = prim_reader.read_weights(0);
                 if maybe_joints.is_none() || maybe_weights.is_none()
                 {
+                    // TODO: print once
                     log::warn!("gLTF node '{}' (#{}) has a skin but no bone influence data",
                         in_node.name().unwrap_or_default(),
                         in_node.index());
+
+                    let skinned_vertex = SkinnedVertex
+                    {
+                        indices: [0; 4],
+                        weights: [0.0; 4],
+                    };
+                    vertex_data.write_all(unsafe { as_u8_array(&skinned_vertex) })?;
                 }
                 else
                 {
@@ -207,8 +214,7 @@ impl ModelBuilder
                             indices: joint,
                             weights: weights.next().unwrap_or([0.0, 0.0, 0.0, 0.0]),
                         };
-
-                        skinned_vertex_data.write_all(unsafe { as_u8_array(&skinned_vertex) })?;
+                        vertex_data.write_all(unsafe { as_u8_array(&skinned_vertex) })?;
                     }
                 }
             }
@@ -320,7 +326,7 @@ impl ModelBuilder
             {
                 log::debug!("Compiling vertex shader {:?}", vshader_output.asset_key());
 
-                let shader_file = self.shaders_root.join(format!("{material_class:?}.vs.hlsl"));
+                let shader_file = self.shaders_root.join(format!("SkinnedOpaque.vs.hlsl"));
 
                 let shader_source = std::fs::read_to_string(&shader_file)?;
                 let mut shader_module = InlineWriteHash::<MetroHash64, _>::new(Vec::new());
@@ -404,17 +410,35 @@ impl ModelBuilder
             });
         }
 
+        let skeleton = if let Some(skin) = in_skin
+        {
+            let mut skel_transforms = Vec::new();
+            let reader = skin.reader(|b| Some(&buffers[b.index()]));
+            for ibm in reader.read_inverse_bind_matrices().unwrap() // error handling?
+            {
+                let mtx = Mat4::from_cols_array_2d(&ibm);
+                let dq = DualQuat::from(&mtx);
+                skel_transforms.write_all(unsafe { as_u8_array(&dq) })?;
+            }
+
+            let mut skel_output = outputs.add_output(AssetTypeId::Skeleton)?;
+            skel_output.serialize(&SkeletonFile
+            {
+                inverse_bind_transforms: skel_transforms.into_boxed_slice(),
+            })?;
+            Some(skel_output.finish()?)
+        } else { None };
+
         let geometry =
         {
             let mut geom_output = outputs.add_output(AssetTypeId::Geometry)?;
-
             geom_output.serialize(&GeometryFile
             {
                 bounds_aabb: model_bounds_aabb,
                 bounds_sphere: model_bounds_sphere,
-                static_vertices: static_vertex_data.into_boxed_slice(),
-                skinned_vertices: if skinned_vertex_data.len() > 0 { Some(skinned_vertex_data.into_boxed_slice()) } else { None },
+                vertex_layout: vertex_layout.into(),
                 index_format: IndexFormat::U16,
+                vertices: vertex_data.into_boxed_slice(),
                 indices: index_data.into_boxed_slice(),
                 meshes: meshes.into_boxed_slice(),
             })?;
@@ -424,6 +448,7 @@ impl ModelBuilder
         model_output.serialize(&ModelFile
         {
             geometry,
+            skeleton,
             surfaces: surfaces.into_boxed_slice(),
         })?;
         model_output.finish()?;

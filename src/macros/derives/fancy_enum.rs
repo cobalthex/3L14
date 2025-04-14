@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use quote::quote;
 use syn::{parse_macro_input, Data, DeriveInput, Fields, LitStr};
 
+// TODO: make enum_prop_opt and enum_prop (checks all entries)
+
 pub fn fancy_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 {
     let derive = parse_macro_input!(input as DeriveInput);

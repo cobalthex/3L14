@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Formatter, Write};
+use std::hash::{Hash, Hasher};
 use crate::{debug_label, Renderer};
 use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use bitcode::{Decode, Encode};
@@ -8,13 +10,35 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{Buffer, BufferUsages, VertexAttribute, VertexBufferLayout, VertexStepMode};
+use nab_3l14::enum_helpers::FlagsEnum;
+use crate::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
 
+// The vertex buffers used for a particular piece of geometry.
+// vertex buffer attrib locations are ordered based on attributes present
+// Buffers with lower VertexLqyout values are ordered first, numbers are sequential
+// TODO: possibly could specify fixed locations, but often limited to 32 locations on GPU
 #[derive(Flags)]
 #[repr(u16)]
 pub enum VertexLayout
 {
     Static      = 0b00000001,
     Skinned     = 0b00000010,
+}
+impl From<VertexLayout> for VertexLayoutBuilder
+{
+    fn from(value: VertexLayout) -> Self
+    {
+        let mut builder = VertexLayoutBuilder::default();
+        for layout in value.iter_set_flags()
+        {
+            match layout
+            {
+                VertexLayout::Static => StaticVertex::layout(&mut builder),
+                VertexLayout::Skinned => SkinnedVertex::layout(&mut builder),
+            }
+        }
+        builder
+    }
 }
 
 #[repr(u8)]
@@ -44,10 +68,10 @@ pub struct GeometryFile
 {
     pub bounds_aabb: AABB,
     pub bounds_sphere: Sphere,
-    pub static_vertices: Box<[u8]>,
-    pub skinned_vertices: Option<Box<[u8]>>,
+    pub vertex_layout: <VertexLayout as FlagsEnum<VertexLayout>>::Repr, // must store as underlying type due to limitation of bitcode
     pub index_format: IndexFormat,
-    pub indices: Box<[u8]>,
+    pub vertices: Box<[u8]>, // Contains composite vertices of type vertex_layout
+    pub indices: Box<[u8]>, // contains indices of type index_format
     pub meshes: Box<[GeometryMesh]>,
 }
 
@@ -68,8 +92,7 @@ pub struct Geometry
     pub vertex_layout: VertexLayout,
     pub index_format: wgpu::IndexFormat,
     // all meshes in this model are slices of this buffer
-    pub static_vertices: Buffer,
-    pub skinned_vertices: Option<Buffer>,
+    pub vertices: Buffer,
     pub indices: Buffer,
     pub meshes: Box<[GeometryMesh]>,
 }
@@ -91,47 +114,34 @@ impl AssetLifecycler for GeometryLifecycler
 
     fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn std::error::Error>>
     {
-        let mf = request.deserialize::<GeometryFile>()?;
-
-        let mut vertex_layout = VertexLayout::Static;
-
-        let static_verts = self.renderer.device().create_buffer_init(&BufferInitDescriptor
+        let gf = request.deserialize::<GeometryFile>()?;
+        
+        let vertices = self.renderer.device().create_buffer_init(&BufferInitDescriptor
         {
             label: debug_label!(format!("{:?} static vertices", request.asset_key).as_str()),
-            contents: mf.static_vertices.as_ref(),
+            contents: gf.vertices.as_ref(),
             usage: BufferUsages::VERTEX,
         });
-        let skinned_verts = if let Some(skinned_vertices) = mf.skinned_vertices.as_ref()
-        {
-            vertex_layout |= VertexLayout::Skinned;
-            Some(self.renderer.device().create_buffer_init(&BufferInitDescriptor
-            {
-                label: debug_label!(format!("{:?} skinned vertices", request.asset_key).as_str()),
-                contents: skinned_vertices,
-                usage: BufferUsages::VERTEX,
-            }))
-        } else { None };
         let indices = self.renderer.device().create_buffer_init(&BufferInitDescriptor
         {
             label: debug_label!(format!("{:?} indices", request.asset_key).as_str()),
-            contents: mf.indices.as_ref(),
+            contents: gf.indices.as_ref(),
             usage: BufferUsages::INDEX,
         });
 
         Ok(Geometry
         {
-            bounds_aabb: mf.bounds_aabb,
-            bounds_sphere: mf.bounds_sphere,
-            vertex_layout,
-            index_format: match mf.index_format
+            bounds_aabb: gf.bounds_aabb,
+            bounds_sphere: gf.bounds_sphere,
+            vertex_layout: gf.vertex_layout.into(),
+            index_format: match gf.index_format
             {
                 IndexFormat::U16 => wgpu::IndexFormat::Uint16,
                 IndexFormat::U32 => wgpu::IndexFormat::Uint32,
             },
-            static_vertices: static_verts,
-            skinned_vertices: skinned_verts,
+            vertices,
             indices,
-            meshes: mf.meshes,
+            meshes: gf.meshes,
         })
     }
 }

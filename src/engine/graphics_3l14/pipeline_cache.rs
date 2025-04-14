@@ -11,7 +11,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use arrayvec::ArrayVec;
 use wgpu::{AddressMode, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerDescriptor, StencilState, TextureFormat, VertexBufferLayout, VertexState};
-use crate::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl};
+use crate::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
 
 #[derive(Debug, Clone, Copy, Hash)]
 pub enum DebugMode // debug only?
@@ -140,20 +140,7 @@ impl PipelineCache
         let renderer_surface_format = self.renderer.surface_format();
         let renderer_msaa_count = self.renderer.msaa_max_sample_count();
 
-        let vbuffers =
-        {
-            const MAX_ELEMENTS: usize = size_of::<VertexLayout>() * 8;
-            let mut vec = ArrayVec::<VertexBufferLayout, MAX_ELEMENTS>::new();
-            for layout in vertex_layout.iter_set_flags()
-            {
-                vec.push(match layout
-                {
-                    VertexLayout::Static => StaticVertex::layout(),
-                    VertexLayout::Skinned => SkinnedVertex::layout(),
-                });
-            }
-            vec
-        };
+        let vbuffers = VertexLayoutBuilder::from(vertex_layout);
 
         self.renderer.device().create_render_pipeline(&RenderPipelineDescriptor
         {
@@ -164,7 +151,7 @@ impl PipelineCache
                 module: &vertex_shader.module,
                 entry_point: ShaderStage::Vertex.entry_point(),
                 compilation_options: PipelineCompilationOptions::default(),
-                buffers: vbuffers.as_slice(),
+                buffers: &[vbuffers.as_vertex_buffer_layout()],
             },
             primitive: PrimitiveState
             {

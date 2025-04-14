@@ -25,6 +25,7 @@ pub struct UniformsPool
 
     pub camera_bind_layout: BindGroupLayout,
     pub transform_bind_layout: BindGroupLayout,
+    pub skeleton_bind_layout: BindGroupLayout,
 }
 impl UniformsPool
 {
@@ -35,6 +36,7 @@ impl UniformsPool
 
         let camera_bind_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
         {
+            label: debug_label!("Camera vsh bind layout"),
             entries:
             &[
                 wgpu::BindGroupLayoutEntry
@@ -50,11 +52,11 @@ impl UniformsPool
                     count: None,
                 }
             ],
-            label: debug_label!("Camera vsh bind layout"),
         });
 
         let transform_bind_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
         {
+            label: debug_label!("World transform vsh bind layout"),
             entries:
             &[
                 BindGroupLayoutEntry
@@ -70,7 +72,26 @@ impl UniformsPool
                     count: None,
                 }
             ],
-            label: debug_label!("World transform vsh bind layout"),
+        });
+
+        let skeleton_bind_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
+        {
+            label: debug_label!("Skeleton vsh bind layout"),
+            entries:
+            &[
+                BindGroupLayoutEntry
+                {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer
+                    {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+            ],
         });
 
         Self
@@ -81,6 +102,7 @@ impl UniformsPool
             renderer,
             camera_bind_layout,
             transform_bind_layout,
+            skeleton_bind_layout,
         }
     }
 

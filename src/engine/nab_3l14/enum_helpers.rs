@@ -1,6 +1,8 @@
 
 pub trait FlagsEnum<TSelf>
 {
+    type Repr;
+    
     fn bits_used_trait() -> u8;
     fn get_flag_for_bit(self, bit: u8) -> Option<TSelf>;
 }

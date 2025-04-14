@@ -1,17 +1,54 @@
 use std::hash::{Hash, Hasher};
-use metrohash::MetroHash64;
-use wgpu::{VertexAttribute, VertexBufferLayout, VertexStepMode};
-use proc_macros_3l14::Flags;
+use wgpu::{BufferAddress, VertexAttribute, VertexBufferLayout, VertexFormat, VertexStepMode};
+
+// TODO: generate HLSL structs automatically?
+
+// Note: this would be ideal to build statically
+#[derive(Default, Hash)]
+pub struct VertexLayoutBuilder
+{
+    attributes: Vec<VertexAttribute>,
+    bytes: BufferAddress,
+}
+impl VertexLayoutBuilder
+{
+    #[inline]
+    pub fn push(&mut self, attribute: VertexFormat)
+    {
+        self.attributes.push(VertexAttribute
+        {
+            format: attribute,
+            offset: self.bytes,
+            shader_location: self.attributes.len() as u32,
+        });
+        self.bytes += attribute.size();
+    }
+
+    // reserve 'additional' more slots
+    #[inline]
+    pub fn reserve(&mut self, additional: usize)
+    {
+        self.attributes.reserve(additional);
+    }
+
+    #[inline]
+    pub fn as_vertex_buffer_layout(&self) -> VertexBufferLayout
+    {
+        VertexBufferLayout
+        {
+            array_stride: self.bytes,
+            step_mode: VertexStepMode::Vertex,
+            attributes: &self.attributes,
+        }
+    }
+}
 
 pub trait VertexDecl
 {
-    fn layout(base_offset: u32) -> wgpu::VertexBufferLayout<'static>;
-    fn layout_hash(hasher: &mut impl Hasher)
-    {
-        let layout = Self::layout(0);
-        layout.hash(hasher);
-    }
+    fn layout(layout_builder: &mut VertexLayoutBuilder);
 }
+
+// TODO: generate vertex layout via macro?
 
 #[repr(C)]
 pub struct StaticVertex
@@ -24,23 +61,13 @@ pub struct StaticVertex
 }
 impl VertexDecl for StaticVertex
 {
-    fn layout(base_offset: u32) -> VertexBufferLayout<'static>
+    fn layout(layout_builder: &mut VertexLayoutBuilder)
     {
-        // TODO: this needs to account for base offset
-        const V_ATTRS: [VertexAttribute; 4] = wgpu::vertex_attr_array!
-        [
-            0 => Float32x3, // position
-            1 => Float32x3, // normal
-            // tangent?
-            2 => Float32x2, // texcoord 0
-            3 => Uint32, // color 0
-        ];
-        VertexBufferLayout
-        {
-            array_stride: V_ATTRS.iter().fold(0, |a, e| a + e.format.size()),
-            step_mode: VertexStepMode::Vertex,
-            attributes: &V_ATTRS,
-        }
+        layout_builder.reserve(4);
+        layout_builder.push(VertexFormat::Float32x3);
+        layout_builder.push(VertexFormat::Float32x3);
+        layout_builder.push(VertexFormat::Float32x2);
+        layout_builder.push(VertexFormat::Uint32);
     }
 }
 
@@ -52,18 +79,10 @@ pub struct SkinnedVertex
 }
 impl VertexDecl for SkinnedVertex
 {
-    fn layout() -> VertexBufferLayout<'static>
+    fn layout(layout_builder: &mut VertexLayoutBuilder)
     {
-        const V_ATTRS: [VertexAttribute; 2] = wgpu::vertex_attr_array!
-        [
-            0 => Uint16x2, // bone/joint indices
-            1 => Float32x4, // weights
-        ];
-        VertexBufferLayout
-        {
-            array_stride: V_ATTRS.iter().fold(0, |a, e| a + e.format.size()),
-            step_mode: VertexStepMode::Vertex,
-            attributes: &V_ATTRS,
-        }
+        layout_builder.reserve(2);
+        layout_builder.push(VertexFormat::Uint16x2);
+        layout_builder.push(VertexFormat::Float32x3);
     }
 }

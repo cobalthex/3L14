@@ -1,7 +1,7 @@
-mod fancy_enum;
-mod type_layout_hash;
-mod flags_enum;
-mod asset_derive;
+use derives::{asset_derive, fancy_enum, flags_enum, type_layout_hash};
+
+mod derives;
+mod has_derive;
 
 // FancyEnum adds .variant_ident() and for each #[enum_prop(k=v)] a method k() returning v
 #[proc_macro_derive(FancyEnum, attributes(enum_prop))]
