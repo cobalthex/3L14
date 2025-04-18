@@ -116,7 +116,7 @@ impl DebugDraw
             {
                 topology: PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: FrontFace::Cw,
+                front_face: FrontFace::Cw, // TODO: switch geo to be Ccw
                 cull_mode: None,
                 unclipped_depth: false,
                 polygon_mode: PolygonMode::Fill,

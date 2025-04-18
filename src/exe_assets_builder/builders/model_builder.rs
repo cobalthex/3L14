@@ -14,7 +14,7 @@ use glam::{Mat4, Vec3};
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use unicase::UniCase;
 use wgpu::VertexBufferLayout;
-use graphics_3l14::assets::{GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, SkeletonFile, TextureFile, TextureFilePixelFormat, VertexLayout};
+use graphics_3l14::assets::{GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat, VertexLayout};
 use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
 use math_3l14::{DualQuat, Sphere, AABB};
 use nab_3l14::utils::alloc_slice::{alloc_slice_default, alloc_u8_slice};
@@ -107,7 +107,7 @@ impl AssetBuilder for ModelBuilder
 
             for gltf_node in document.nodes()
             {
-                self.parse_gltf(gltf_node   , &buffers, &images, outputs)?;
+                self.parse_gltf(gltf_node, &buffers, &images, outputs)?;
             }
         }
 
@@ -164,6 +164,8 @@ impl ModelBuilder
             let mut tangents = prim_reader.read_tangents();
             let mut tex_coords = prim_reader.read_tex_coords(0).map(|t| t.into_f32());
             let mut colors = prim_reader.read_colors(0).map(|c| c.into_rgba_u8());
+            let mut maybe_joints = prim_reader.read_joints(0).map(|j| j.into_u16());
+            let mut maybe_weights = prim_reader.read_weights(0).map(|w| w.into_f32());
 
             let mut mesh_vertex_count = 0;
             for pos in positions.into_iter()
@@ -180,42 +182,17 @@ impl ModelBuilder
                 };
                 vertex_data.write_all(unsafe { as_u8_array(&static_vertex) })?;
                 mesh_vertex_count += 1;
-            };
 
-            // TODO: interleave
-            if in_skin.is_some()
-            {
-                let mut maybe_joints = prim_reader.read_joints(0);
-                let mut maybe_weights = prim_reader.read_weights(0);
-                if maybe_joints.is_none() || maybe_weights.is_none()
+                // todo: cleanup
+                if in_skin.is_some()
                 {
-                    // TODO: print once
-                    log::warn!("gLTF node '{}' (#{}) has a skin but no bone influence data",
-                        in_node.name().unwrap_or_default(),
-                        in_node.index());
-
+                    // todo: verify matching attrib counts?
                     let skinned_vertex = SkinnedVertex
                     {
-                        indices: [0; 4],
-                        weights: [0.0; 4],
+                        indices: maybe_joints.as_mut().and_then(|j| j.next()).unwrap_or([0, 0, 0, 0]),
+                        weights: maybe_weights.as_mut().and_then(|w| w.next()).unwrap_or([0.0, 0.0, 0.0, 0.0]),
                     };
                     vertex_data.write_all(unsafe { as_u8_array(&skinned_vertex) })?;
-                }
-                else
-                {
-                    // TODO: make sure vertex counts match
-                    let mut joints = maybe_joints.unwrap().into_u16();
-                    let mut weights = maybe_weights.unwrap().into_f32();
-                    for joint in joints
-                    {
-                        // todo: verify matching attrib counts?
-                        let skinned_vertex = SkinnedVertex
-                        {
-                            indices: joint,
-                            weights: weights.next().unwrap_or([0.0, 0.0, 0.0, 0.0]),
-                        };
-                        vertex_data.write_all(unsafe { as_u8_array(&skinned_vertex) })?;
-                    }
                 }
             }
 
@@ -412,21 +389,16 @@ impl ModelBuilder
 
         let skeleton = if let Some(skin) = in_skin
         {
-            let mut skel_transforms = Vec::new();
+            let mut skel_inv_bind_pose = Vec::new();
             let reader = skin.reader(|b| Some(&buffers[b.index()]));
             for ibm in reader.read_inverse_bind_matrices().unwrap() // error handling?
             {
                 let mtx = Mat4::from_cols_array_2d(&ibm);
                 let dq = DualQuat::from(&mtx);
-                skel_transforms.write_all(unsafe { as_u8_array(&dq) })?;
+                skel_inv_bind_pose.push(dq);
             }
 
-            let mut skel_output = outputs.add_output(AssetTypeId::Skeleton)?;
-            skel_output.serialize(&SkeletonFile
-            {
-                inverse_bind_transforms: skel_transforms.into_boxed_slice(),
-            })?;
-            Some(skel_output.finish()?)
+            Some(skel_inv_bind_pose)
         } else { None };
 
         let geometry =
@@ -448,7 +420,6 @@ impl ModelBuilder
         model_output.serialize(&ModelFile
         {
             geometry,
-            skeleton,
             surfaces: surfaces.into_boxed_slice(),
         })?;
         model_output.finish()?;

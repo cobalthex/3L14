@@ -4,7 +4,7 @@ use debug_3l14::debug_gui;
 use debug_3l14::debug_menu::{DebugMenu, DebugMenuMemory};
 use debug_3l14::sparkline::Sparkline;
 use glam::{FloatExt, Mat4, Quat, Vec3, Vec4};
-use graphics_3l14::assets::{GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, SkeletonLifecycler, TextureLifecycler};
+use graphics_3l14::assets::{GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, TextureLifecycler};
 use graphics_3l14::camera::{Camera, CameraProjection};
 use graphics_3l14::debug_draw::DebugDraw;
 use graphics_3l14::pipeline_cache::{DebugMode, PipelineCache};
@@ -76,7 +76,6 @@ fn main() -> ExitReason
             .add_lifecycler(ShaderLifecycler::new(renderer.clone()))
             .add_lifecycler(MaterialLifecycler::new(renderer.clone()))
             .add_lifecycler(GeometryLifecycler::new(renderer.clone()))
-            .add_lifecycler(SkeletonLifecycler::new(renderer.clone()))
         , assets_config);
 
     {

@@ -82,7 +82,7 @@ impl VertexDecl for SkinnedVertex
     fn layout(layout_builder: &mut VertexLayoutBuilder)
     {
         layout_builder.reserve(2);
-        layout_builder.push(VertexFormat::Uint16x2);
-        layout_builder.push(VertexFormat::Float32x3);
+        layout_builder.push(VertexFormat::Uint16x4);
+        layout_builder.push(VertexFormat::Float32x4);
     }
 }
