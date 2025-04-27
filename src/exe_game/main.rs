@@ -4,7 +4,7 @@ use debug_3l14::debug_gui;
 use debug_3l14::debug_menu::{DebugMenu, DebugMenuMemory};
 use debug_3l14::sparkline::Sparkline;
 use glam::{FloatExt, Mat4, Quat, Vec3, Vec4};
-use graphics_3l14::assets::{GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, TextureLifecycler};
+use graphics_3l14::assets::{GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, SkeletonLifecycler, TextureLifecycler};
 use graphics_3l14::camera::{Camera, CameraProjection};
 use graphics_3l14::debug_draw::DebugDraw;
 use graphics_3l14::pipeline_cache::{DebugMode, PipelineCache};
@@ -21,6 +21,8 @@ use nab_3l14::timing::Clock;
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use std::ops::Deref;
 use std::time::Duration;
+use metrohash::MetroHash64;
+use sdl2::messagebox::MessageBoxFlag;
 use wgpu::{BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
 
 #[derive(Debug, Parser)]
@@ -39,6 +41,11 @@ fn main() -> ExitReason
         let keep_alive = app_run.args.keep_alive_on_panic;
         #[cfg(not(debug_assertions))]
         let keep_alive = false;
+        
+        let _ = app::FATAL_ERROR_CB.set(|error_msg|
+        {
+            let _ = sdl2::messagebox::show_simple_message_box(MessageBoxFlag::ERROR, "Fatal Error!", &error_msg, None);
+        });
         app::set_panic_hook(keep_alive);
     }
 
@@ -76,6 +83,7 @@ fn main() -> ExitReason
             .add_lifecycler(ShaderLifecycler::new(renderer.clone()))
             .add_lifecycler(MaterialLifecycler::new(renderer.clone()))
             .add_lifecycler(GeometryLifecycler::new(renderer.clone()))
+            .add_lifecycler(SkeletonLifecycler)
         , assets_config);
 
     {
@@ -286,15 +294,15 @@ fn main() -> ExitReason
 
                         let view = &mut views[frame_number.0 as usize % views.len()];
                         view.begin(frame_time.total_runtime, &camera, clip_camera.as_ref().unwrap_or(&camera), DebugMode::None);
-
-                        debug_draw.draw_solid_cube(Mat4::IDENTITY, colors::RED);
-                        debug_draw.draw_wire_cube(Mat4::IDENTITY, colors::YELLOW);
-
-                        debug_draw.draw_solid_cone(Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0)), colors::GOOD_PURPLE);
-                        debug_draw.draw_wire_cone(Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0)), colors::MAGENTA);
-
-                        debug_draw.draw_solid_sphere(Mat4::from_translation(Vec3::new(-3.0, 0.0, 0.0)), colors::LIME);
-                        debug_draw.draw_wire_sphere(Mat4::from_translation(Vec3::new(-3.0, 0.0, 0.0)), colors::GREEN);
+                        //
+                        // debug_draw.draw_solid_cube(Mat4::IDENTITY, colors::RED);
+                        // debug_draw.draw_wire_cube(Mat4::IDENTITY, colors::YELLOW);
+                        //
+                        // debug_draw.draw_solid_cone(Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0)), colors::GOOD_PURPLE);
+                        // debug_draw.draw_wire_cone(Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0)), colors::MAGENTA);
+                        //
+                        // debug_draw.draw_solid_sphere(Mat4::from_translation(Vec3::new(-3.0, 0.0, 0.0)), colors::LIME);
+                        // debug_draw.draw_wire_sphere(Mat4::from_translation(Vec3::new(-3.0, 0.0, 0.0)), colors::GREEN);
 
                         if let AssetPayload::Available(model) = test_model.payload()
                         {
@@ -309,8 +317,17 @@ fn main() -> ExitReason
                                 debug_draw.draw_wire_sphere(sp_txfm, colors::TOMATO);
 
                                 obj_world = Mat4::from_rotation_translation(obj_rot.inverse(), Vec3::new(-5.0, 0.0, -2.0));
-                                view.draw(obj_world, model);
+                                view.draw(obj_world, model.clone());
                                 debug_draw.draw_wire_cube(obj_world, colors::WHITE);
+
+                                if let Some(skel_handle) = &model.skeleton
+                                {
+                                    let skel = skel_handle.payload().unwrap();
+                                    for bone in &skel.inv_bind_pose
+                                    {
+                                        debug_draw.draw_cross3(obj_world * Mat4::from(bone), colors::WHITE);
+                                    }
+                                }
                             }
                         }
 

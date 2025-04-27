@@ -20,5 +20,4 @@ parking_lot.workspace = true
 approx.workspace = true
 glam.workspace = true
 bitcode.workspace = true
-sdl2.workspace = true
 directories.workspace = true

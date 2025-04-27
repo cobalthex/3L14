@@ -62,7 +62,7 @@ impl DebugDraw
             vertex: VertexState
             {
                 module: &renderer.device().create_shader_module(include_spirv!("../../../assets/shaders/DebugLines.vs.spv")),
-                entry_point: ShaderStage::Vertex.entry_point(),
+                entry_point: Some(ShaderStage::Vertex.entry_point()),
                 compilation_options: Default::default(),
                 buffers: &[],
             },
@@ -87,7 +87,7 @@ impl DebugDraw
             fragment: Some(FragmentState
             {
                 module: &renderer.device().create_shader_module(include_spirv!("../../../assets/shaders/DebugLines.ps.spv")),
-                entry_point: ShaderStage::Pixel.entry_point(),
+                entry_point: Some(ShaderStage::Pixel.entry_point()),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState
                 {
@@ -108,7 +108,7 @@ impl DebugDraw
             vertex: VertexState
             {
                 module: &renderer.device().create_shader_module(include_spirv!("../../../assets/shaders/DebugLines.vs.spv")),
-                entry_point: ShaderStage::Vertex.entry_point(),
+                entry_point: Some(ShaderStage::Vertex.entry_point()),
                 compilation_options: Default::default(),
                 buffers: &[],
             },
@@ -133,7 +133,7 @@ impl DebugDraw
             fragment: Some(FragmentState
             {
                 module: &renderer.device().create_shader_module(include_spirv!("../../../assets/shaders/DebugLines.ps.spv")),
-                entry_point: ShaderStage::Pixel.entry_point(),
+                entry_point: Some(ShaderStage::Pixel.entry_point()),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState
                 {
@@ -173,6 +173,8 @@ impl DebugDraw
 
     pub fn draw_text(&mut self, text: &str, center: Vec3, color: Rgba)
     {
+        // TODO: option to keep text on screen?
+
         let Some(painter) = self.gui_painter.as_mut() else { return };
 
         let mut position = self.camera_clip_mtx.mul_vec4(center.extend(1.0));

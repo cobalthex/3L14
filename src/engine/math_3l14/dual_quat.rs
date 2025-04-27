@@ -1,4 +1,5 @@
-use std::ops::{Add, Div, Mul};
+use std::ops::{Add, Div, Mul, Neg};
+use approx::{AbsDiffEq, RelativeEq};
 use bitcode::{Decode, Encode};
 use glam::{Mat4, Quat, Vec3};
 
@@ -22,6 +23,37 @@ impl DualQuat
 
     #[inline] #[must_use] pub fn rotation(&self) -> Quat { self.real }
     #[inline] #[must_use] pub fn translation(&self) -> Vec3 { 2.0 * (self.dual * self.real.conjugate()).xyz() }
+
+    #[inline]
+    pub fn translate(&mut self, translation: Vec3)
+    {
+        let t_quat = Quat::from_vec4(translation.extend(0.0));
+        self.dual = self.dual + (t_quat * 0.5) * self.real;
+    }
+    #[inline] #[must_use]
+    pub fn translated(&self, translation: Vec3) -> Self
+    {
+        let mut dq = *self;
+        dq.translate(translation);
+        dq
+    }
+
+    // fast rotate 90deg (fast conj calc), fast rotate 180deg (r * d,q * r)
+
+    #[inline]
+    pub fn rotate(&mut self, normalized_rotation: Quat)
+    {
+        let conj = normalized_rotation.conjugate();
+        self.real = normalized_rotation * self.real * conj;
+        self.dual = normalized_rotation * self.dual * conj;
+    }
+    #[inline] #[must_use]
+    pub fn rotated(&self, normalized_rotation: Quat) -> Self
+    {
+        let mut dq = *self;
+        dq.rotate(normalized_rotation);
+        dq
+    }
 
     #[inline] #[must_use]
     pub fn transform_vector3(&self, direction: Vec3) -> Vec3 { self.rotation() * direction }
@@ -101,6 +133,7 @@ impl DualQuat
         self.real.dot(other.real) + self.real.dot(other.dual) + self.dual.dot(other.real)
     }
 }
+
 impl From<&Mat4> for DualQuat
 {
     fn from(value: &Mat4) -> Self
@@ -109,9 +142,21 @@ impl From<&Mat4> for DualQuat
         Self::new(rotation, translation)
     }
 }
+impl From<Mat4> for DualQuat { fn from(value: Mat4) -> Self { Self::from(&value) } }
+impl From<&DualQuat> for Mat4
+{
+    fn from(value: &DualQuat) -> Self
+    {
+        let rot = value.rotation();
+        let trans = value.translation();
+        Mat4::from_rotation_translation(rot, trans)
+    }
+}
+impl From<DualQuat> for Mat4 { fn from(value: DualQuat) -> Self { Self::from(&value) } }
+
 impl Mul<DualQuat> for DualQuat
 {
-    type Output = DualQuat;
+    type Output = Self;
 
     fn mul(self, rhs: DualQuat) -> Self::Output
     {
@@ -124,7 +169,7 @@ impl Mul<DualQuat> for DualQuat
 }
 impl Div<DualQuat> for DualQuat
 {
-    type Output = DualQuat;
+    type Output = Self;
 
     // TODO: verify
     fn div(self, rhs: DualQuat) -> Self::Output
@@ -139,7 +184,7 @@ impl Div<DualQuat> for DualQuat
 }
 impl Mul<f32> for DualQuat
 {
-    type Output = DualQuat;
+    type Output = Self;
 
     fn mul(self, scalar: f32) -> Self::Output
     {
@@ -152,7 +197,7 @@ impl Mul<f32> for DualQuat
 }
 impl Add<DualQuat> for DualQuat
 {
-    type Output = DualQuat;
+    type Output = Self;
 
     fn add(self, rhs: DualQuat) -> Self::Output
     {
@@ -163,11 +208,34 @@ impl Add<DualQuat> for DualQuat
         }
     }
 }
+// Neg (-real, -dual) does exist, but represents the same transform, so pointless
+
+impl AbsDiffEq for DualQuat
+{
+    type Epsilon = f32;
+    fn default_epsilon() -> Self::Epsilon { Quat::default_epsilon() }
+    fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool
+    {
+        // assumes normalized
+        self.real.abs_diff_eq(other.real, epsilon) &&
+        self.dual.abs_diff_eq(other.dual, epsilon)
+    }
+}
+impl RelativeEq for DualQuat
+{
+    fn default_max_relative() -> Self::Epsilon { Quat::default_max_relative() }
+    fn relative_eq(&self, other: &Self, epsilon: Self::Epsilon, max_relative: Self::Epsilon) -> bool
+    {
+        // assumes normalized
+        self.real.relative_eq(&other.real, epsilon, max_relative) &&
+        self.dual.relative_eq(&other.dual, epsilon, max_relative)
+    }
+}
 
 #[cfg(test)]
 mod tests
 {
-    use approx::{assert_relative_eq, assert_relative_ne};
+    use approx::{assert_abs_diff_eq, assert_relative_eq, assert_relative_ne};
     use super::*;
 
     #[test]
@@ -230,6 +298,31 @@ mod tests
         assert_relative_eq!(m.transform_point3(test), dq.transform_point3(test));
     }
 
+    #[test]
+    fn translate()
+    {
+        let r = Quat::IDENTITY;
+        let t = Vec3::new(1.0, 40.0, 3.0);
+        let dq = DualQuat::new(r, t);
 
+        let test = Vec3::new(10.0, 11.0, 12.0);
+
+        assert_relative_eq!(DualQuat::new(r, t + test), dq.translated(test));
+        // assert_relative_eq!(DualQuat::new(-r, -(t + test)), dq.translated(test)); // TODO
+    }
+
+    #[test]
+    fn rotate()
+    {
+        let r = Quat::from_rotation_y(3.5);
+        let t = Vec3::ZERO;
+        let dq = DualQuat::new(r, t);
+
+        let test = Quat::from_rotation_y(3.0);
+
+        // TODO
+    }
+
+    // TODO: to/from mat4
     // TODO: multiply, add, conjugate, length, inverse, dot
 }

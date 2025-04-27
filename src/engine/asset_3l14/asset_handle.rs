@@ -78,6 +78,9 @@ pub(super) struct AssetHandleInner
     is_reloading: AtomicBool, // cleared before payload is set
 
     payload: AtomicUsize, // if high bit is 1, stores Arc<Asset>
+
+    #[cfg(feature = "asset_debug_data")]
+    debug_data: AtomicUsize,
 }
 
 impl AssetHandleInner
@@ -126,19 +129,19 @@ impl AssetHandleInner
         }
     }
 
-    #[inline]
+    #[inline] #[must_use]
     pub fn key(&self) -> AssetKey
     {
         self.key
     }
 
-    #[inline]
+    #[inline] #[must_use]
     pub fn asset_type(&self) -> AssetTypeId
     {
         self.key.asset_type()
     }
 
-    #[inline]
+    #[inline] #[must_use]
     pub fn payload<A: Asset>(&self) -> AssetPayload<A> // TODO: this should return a non-cloneable refcount ptr (Guard obj)
     {
         debug_assert_eq!(A::asset_type(), self.asset_type());
@@ -158,7 +161,25 @@ impl AssetHandleInner
         }
     }
 
-    #[inline]
+    #[cfg(feature = "asset_debug_data")]
+    #[inline] #[must_use]
+    pub fn debug_data<A: AssetDebugData>(&self) -> Option<Arc<A>>
+    {
+        let ptr = self.debug_data.load(Ordering::Acquire);
+        match ptr
+        {
+            0 => None,
+            p =>
+            {
+                let arc = unsafe { Arc::from_raw(p as *const A) };
+                let debug_data = arc.clone();
+                std::mem::forget(arc);
+                Some(debug_data)
+            }
+        }
+    }
+
+    #[inline] #[must_use]
     pub fn ref_count(&self) -> isize
     {
         self.ref_count.load(Ordering::Acquire)
@@ -179,6 +200,8 @@ impl UntypedAssetHandle
             ready_waker: Mutex::new(None),
             is_reloading: AtomicBool::new(false),
             payload: AtomicUsize::new(0), // pending
+            #[cfg(feature = "asset_debug_data")]
+            debug_data: AtomicUsize::new(0),
         };
 
         #[cfg(feature = "debug_asset_lifetimes")]

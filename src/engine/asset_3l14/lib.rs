@@ -1,6 +1,9 @@
 mod asset;
 pub use asset::*;
 
+mod asset_key;
+pub use asset_key::*;
+
 mod asset_handle;
 pub use asset_handle::*;
 

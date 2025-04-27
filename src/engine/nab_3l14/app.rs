@@ -5,7 +5,7 @@ use std::panic::PanicHookInfo;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicI32, Ordering};
-use sdl2::messagebox::MessageBoxFlag;
+use std::sync::{LazyLock, OnceLock};
 use proc_macros_3l14::FancyEnum;
 
 pub enum AppFolder
@@ -188,9 +188,14 @@ impl std::process::Termination for ExitReason
     }
 }
 
+pub trait FatalErrorCode: Debug
+{
+    fn error_code(&self) -> u16;
+}
+
 #[derive(Clone, Copy)]
 struct Panic<'p>(&'p PanicHookInfo<'p>);
-impl From<Panic<'_>> for u16 { fn from(_: Panic<'_>) -> Self { 1u16 }  }
+impl FatalErrorCode for Panic<'_> { fn error_code(&self) -> u16 { 1u16 } }
 impl Debug for Panic<'_>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result
@@ -236,18 +241,23 @@ pub enum FatalError
     Memory,
 }
 
+pub static FATAL_ERROR_CB: OnceLock<fn(&str)> = OnceLock::new();
+
 // TODO: perhaps this can generate the fatal_error from the calling crate
 // Exit the game with a fatal error,
-pub fn fatal_error(fatal_error: FatalError, code: impl Into<u16> + Debug + Copy) -> !
+pub fn fatal_error(fatal_error: FatalError, code: impl FatalErrorCode) -> !
 {
-    let mut error_msg = format!("{}-{:04X}", fatal_error.short_name().unwrap(), code.into());
+    let mut error_msg = format!("{}-{:04X}", fatal_error.short_name(), code.error_code());
     if cfg!(debug_assertions)
     {
-        error_msg.push_str(&format!("\n\n{:#?}", code));
+        error_msg.push_str(&format!("\n\n{:#?}", &code));
     }
 
     eprintln!("!!! FATAL: {}", error_msg);
-    let _ = sdl2::messagebox::show_simple_message_box(MessageBoxFlag::ERROR, "Fatal Error!", &error_msg, None);
+    if let Some(error_cb) = FATAL_ERROR_CB.get()
+    {
+        error_cb(&error_msg);
+    }
 
     eprintln!("Exiting (PID {}) at {} with reason {:?}",
               std::process::id(),

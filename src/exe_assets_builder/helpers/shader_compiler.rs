@@ -92,7 +92,7 @@ impl ShaderCompiler
         // note: mut self only needed for include header, can split out if necessary
 
         let entry_point = compilation.stage.entry_point();
-        let profile = format!("{}_6_0", compilation.stage.prefix().expect("Shader stage does not have a profile prefix!"));
+        let profile = format!("{}_6_0", compilation.stage.prefix());
 
         let mut dxc_args = vec![
             "-spirv", // emit Spir-V
@@ -130,7 +130,7 @@ impl ShaderCompiler
         let spirv = match self.dxc_compiler.compile(
             &blob,
             file_path.to_string_lossy().as_ref(),
-            &entry_point.expect("Shader stage does not have a entry point!"),
+            entry_point,
             &profile,
             &dxc_args,
             Some(&mut *includer),

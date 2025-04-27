@@ -13,6 +13,14 @@ cbuffer World
     float4x4 World;
 };
 
+#define MAX_BONES 128
+
+[[vk::binding(0, 2)]]
+cbuffer Bones
+{
+    float3x3 Bones[MAX_BONES];
+}
+
 struct VertexOutput
 {
     float4 world_position: POSITION;

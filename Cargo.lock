@@ -1781,7 +1781,6 @@ dependencies = [
  "metrohash",
  "parking_lot",
  "proc_macros_3l14",
- "sdl2",
  "serde",
 ]
 

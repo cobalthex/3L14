@@ -149,7 +149,7 @@ impl PipelineCache
             vertex: VertexState
             {
                 module: &vertex_shader.module,
-                entry_point: ShaderStage::Vertex.entry_point(),
+                entry_point: Some(ShaderStage::Vertex.entry_point()),
                 compilation_options: PipelineCompilationOptions::default(),
                 buffers: &[vbuffers.as_vertex_buffer_layout()],
             },
@@ -182,7 +182,7 @@ impl PipelineCache
             fragment: Some(FragmentState
             {
                 module: &pixel_shader.module,
-                entry_point: ShaderStage::Pixel.entry_point(),
+                entry_point: Some(ShaderStage::Pixel.entry_point()),
                 compilation_options: PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState
                 {

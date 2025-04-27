@@ -1,25 +1,25 @@
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
 use crate::helpers::shader_compiler::{ShaderCompilation, ShaderCompiler};
 use arrayvec::ArrayVec;
+use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
+use glam::{Mat4, Vec3};
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
+use graphics_3l14::assets::{GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, Skeleton, TextureFile, TextureFilePixelFormat, VertexLayout};
+use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
+use math_3l14::{DualQuat, Sphere, AABB};
 use metrohash::MetroHash64;
+use nab_3l14::utils::alloc_slice::{alloc_slice_default, alloc_slice_uninit, alloc_u8_slice};
+use nab_3l14::utils::as_u8_array;
+use nab_3l14::utils::inline_hash::InlineWriteHash;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use glam::{Mat4, Vec3};
-use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use unicase::UniCase;
 use wgpu::VertexBufferLayout;
-use graphics_3l14::assets::{GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, TextureFile, TextureFilePixelFormat, VertexLayout};
-use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
-use math_3l14::{DualQuat, Sphere, AABB};
-use nab_3l14::utils::alloc_slice::{alloc_slice_default, alloc_u8_slice};
-use nab_3l14::utils::as_u8_array;
-use nab_3l14::utils::inline_hash::InlineWriteHash;
 
 #[derive(Hash)]
 struct ShaderHash
@@ -109,6 +109,17 @@ impl AssetBuilder for ModelBuilder
             {
                 self.parse_gltf(gltf_node, &buffers, &images, outputs)?;
             }
+
+            // for anim in document.animations()
+            // {
+            //     for ch in anim.channels()
+            //     {
+            //         let chr = ch.reader(|b| Some(&buffers[b.index()]));
+            //         let i = chr.read_inputs().unwrap()
+            //         {
+            //         }
+            //     }
+            // }
         }
 
         Ok(())
@@ -131,8 +142,59 @@ impl ModelBuilder
         // TODO: split up this file
         // TODO: rethink vertex parsing
 
+        struct SkelInfo
+        {
+            asset: AssetKey,
+            remapped_bone_indices: Box<[u16]>,
+            joint_name_hashes: Box<[u64]>,
+        }
+
         let mut vertex_layout = VertexLayout::Static;
-        if in_skin.is_some() { vertex_layout |= VertexLayout::Skinned; }
+        let maybe_skel_info = if let Some(skin) = &in_skin
+        {
+            vertex_layout |= VertexLayout::Skinned;
+
+            let mut temp_str = String::new();
+            let joint_name_hashes: Box<_> = skin.joints().enumerate().map(|(i, n)|
+            {
+                let name = n.name().unwrap_or_else(||
+                {
+                    temp_str.clear();
+                    std::fmt::Write::write_fmt(&mut temp_str, format_args!("{i}")).unwrap();
+                    &temp_str
+                });
+                hash_bone_name(n.name().unwrap_or_else(|| name))
+            }).collect();
+            let mut remapped_bone_indices: Box<_> = (0..joint_name_hashes.len() as u16).collect();
+            remapped_bone_indices.sort_by_key(|i| joint_name_hashes[*i as usize]); // explicit sort rule?
+
+            let mut skel_inv_bind_pose = alloc_slice_default(joint_name_hashes.len());
+            let reader = skin.reader(|b| Some(&buffers[b.index()]));
+            for (i, ibm) in reader.read_inverse_bind_matrices().unwrap().enumerate() // error handling?
+            {
+                let mtx = Mat4::from_cols_array_2d(&ibm);
+                let dq = DualQuat::from(&mtx);
+                skel_inv_bind_pose[remapped_bone_indices[i] as usize] = dq;
+            }
+
+            let skeleton =
+            {
+                let skel_key = AssetKeySynthHash::generate(&joint_name_hashes);
+                if let Some(mut output) = outputs.add_synthetic(AssetTypeId::Skeleton, skel_key, false)?
+                {
+                    output.serialize(&Skeleton { inv_bind_pose: skel_inv_bind_pose })?;
+                    output.finish()?;
+                }
+                AssetKey::synthetic(AssetTypeId::Skeleton, skel_key)
+            };
+
+            Some(SkelInfo
+            {
+                asset: skeleton,
+                remapped_bone_indices,
+                joint_name_hashes,
+            })
+        } else { None };
 
         // acts as versioning for the vertex formats
         let vertex_layout_hash =
@@ -184,12 +246,14 @@ impl ModelBuilder
                 mesh_vertex_count += 1;
 
                 // todo: cleanup
-                if in_skin.is_some()
+                if let Some(skel_info) = &maybe_skel_info
                 {
+                    let iremap = |ind: [u16;4]| ind.map(|i| skel_info.remapped_bone_indices[i as usize]);
+
                     // todo: verify matching attrib counts?
                     let skinned_vertex = SkinnedVertex
                     {
-                        indices: maybe_joints.as_mut().and_then(|j| j.next()).unwrap_or([0, 0, 0, 0]),
+                        indices: maybe_joints.as_mut().and_then(|j| j.next().map(iremap)).unwrap_or([0, 0, 0, 0]),
                         weights: maybe_weights.as_mut().and_then(|w| w.next()).unwrap_or([0.0, 0.0, 0.0, 0.0]),
                     };
                     vertex_data.write_all(unsafe { as_u8_array(&skinned_vertex) })?;
@@ -286,7 +350,7 @@ impl ModelBuilder
                         albedo_color: pbr.base_color_factor().into(),
                         metallicity: pbr.metallic_factor(),
                         roughness: pbr.roughness_factor(),
-                    })?,
+                    }),
                 })?;
                 mtl_output.finish()?
             };
@@ -387,20 +451,6 @@ impl ModelBuilder
             });
         }
 
-        let skeleton = if let Some(skin) = in_skin
-        {
-            let mut skel_inv_bind_pose = Vec::new();
-            let reader = skin.reader(|b| Some(&buffers[b.index()]));
-            for ibm in reader.read_inverse_bind_matrices().unwrap() // error handling?
-            {
-                let mtx = Mat4::from_cols_array_2d(&ibm);
-                let dq = DualQuat::from(&mtx);
-                skel_inv_bind_pose.push(dq);
-            }
-
-            Some(skel_inv_bind_pose)
-        } else { None };
-
         let geometry =
         {
             let mut geom_output = outputs.add_output(AssetTypeId::Geometry)?;
@@ -420,9 +470,17 @@ impl ModelBuilder
         model_output.serialize(&ModelFile
         {
             geometry,
+            skeleton: maybe_skel_info.map(|s| s.asset),
             surfaces: surfaces.into_boxed_slice(),
         })?;
         model_output.finish()?;
         Ok(())
     }
+}
+
+fn hash_bone_name(name: &str) -> u64
+{
+    let mut hasher = MetroHash64::new();
+    name.hash(&mut hasher);
+    hasher.finish()
 }

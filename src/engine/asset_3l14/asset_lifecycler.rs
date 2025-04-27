@@ -25,7 +25,7 @@ impl AssetLoadRequest
     pub fn deserialize<T: DecodeOwned>(&mut self) -> Result<T, Box<dyn Error>>
     {
         let size = varint::decode_from(&mut self.input)?;
-        let mut input = unsafe { alloc_slice_uninit(size as usize) }?; // todo: cache this (bitcode Buffer)
+        let mut input = unsafe { alloc_slice_uninit(size as usize) }; // todo: cache this (bitcode Buffer)
         self.input.read_exact(&mut input)?;
         Ok(bitcode::decode::<T>(&input)?)
     }
@@ -34,7 +34,7 @@ impl AssetLoadRequest
     pub fn read_sized(&mut self) -> Result<Box<[u8]>, Box<dyn Error>>
     {
         let size = varint::decode_from(&mut self.input)?;
-        let mut input = unsafe { alloc_slice_uninit(size as usize) }?; // todo: cache this
+        let mut input = unsafe { alloc_slice_uninit(size as usize) }; // todo: cache this
         self.input.read_exact(&mut input)?;
         Ok(input)
     }
@@ -69,6 +69,7 @@ impl AssetLoadRequest
     // }
 }
 
+// TODO: make DebugGui optional
 pub trait AssetLifecycler: Sync + Send + DebugGui
 {
     type Asset: Asset;

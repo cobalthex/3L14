@@ -28,15 +28,15 @@ resolver = "2"
 members = ["./src/engine/*"]
 
 [dependencies]
-asset_3l14.workspace = true
-containers_3l14.workspace = true
-debug_3l14.workspace = true
-graphics_3l14.workspace = true
-input_3l14.workspace = true
-math_3l14.workspace = true
-nab_3l14.workspace = true
-world_3l14.workspace = true
-proc_macros_3l14.workspace = true
+asset_3l14 = { workspace = true, features = ["asset_names", "asset_debug_data"] }
+containers_3l14 = { workspace = true, features = [] }
+debug_3l14 = { workspace = true, features = [] }
+graphics_3l14 = { workspace = true, features = [] }
+input_3l14 = { workspace = true, features = [] }
+math_3l14 = { workspace = true, features = [] }
+nab_3l14 = { workspace = true, features = [] }
+world_3l14 = { workspace = true, features = [] }
+proc_macros_3l14 = { workspace = true, features = [] }
 
 array-init.workspace = true
 clap.workspace = true
