@@ -1,3 +1,4 @@
+use std::cell::{LazyCell, UnsafeCell};
 use super::*;
 use bitcode::Encode;
 use metrohash::MetroHash64;
@@ -9,9 +10,11 @@ use std::fs::File;
 use std::hash::Hasher;
 use std::io;
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
+use std::mem::MaybeUninit;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use unicase::UniCase;
-use asset_3l14::{AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetTypeId};
+use asset_3l14::{Asset, AssetDebugData, AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetTypeId};
 use nab_3l14::utils::inline_hash::InlineWriteHash;
 use nab_3l14::utils::{varint, ShortTypeName};
 use walkdir::WalkDir;
@@ -232,6 +235,7 @@ pub enum BuildError
     BuilderError(Box<dyn Error>),
     OutputIOError(io::Error),
     OutputMetaIOError(io::Error),
+    OutputDebugIOError(io::ErrorKind), // error kind b/c error is not cloneable and lazy makes this stupid
     OutputMetaSerializeError(toml::ser::Error),
 }
 impl Display for BuildError
@@ -242,10 +246,54 @@ impl Error for BuildError { }
 
 pub type BuildResults = Vec<AssetKey>;
 
+struct Lazy<T, F: FnOnce() -> T>
+{
+    value: UnsafeCell<Option<T>>,
+    create_fn: MaybeUninit<F>,
+}
+impl<T, F: FnOnce() -> T> Lazy<T, F>
+{
+    pub fn new(create_fn: F) -> Self
+    {
+        Self { value: UnsafeCell::new(None), create_fn: MaybeUninit::new(create_fn) }
+    }
+    fn force(&self) -> &mut T
+    {
+        let val = unsafe { &mut *self.value.get() };
+        match val
+        {
+            None => unsafe
+            {
+                let create_fn = self.create_fn.assume_init_read();
+                let _ = std::mem::replace(val, Some(create_fn()));
+                val.as_mut().unwrap_unchecked()
+            }
+            Some(val) => val
+        }
+    }
+}
+impl<T, F: FnOnce() -> T> Deref for Lazy<T, F>
+{
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target
+    {
+        self.force()
+    }
+}
+impl<T, F: FnOnce() -> T> DerefMut for Lazy<T, F>
+{
+    fn deref_mut(&mut self) -> &mut Self::Target
+    {
+        self.force()
+    }
+}
+
 pub struct BuildOutput<W: BuildOutputWrite>
 {
     writer: W,
     meta_writer: W,
+    debug_writer: Lazy<io::Result<W>, Box<dyn FnOnce() -> io::Result<W>>>,
     builder_hash: BuilderHash,
     format_hash: BuilderHash,
     asset_key: AssetKey,
@@ -287,6 +335,22 @@ impl<W: BuildOutputWrite> BuildOutput<W>
         let val = bitcode::encode(value);
         varint::encode_into(val.len() as u64, &mut self.writer)?;
         self.writer.write_all(val.as_slice())
+    }
+
+    // Optionally serialize debug metadata to this asset
+    pub fn serialize_debug<D: AssetDebugData>(&mut self, value: &D::DebugData) -> Result<(), BuildError>
+    {
+        // TODO: clean up error types here
+
+        let mut debug_writer = match self.debug_writer.deref_mut()
+        {
+            Ok(w) => w,
+            Err(e) => return Err(BuildError::OutputDebugIOError(e.kind())),
+        };
+
+        let val = bitcode::encode(value);
+        varint::encode_into(val.len() as u64, &mut self.writer).map_err(BuildError::OutputIOError)?;
+        debug_writer.write_all(val.as_slice()).map_err(|e| BuildError::OutputDebugIOError(e.kind()))
     }
 
     // write a size-prefixed span of bytes, all or nothing
@@ -342,7 +406,7 @@ impl<'b> BuildOutputs<'b>
 {
     // TODO: outputs should be atomic (all or none)
 
-    #[inline]
+    #[inline] #[must_use]
     pub fn source_path(&self) -> &Path { self.rel_source_path }
 
     // Produce an output from this build. Assets of the same type have sequential derived IDs
@@ -383,10 +447,14 @@ impl<'b> BuildOutputs<'b>
         let output_meta_path = self.abs_output_dir.join(asset_key.as_meta_file_name());
         let output_meta_writer = File::create(&output_meta_path).map_err(BuildError::OutputIOError)?;
 
+        let output_debug_path = self.abs_output_dir.join(asset_key.as_debug_file_name());
+        let output_debug_writer = move || File::create(output_debug_path);
+
         let output = BuildOutput
         {
             writer: output_writer,
             meta_writer: output_meta_writer,
+            debug_writer: Lazy::new(Box::new(output_debug_writer)),
             builder_hash: self.builder_hash,
             format_hash: self.format_hash,
             asset_key,

@@ -6,14 +6,22 @@ use graphics_3l14::assets::ShaderStage;
 use hassle_rs::{Dxc, DxcCompiler, DxcIncludeHandler, DxcLibrary, DxcValidator, Dxil, HassleError};
 use parking_lot::Mutex;
 use nab_3l14::utils::ShortTypeName;
+use proc_macros_3l14::Flags;
+
+#[repr(u8)]
+#[derive(Flags, Hash)]
+pub enum ShaderCompileFlags
+{
+    Debug       = 0b0001,
+    EmitSymbols = 0b0010,
+}
 
 pub struct ShaderCompilation<'s>
 {
     pub source_text: &'s str,
     pub filename: &'s Path,
     pub stage: ShaderStage,
-    pub debug: bool,
-    pub emit_symbols: bool,
+    pub flags: ShaderCompileFlags,
     pub defines: Vec<(&'s str, Option<&'s str>)>,
 }
 impl<'s> Debug for ShaderCompilation<'s>
@@ -23,8 +31,7 @@ impl<'s> Debug for ShaderCompilation<'s>
         fmt.debug_struct(Self::short_type_name())
             .field("filename", &self.filename)
             .field("stage", &self.stage)
-            .field("debug", &self.debug)
-            .field("emit_symbols", &self.emit_symbols)
+            .field("flags", &self.flags)
             .field("defines", &self.defines)
             .finish()
     }
@@ -99,13 +106,13 @@ impl ShaderCompiler
             "-fspv-target-env=universal1.5",
         ];
 
-        if compilation.debug
+        if compilation.flags.has_flag(ShaderCompileFlags::Debug)
         {
             compilation.defines.push(("DEBUG", Some("1")));
             dxc_args.push("-Od");
         }
 
-        if compilation.emit_symbols
+        if compilation.flags.has_flag(ShaderCompileFlags::EmitSymbols)
         {
             dxc_args.push("-Zi");
             dxc_args.push("-Zss");
@@ -197,6 +204,7 @@ impl Error for ShaderCompilationError { }
 #[cfg(test)]
 mod tests
 {
+    use std::env;
     use std::path::Path;
     use super::*;
 
@@ -210,9 +218,16 @@ mod tests
         }
         "#;
 
-        let dxc_dir = "3rdparty/dxc"; // hacky
+        // TODO: clean up, re-use vertion in build_main
+        let dxc_dir =
+        {
+            // construct with Env:CARGO_MANIFEST_DIR \target\ Env:PROFILE ?
+            let mut out_dir: PathBuf = env::var("OUT_DIR").expect("! Failed to get build target dir").into();
+            out_dir.push("../../.."); // gross
+            out_dir.canonicalize().expect("! Failed to canonicalize Env:OUT_DIR")
+        };
 
-        let compiler = ShaderCompiler::new("$$ INVALID $$", Some(dxc_dir.into())).unwrap();
+        let compiler = ShaderCompiler::new("$$ INVALID $$", Some(dxc_dir)).unwrap();
 
         let mut output = Vec::new();
         compiler.compile_hlsl(&mut output, ShaderCompilation
@@ -220,8 +235,7 @@ mod tests
             source_text: shader_source,
             filename: Path::new("TEST_FILE.vs.hlsl"),
             stage: ShaderStage::Vertex,
-            debug: false,
-            emit_symbols: false,
+            flags: ShaderCompileFlags::none(),
             defines: vec![],
         }).unwrap();
     }

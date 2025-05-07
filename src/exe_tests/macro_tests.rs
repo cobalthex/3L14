@@ -1,15 +1,19 @@
 #[cfg(test)]
-mod enum_tests
+mod fancy_enum_tests
 {
     use proc_macros_3l14::FancyEnum;
 
+    // TODO: fix up enum_props, add optional override
     #[derive(FancyEnum)]
     enum TestEnum
     {
-        #[enum_prop(foo = "5", bar = "donk")]
+        // #[enum_prop(foo = "5", bar = "donk")]
+        #[enum_prop(quux = "a")]
         A,
+        #[enum_prop(quux = "b")]
         B(i32),
-        #[enum_prop(foo = "505")]
+        // #[enum_prop(foo = "505")]
+        #[enum_prop(quux = "c")]
         C { a: f32, b: bool },
     }
 
@@ -24,12 +28,21 @@ mod enum_tests
     #[test]
     fn variant_props()
     {
-        assert_eq!(Some("5"), TestEnum::A.foo());
-        assert_eq!(Some("donk"), TestEnum::A.bar());
-        assert_eq!(None, TestEnum::B(3).foo());
-        assert_eq!(Some("505"), TestEnum::C{a:1.0,b:true}.foo());
-        assert_eq!(None, TestEnum::C{a:1.0,b:true}.bar());
+        assert_eq!("a", TestEnum::A.quux());
+        assert_eq!("b", TestEnum::B(3).quux());
+        assert_eq!("c", TestEnum::C{a:1.0,b:true}.quux());
     }
+
+    // todo: convert to optional
+    // #[test]
+    // fn variant_props()
+    // {
+    //     assert_eq!(Some("5"), TestEnum::A.foo());
+    //     assert_eq!(Some("donk"), TestEnum::A.bar());
+    //     assert_eq!(None, TestEnum::B(3).foo());
+    //     assert_eq!(Some("505"), TestEnum::C{a:1.0,b:true}.foo());
+    //     assert_eq!(None, TestEnum::C{a:1.0,b:true}.bar());
+    // }
 
     #[test]
     fn variant_count()
@@ -69,6 +82,15 @@ mod flags_tests
     {
         let z = BasicEnum::A | BasicEnum::B;
         assert_eq!(u8::from(z), 3);
+    }
+
+    #[test]
+    fn none()
+    {
+        let n = BasicEnum::none();
+        assert_eq!(u8::from(n), 0);
+        assert_ne!(n, BasicEnum::A);
+        assert_eq!(n | BasicEnum::A, BasicEnum::A);
     }
 
     #[test]

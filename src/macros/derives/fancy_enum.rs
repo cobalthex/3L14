@@ -58,7 +58,6 @@ pub fn fancy_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 
                 let method_name = prop_key.clone();
                 let prop = props.entry(method_name).or_insert(Vec::<proc_macro2::TokenStream>::new());
-                // prop.push(quote!(Self::#variant_ident => #prop_val).into());
                 prop.push(match variant.fields
                 {
                     Fields::Named(_) => quote!(Self::#variant_ident{..} => #prop_val),

@@ -1,17 +1,20 @@
-pub mod texture;
+mod texture;
 pub use texture::*;
 
-pub mod material;
+mod material;
 pub use material::*;
 
-pub mod shader;
+mod shader;
 pub use shader::*;
 
-pub mod model;
+mod model;
 pub use model::*;
 
-pub mod geometry;
+mod geometry;
 pub use geometry::*;
 
-pub mod skeleton;
+mod skeleton;
 pub use skeleton::*;
+
+mod skeletal_animation;
+pub use skeletal_animation::*;

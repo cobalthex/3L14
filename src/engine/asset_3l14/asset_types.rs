@@ -18,8 +18,9 @@ pub enum AssetTypeId
     Material = 7,
     Shader = 8,
     Model = 9,
+    SkeletalAnimation = 10,
 
-    Scene = 10,
+    Scene = 11,
     
     // ComputePipeline
 

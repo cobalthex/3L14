@@ -1,6 +1,6 @@
 use crate::assets::{Geometry, Material, Shader, Skeleton};
 use crate::Renderer;
-use asset_3l14::{Asset, AssetHandle, AssetKey, AssetLifecycler, AssetLoadRequest, AssetTypeId};
+use asset_3l14::{Asset, Ash, AssetKey, AssetLifecycler, AssetLoadRequest, AssetTypeId};
 use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
 use std::error::Error;
@@ -24,16 +24,16 @@ pub struct ModelFile
 
 pub struct Surface
 {
-    pub material: AssetHandle<Material>,
-    pub vertex_shader: AssetHandle<Shader>,
-    pub pixel_shader: AssetHandle<Shader>,
+    pub material: Ash<Material>,
+    pub vertex_shader: Ash<Shader>,
+    pub pixel_shader: Ash<Shader>,
 }
 
 pub struct Model
 {
     pub mesh_count: u32,
-    pub geometry: AssetHandle<Geometry>,
-    pub skeleton: Option<AssetHandle<Skeleton>>,
+    pub geometry: Ash<Geometry>,
+    pub skeleton: Option<Ash<Skeleton>>,
     pub surfaces: Box<[Surface]>,
 }
 impl Asset for Model

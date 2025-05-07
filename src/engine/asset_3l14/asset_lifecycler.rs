@@ -1,5 +1,5 @@
 use super::*;
-use bitcode::DecodeOwned;
+use bitcode::{Decode, DecodeOwned};
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::error::Error;
@@ -8,11 +8,13 @@ use std::sync::Arc;
 use debug_3l14::debug_gui::DebugGui;
 use nab_3l14::utils::alloc_slice::alloc_slice_uninit;
 use nab_3l14::utils::{varint, ShortTypeName};
+use proc_macros_3l14::Flags;
 
 pub struct AssetLoadRequest
 {
     pub asset_key: AssetKey,
     pub input: Box<dyn AssetRead>, // TODO: memory mapped buffer?
+
     storage: Arc<AssetsStorage>,
 
     // timer?
@@ -79,6 +81,16 @@ pub trait AssetLifecycler: Sync + Send + DebugGui
     // reload ?
 }
 
+pub trait TrivialAssetLifecycler: Sync + Send + DebugGui { type Asset: Asset + DecodeOwned; }
+impl<L: TrivialAssetLifecycler> AssetLifecycler for L
+{
+    type Asset = L::Asset;
+    fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
+    {
+        request.deserialize::<Self::Asset>()
+    }
+}
+
 // only for use internally in the asset system, mostly just utility methods for interacting with generics
 pub(super) trait UntypedAssetLifecycler: Sync + Send + DebugGui
 {
@@ -114,6 +126,19 @@ impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler fo
     }
 }
 
+#[derive(Flags)]
+#[repr(u8)]
+pub(super) enum AssetLifecyclerFeatures
+{
+    DebugGui = 0b0000_0001,
+}
+
+pub(super) struct RegisteredAssetLifecycler
+{
+    pub lifecycler: Box<dyn UntypedAssetLifecycler>,
+    pub features: AssetLifecyclerFeatures,
+}
+
 pub(super) struct RegisteredAssetType
 {
     pub type_id: TypeId,
@@ -125,7 +150,7 @@ pub(super) struct RegisteredAssetType
 #[derive(Default)]
 pub struct AssetLifecyclers
 {
-    pub(super) lifecyclers: HashMap<AssetTypeId, Box<dyn UntypedAssetLifecycler>>,
+    pub(super) lifecyclers: HashMap<AssetTypeId, RegisteredAssetLifecycler>,
     pub(super) registered_asset_types: HashMap<AssetTypeId, RegisteredAssetType>,
 }
 impl AssetLifecyclers
@@ -133,7 +158,11 @@ impl AssetLifecyclers
     pub fn add_lifecycler<A: Asset, L: AssetLifecycler<Asset=A> + UntypedAssetLifecycler + DebugGui + 'static>(mut self, lifecycler: L) -> Self
     {
         // warn/fail on duplicates?
-        self.lifecyclers.insert(A::asset_type(), Box::new(lifecycler));
+        self.lifecyclers.insert(A::asset_type(), RegisteredAssetLifecycler
+        {
+            lifecycler: Box::new(lifecycler),
+            features: AssetLifecyclerFeatures::none(), // TODO: some day
+        });
         self.registered_asset_types.insert(A::asset_type(), RegisteredAssetType
         {
             type_id: TypeId::of::<A>(),

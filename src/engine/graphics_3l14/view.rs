@@ -1,12 +1,12 @@
 use crate::pipeline_sorter::PipelineSorter;
 use crate::{debug_label, pipeline_sorter, render_passes, Renderer};
 use arrayvec::ArrayVec;
-use glam::{Mat4, Vec2, Vec3, Vec4Swizzles};
+use glam::{Mat3, Mat4, Vec2, Vec3, Vec4Swizzles};
 use std::sync::Arc;
 use std::time::Duration;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, QueueWriteBufferView, RenderPass};
 use asset_3l14::Asset;
-use math_3l14::{CanSee, Frustum, IsOnOrInside, Sphere, TransformUniform};
+use math_3l14::{Affine3, CanSee, Frustum, IsOnOrInside, Sphere, TransformUniform};
 use crate::assets::Model;
 use crate::camera::{Camera, CameraProjection, CameraUniform};
 use crate::pipeline_cache::{DebugMode, PipelineCache};
@@ -17,12 +17,6 @@ struct CurrentUniformsWriter<'f>
     renderer: Arc<Renderer>,
     writer: QueueWriteBufferView<'f>,
     next_slot: usize,
-}
-
-pub trait Draw<T>
-{
-    // todo: Transform instead of matrix?
-    fn draw(&mut self, transform: Mat4, what: T) -> bool;
 }
 
 #[derive(Default)]
@@ -243,10 +237,8 @@ impl<'f> View<'f>
 
         self.used_uniforms_pools.push(camera);
     }
-}
-impl<'f> Draw<Arc<Model>> for View<'f>
-{
-    fn draw(&mut self, object_transform: Mat4, model: Arc<Model>) -> bool
+
+    pub fn draw_model_static(&mut self, model: Arc<Model>, object_transform: Mat4) -> bool
     {
         // this may be heavy-handed
         if !model.all_dependencies_loaded()
@@ -328,5 +320,10 @@ impl<'f> Draw<Arc<Model>> for View<'f>
         drop(uniforms_writer);
         self.used_uniforms_pools.push(uniforms);
         true
+    }
+
+    fn draw_model_skinned(&mut self, model: Arc<Model>, object_transform: Mat4, pose: &[Affine3]) -> bool
+    {
+        todo!()
     }
 }

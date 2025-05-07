@@ -1,11 +1,13 @@
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, HashMap};
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
-use crate::helpers::shader_compiler::{ShaderCompilation, ShaderCompiler};
+use crate::helpers::shader_compiler::{ShaderCompileFlags, ShaderCompilation, ShaderCompiler};
 use arrayvec::ArrayVec;
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Quat, Vec3};
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
-use graphics_3l14::assets::{GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, Skeleton, TextureFile, TextureFilePixelFormat, VertexLayout};
+use graphics_3l14::assets::{GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat, VertexLayout};
 use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
 use math_3l14::{DualQuat, Sphere, AABB};
 use metrohash::MetroHash64;
@@ -18,8 +20,10 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use gltf::animation::util::ReadOutputs;
 use unicase::UniCase;
 use wgpu::VertexBufferLayout;
+use nab_3l14::timing::FSeconds;
 
 #[derive(Hash)]
 struct ShaderHash
@@ -28,6 +32,7 @@ struct ShaderHash
     material_class: MaterialClass,
     vertex_layout_hash: u64, // all the layouts used hashed together
     // custom file name
+    compile_flags: ShaderCompileFlags,
 }
 
 // bit flags for which vertex types are avail?
@@ -105,21 +110,15 @@ impl AssetBuilder for ModelBuilder
             let buffers =  gltf::import_buffers(&document, None, blob)?;
             let images = gltf::import_images(&document, None, &buffers)?;
 
-            for gltf_node in document.nodes()
+            for anim in document.animations()
             {
-                self.parse_gltf(gltf_node, &buffers, &images, outputs)?;
+                self.parse_gltf_anim(anim, &buffers, outputs)?;
             }
 
-            // for anim in document.animations()
-            // {
-            //     for ch in anim.channels()
-            //     {
-            //         let chr = ch.reader(|b| Some(&buffers[b.index()]));
-            //         let i = chr.read_inputs().unwrap()
-            //         {
-            //         }
-            //     }
-            // }
+            for gltf_node in document.nodes()
+            {
+                self.parse_gltf_mesh(gltf_node, &buffers, &images, outputs)?;
+            }
         }
 
         Ok(())
@@ -127,7 +126,8 @@ impl AssetBuilder for ModelBuilder
 }
 impl ModelBuilder
 {
-    fn parse_gltf(&self, in_node: gltf::Node, buffers: &Vec<gltf::buffer::Data>, images: &Vec<gltf::image::Data>, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+
+    fn parse_gltf_mesh(&self, in_node: gltf::Node, buffers: &Vec<gltf::buffer::Data>, images: &Vec<gltf::image::Data>, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         // pass in node?
         let Some(in_mesh) = in_node.mesh() else { return Ok(()); };
@@ -154,21 +154,15 @@ impl ModelBuilder
         {
             vertex_layout |= VertexLayout::Skinned;
 
-            let mut temp_str = String::new();
-            let joint_name_hashes: Box<_> = skin.joints().enumerate().map(|(i, n)|
+            let bone_names: Box<[String]> = skin.joints().enumerate().map(|(i, n)|
             {
-                let name = n.name().unwrap_or_else(||
-                {
-                    temp_str.clear();
-                    std::fmt::Write::write_fmt(&mut temp_str, format_args!("{i}")).unwrap();
-                    &temp_str
-                });
-                hash_bone_name(n.name().unwrap_or_else(|| name))
+                n.name().map(|n| n.to_string()).unwrap_or_else(|| format!("{}", i))
             }).collect();
-            let mut remapped_bone_indices: Box<_> = (0..joint_name_hashes.len() as u16).collect();
-            remapped_bone_indices.sort_by_key(|i| joint_name_hashes[*i as usize]); // explicit sort rule?
+            let bone_name_hashes: Box<_> = bone_names.iter().map(|jn| hash_bone_name(&jn)).collect();
+            let mut remapped_bone_indices: Box<_> = (0..bone_name_hashes.len() as u16).collect();
+            remapped_bone_indices.sort_by_key(|i| bone_name_hashes[*i as usize]); // explicit sort rule?
 
-            let mut skel_inv_bind_pose = alloc_slice_default(joint_name_hashes.len());
+            let mut skel_inv_bind_pose = alloc_slice_default(bone_name_hashes.len());
             let reader = skin.reader(|b| Some(&buffers[b.index()]));
             for (i, ibm) in reader.read_inverse_bind_matrices().unwrap().enumerate() // error handling?
             {
@@ -179,10 +173,11 @@ impl ModelBuilder
 
             let skeleton =
             {
-                let skel_key = AssetKeySynthHash::generate(&joint_name_hashes);
+                let skel_key = AssetKeySynthHash::generate(&bone_name_hashes);
                 if let Some(mut output) = outputs.add_synthetic(AssetTypeId::Skeleton, skel_key, false)?
                 {
                     output.serialize(&Skeleton { inv_bind_pose: skel_inv_bind_pose })?;
+                    output.serialize_debug::<Skeleton>(&SkeletonDebugData { bone_names, })?;
                     output.finish()?;
                 }
                 AssetKey::synthetic(AssetTypeId::Skeleton, skel_key)
@@ -192,7 +187,7 @@ impl ModelBuilder
             {
                 asset: skeleton,
                 remapped_bone_indices,
-                joint_name_hashes,
+                joint_name_hashes: bone_name_hashes,
             })
         } else { None };
 
@@ -355,12 +350,15 @@ impl ModelBuilder
                 mtl_output.finish()?
             };
 
+            let shader_compile_flags = ShaderCompileFlags::Debug;
+
             // todo: better asset key
             let vertex_shader_key = AssetKeySynthHash::generate(ShaderHash
             {
                 stage: ShaderStage::Vertex,
                 material_class,
                 vertex_layout_hash,
+                compile_flags: shader_compile_flags,
             });
             const FORCE_BUILD_SHADERS: bool = true;
             if let Some(mut vshader_output) = outputs.add_synthetic(AssetTypeId::Shader, vertex_shader_key, FORCE_BUILD_SHADERS)?
@@ -376,8 +374,7 @@ impl ModelBuilder
                     source_text: &shader_source,
                     filename: &shader_file, // todo: for debugging, use asset key?
                     stage: ShaderStage::Vertex,
-                    debug: true,
-                    emit_symbols: false,
+                    flags: shader_compile_flags,
                     defines: vec![],
                 })?;
                 let (module_hash, module_bytes) = shader_module.finish();
@@ -396,6 +393,7 @@ impl ModelBuilder
                 stage: ShaderStage::Pixel,
                 material_class,
                 vertex_layout_hash,
+                compile_flags: shader_compile_flags,
             });
             if let Some(mut pshader_output) = outputs.add_synthetic(AssetTypeId::Shader, pixel_shader_key, FORCE_BUILD_SHADERS)?
             {
@@ -410,8 +408,7 @@ impl ModelBuilder
                     source_text: &shader_source,
                     filename: &shader_file, // todo: for debugging, use asset key?
                     stage: ShaderStage::Pixel,
-                    debug: true,
-                    emit_symbols: false,
+                    flags: shader_compile_flags,
                     defines: vec![], // TODO
                 })?;
                 let (module_hash, module_bytes) = shader_module.finish();
@@ -474,6 +471,74 @@ impl ModelBuilder
             surfaces: surfaces.into_boxed_slice(),
         })?;
         model_output.finish()?;
+
+        Ok(())
+    }
+
+    fn parse_gltf_anim(&self, in_anim: gltf::Animation, buffers: &Vec<gltf::buffer::Data>, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    {
+        let mut anim_name_buf = String::new();
+        let anim_name = in_anim.name().unwrap_or_else(||
+        {
+            anim_name_buf.clear();
+            std::fmt::Write::write_fmt(&mut anim_name_buf, format_args!("animation_{}", in_anim.index())).unwrap();
+            &anim_name_buf
+        });
+
+        #[derive(Default, Debug)]
+        struct Keyframe
+        {
+            translation: Option<Vec3>,
+            rotation: Option<Quat>,
+        }
+
+        let mut anims = HashMap::new();
+
+        for in_chan in in_anim.channels()
+        {
+            let ch_reader = in_chan.reader(|b| Some(&buffers[b.index()]));
+            let target_node = in_chan.target().node();
+            let mut keyframes = &mut anims.entry(target_node.index()).or_insert_with(|| (target_node.name(), BTreeMap::new())).1; // TODO: need to group by node
+
+            // todo: figure out if in_chan.sampler().interpolation() is necessary
+
+            let mut inputs = ch_reader.read_inputs().unwrap();
+            match ch_reader.read_outputs().unwrap()
+            {
+                ReadOutputs::Translations(translations) =>
+                {
+                    for (time, translation) in inputs.zip(translations)
+                    {
+                        let mut entry = keyframes.entry(FSeconds(time)).or_insert_with(|| Keyframe::default());
+                        // round to n digits?
+                        entry.translation = Some(translation.into());
+                    }
+                }
+                ReadOutputs::Rotations(rotations) =>
+                {
+                    for (time, rotation) in inputs.zip(rotations.into_f32())
+                    {
+                        let mut entry = keyframes.entry(FSeconds(time)).or_insert_with(|| Keyframe::default());
+                        entry.rotation = Some(Quat::from_array(rotation)); // normalize?
+                    }
+                }
+                ReadOutputs::Scales(_) => {} // unsupported (currently)
+                ReadOutputs::MorphTargetWeights(_) => {} // unsupported
+            }
+        }
+
+        let mut test = std::fs::File::create(format!("C:\\users\\matt\\desktop\\dump_{}.anim", in_anim.name().unwrap_or("ZZZ")))?;
+        for (bone, (name, keyframes)) in anims.iter()
+        {
+            writeln!(test, "{} {:?}:", bone, name)?;
+            for keyframe in keyframes.iter()
+            {
+                writeln!(test, "  {:.4} - {:?}", keyframe.0.0, keyframe.1)?;
+            }
+        }
+
+        // todo: output sorted based on hash of bone name
+
         Ok(())
     }
 }

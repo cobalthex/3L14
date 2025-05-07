@@ -8,7 +8,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::Error;
 use nab_3l14::const_assert;
 use nab_3l14::utils::format_width_hex_bytes;
-use crate::{AssetTypeId, ASSET_FILE_EXTENSION, ASSET_META_FILE_EXTENSION};
+use crate::{AssetTypeId, ASSET_DEBUG_FILE_EXTENSION, ASSET_FILE_EXTENSION, ASSET_META_FILE_EXTENSION};
 
 type AssetKeyDerivedIdRepr = u16;
 type AssetKeySynthHashRepr = u64;
@@ -159,6 +159,7 @@ impl AssetKey
     const SYNTH_FLAG_SHIFT:  u8 = Self::DERIVED_KEY_SHIFT + Self::DERIVED_ID_BITS;
     const ASSET_TYPE_SHIFT:  u8 = Self::SYNTH_FLAG_SHIFT + Self::SYNTH_FLAG_BITS;
 
+    #[must_use]
     pub const fn unique(asset_type: AssetTypeId, derived_id: AssetKeyDerivedId, source_id: AssetKeySourceId) -> Self
     {
         const_assert!((AssetKey::TOTAL_BITS / 8) as usize == size_of::<AssetKey>());
@@ -195,40 +196,40 @@ impl AssetKey
         Self(u)
     }
 
-    #[inline]
+    #[inline] #[must_use]
     pub const fn asset_type(&self) -> AssetTypeId
     {
         unsafe { std::mem::transmute((self.0 >> Self::ASSET_TYPE_SHIFT) as u16 & Self::ASSET_TYPE_MAX) }
     }
     // Get the derived ID for this asset key, returns 0 if synthetic
-    #[inline]
+    #[inline] #[must_use]
     pub const fn derived_id(&self) -> AssetKeyDerivedId
     {
         let u = (self.0 >> Self::DERIVED_KEY_SHIFT) as u16 & Self::DERIVED_KEY_MAX;
         AssetKeyDerivedId(u * !self.is_synthetic() as u16)
     }
     // Get the source ID for this asset key, returns 0 if synthetic
-    #[inline]
+    #[inline] #[must_use]
     pub const fn source_id(&self) -> AssetKeySourceId
     {
         let u = (self.0 >> Self::SOURCE_KEY_SHIFT) & Self::SOURCE_KEY_MAX;
         AssetKeySourceId(u * !self.is_synthetic() as u64)
     }
     // Get the synthesized hash for this asset key, returns 0 if unique (not synthetic)
-    #[inline]
+    #[inline] #[must_use]
     pub const fn synth_hash(&self) -> AssetKeySynthHash
     {
         // TODO: & with !is_synthetic?
         let u = (self.0 >> Self::SYNTH_HASH_SHIFT) & Self::SYNTH_HASH_MAX;
         AssetKeySynthHash(u * self.is_synthetic() as u64)
     }
-    #[inline]
+    #[inline] #[must_use]
     pub const fn is_synthetic(&self) -> bool
     {
         ((self.0 >> Self::SYNTH_FLAG_SHIFT) as u8 & Self::SYNTH_FLAG_MAX) == 1
     }
 
-    #[inline]
+    #[inline] #[must_use]
     pub fn as_file_name(&self) -> PathBuf
     {
         PathBuf::from(format!("{:0width$x}.{}",
@@ -236,12 +237,22 @@ impl AssetKey
                               ASSET_FILE_EXTENSION,
                               width = format_width_hex_bytes(AssetKey::TOTAL_BITS)))
     }
-    #[inline]
+
+    #[inline] #[must_use]
     pub fn as_meta_file_name(&self) -> PathBuf
     {
         PathBuf::from(format!("{:0width$x}.{}",
                               self.0,
                               ASSET_META_FILE_EXTENSION,
+                              width = format_width_hex_bytes(AssetKey::TOTAL_BITS)))
+    }
+
+    #[inline] #[must_use]
+    pub fn as_debug_file_name(&self) -> PathBuf
+    {
+        PathBuf::from(format!("{:0width$x}.{}",
+                              self.0,
+                              ASSET_DEBUG_FILE_EXTENSION,
                               width = format_width_hex_bytes(AssetKey::TOTAL_BITS)))
     }
 }

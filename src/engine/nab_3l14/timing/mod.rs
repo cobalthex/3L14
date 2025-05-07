@@ -1,4 +1,10 @@
-use std::time::{Instant, Duration};
+mod time_primitives;
+pub use time_primitives::*;
+
+mod stopwatch;
+pub use stopwatch::*;
+
+use std::time::{Duration, Instant};
 use parking_lot::RwLock;
 
 #[derive(Debug, Clone, Copy)]

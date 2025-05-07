@@ -26,7 +26,7 @@ pub enum AssetNotification
 pub(super) struct AssetsStorage
 {
     registered_asset_types: HashMap<AssetTypeId, RegisteredAssetType>,
-    lifecyclers: HashMap<AssetTypeId, Box<dyn UntypedAssetLifecycler>>,
+    lifecyclers: HashMap<AssetTypeId, RegisteredAssetLifecycler>,
 
     handles: Mutex<AssetHandleBank>,
     lifecycle_channel: Sender<AssetLifecycleRequest>,
@@ -102,7 +102,7 @@ impl AssetsStorage
     #[must_use]
     pub fn get_lifecycler<A: Asset>(&self) -> Option<&dyn UntypedAssetLifecycler>
     {
-        self.lifecyclers.get(&A::asset_type()).map(|l| l.as_ref())
+        self.lifecyclers.get(&A::asset_type()).map(|l| l.lifecycler.as_ref())
     }
 
     #[must_use]
@@ -217,7 +217,7 @@ impl AssetsStorage
                                         {
                                             let asset_type = untyped_handle.as_ref().asset_type();
                                             let lifecycler = &self.lifecyclers.get(&asset_type)
-                                                .expect("Unsupported asset type!"); // this should fail in load()
+                                                .expect("Unsupported asset type!").lifecycler; // this should fail in load()
 
                                             lifecycler.error_untyped(untyped_handle, AssetLoadError::Shutdown);
                                         }
@@ -230,7 +230,7 @@ impl AssetsStorage
                             {
                                 let inner = untyped_handle.as_ref();
                                 let lifecycler = &self.lifecyclers.get(&inner.asset_type())
-                                    .expect("Unsupported asset type!"); // this should fail in load()
+                                    .expect("Unsupported asset type!").lifecycler; // this should fail in load()
 
                                 let asset_file_path = self.asset_key_to_file_path(inner.key());
                                 match Self::open_asset_from_file(asset_file_path)
@@ -246,7 +246,7 @@ impl AssetsStorage
                             AssetLifecycleRequest::LoadFromMemory(untyped_handle, reader) =>
                             {
                                 let lifecycler = &self.lifecyclers.get(&untyped_handle.as_ref().asset_type())
-                                    .expect("Unsupported asset type!"); // this should fail in load()
+                                    .expect("Unsupported asset type!").lifecycler; // this should fail in load()
 
                                 lifecycler.load_untyped(self.clone(), untyped_handle, reader);
                             },
@@ -467,18 +467,18 @@ impl DebugGui for Assets
         let inspected_lifecycler = self.storage.lifecyclers.get(&debug_state.inspected_lifecycler);
 
         egui::ComboBox::from_label("Lifecyclers")
-            .selected_text(inspected_lifecycler.map_or("(None)", |l| l.name()))
+            .selected_text(inspected_lifecycler.map_or("(None)", |l| l.lifecycler.name()))
             .show_ui(ui, |cui|
             {
                 for (asset_type, lifecycler) in &self.storage.lifecyclers
                 {
-                    cui.selectable_value(&mut debug_state.inspected_lifecycler, *asset_type, lifecycler.name());
+                    cui.selectable_value(&mut debug_state.inspected_lifecycler, *asset_type, lifecycler.lifecycler.name());
                 }
             });
 
         if let Some(lifecycler) = inspected_lifecycler
         {
-            ui.group(|gui| { lifecycler.debug_gui(gui) });
+            ui.group(|gui| { lifecycler.lifecycler.debug_gui(gui) });
         }
 
         let mut has_fswatcher = self.fs_watcher.is_some();

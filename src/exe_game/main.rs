@@ -4,12 +4,12 @@ use debug_3l14::debug_gui;
 use debug_3l14::debug_menu::{DebugMenu, DebugMenuMemory};
 use debug_3l14::sparkline::Sparkline;
 use glam::{FloatExt, Mat4, Quat, Vec3, Vec4};
-use graphics_3l14::assets::{GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, SkeletonLifecycler, TextureLifecycler};
+use graphics_3l14::assets::{GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, SkeletalAnimationLifecycler, SkeletonLifecycler, TextureLifecycler};
 use graphics_3l14::camera::{Camera, CameraProjection};
 use graphics_3l14::debug_draw::DebugDraw;
 use graphics_3l14::pipeline_cache::{DebugMode, PipelineCache};
 use graphics_3l14::uniforms_pool::UniformsPool;
-use graphics_3l14::view::{Draw, View};
+use graphics_3l14::view::View;
 use graphics_3l14::windows::Windows;
 use graphics_3l14::{colors, render_passes, renderer, Renderer, Rgba};
 use input_3l14::{Input, KeyCode, KeyMods};
@@ -24,6 +24,7 @@ use std::time::Duration;
 use metrohash::MetroHash64;
 use sdl2::messagebox::MessageBoxFlag;
 use wgpu::{BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
+use asset_3l14::AssetTypeId::SkeletalAnimation;
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -41,7 +42,7 @@ fn main() -> ExitReason
         let keep_alive = app_run.args.keep_alive_on_panic;
         #[cfg(not(debug_assertions))]
         let keep_alive = false;
-        
+
         let _ = app::FATAL_ERROR_CB.set(|error_msg|
         {
             let _ = sdl2::messagebox::show_simple_message_box(MessageBoxFlag::ERROR, "Fatal Error!", &error_msg, None);
@@ -84,6 +85,7 @@ fn main() -> ExitReason
             .add_lifecycler(MaterialLifecycler::new(renderer.clone()))
             .add_lifecycler(GeometryLifecycler::new(renderer.clone()))
             .add_lifecycler(SkeletonLifecycler)
+            .add_lifecycler(SkeletalAnimationLifecycler)
         , assets_config);
 
     {
@@ -309,7 +311,7 @@ fn main() -> ExitReason
                             if model.all_dependencies_loaded()
                             {
                                 let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(25.0, 0.0, 0.0));
-                                view.draw(obj_world, model.clone());
+                                view.draw_model_static(model.clone(), obj_world);
                                 debug_draw.draw_wire_cube(obj_world, colors::WHITE);
 
                                 let geo = model.geometry.payload().unwrap();
@@ -317,7 +319,7 @@ fn main() -> ExitReason
                                 debug_draw.draw_wire_sphere(sp_txfm, colors::TOMATO);
 
                                 obj_world = Mat4::from_rotation_translation(obj_rot.inverse(), Vec3::new(-5.0, 0.0, -2.0));
-                                view.draw(obj_world, model.clone());
+                                view.draw_model_static(model.clone(), obj_world);
                                 debug_draw.draw_wire_cube(obj_world, colors::WHITE);
 
                                 if let Some(skel_handle) = &model.skeleton

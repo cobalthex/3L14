@@ -1,7 +1,8 @@
-use std::ops::{Add, Div, Mul, Neg};
+use crate::Affine3;
 use approx::{AbsDiffEq, RelativeEq};
 use bitcode::{Decode, Encode};
 use glam::{Mat4, Quat, Vec3};
+use std::ops::{Add, Div, Mul, Neg};
 
 #[derive(Debug, Default, PartialEq, Clone, Copy, Encode, Decode)]
 pub struct DualQuat
@@ -153,6 +154,16 @@ impl From<&DualQuat> for Mat4
     }
 }
 impl From<DualQuat> for Mat4 { fn from(value: DualQuat) -> Self { Self::from(&value) } }
+impl From<&DualQuat> for Affine3
+{
+    fn from(value: &DualQuat) -> Self
+    {
+        let rot = value.rotation();
+        let trans = value.translation();
+        Affine3::from_rotation_translation(rot, trans)
+    }
+}
+impl From<DualQuat> for Affine3 { fn from(value: DualQuat) -> Self { Self::from(&value) } }
 
 impl Mul<DualQuat> for DualQuat
 {
@@ -235,8 +246,8 @@ impl RelativeEq for DualQuat
 #[cfg(test)]
 mod tests
 {
-    use approx::{assert_abs_diff_eq, assert_relative_eq, assert_relative_ne};
     use super::*;
+    use approx::{assert_abs_diff_eq, assert_relative_eq, assert_relative_ne};
 
     #[test]
     fn create_extract()
@@ -320,7 +331,7 @@ mod tests
 
         let test = Quat::from_rotation_y(3.0);
 
-        // TODO
+        assert_relative_eq!(DualQuat::new(r * test, t), dq.rotated(test));
     }
 
     // TODO: to/from mat4

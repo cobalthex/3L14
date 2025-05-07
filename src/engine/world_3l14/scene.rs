@@ -1,5 +1,5 @@
 use glam::Vec3;
-use asset_3l14::AssetHandle;
+use asset_3l14::Ash;
 use graphics_3l14::assets::Model;
 use math_3l14::{Radians, AABB};
 
@@ -24,7 +24,7 @@ impl<T> SpatialMap<T>
 #[derive(Default)] // temp?
 struct Statics
 {
-    geo: Vec<AssetHandle<Model>>,
+    geo: Vec<Ash<Model>>,
     lights: Vec<Light>,
 }
 

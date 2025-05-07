@@ -7,7 +7,7 @@ use std::error::Error;
 use std::sync::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, Buffer, BufferBindingType, BufferSize, BufferUsages, SamplerBindingType, ShaderStages, TextureSampleType, TextureViewDimension};
-use asset_3l14::{AssetHandle, AssetKey, AssetLifecycler, AssetLoadRequest};
+use asset_3l14::{Ash, AssetKey, AssetLifecycler, AssetLoadRequest};
 use debug_3l14::debug_gui::DebugGui;
 use crate::assets::Texture;
 
@@ -49,7 +49,7 @@ pub struct Material
     pub class: MaterialClass,
     pub props: Buffer,
     pub bind_layout: BindGroupLayout,
-    pub textures: ArrayVec<AssetHandle<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS>,
+    pub textures: ArrayVec<Ash<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS>,
 }
 
 pub struct MaterialLifecycler
@@ -71,7 +71,7 @@ impl AssetLifecycler for MaterialLifecycler
     {
         let mtl_file: MaterialFile = request.deserialize()?;
 
-        let textures: ArrayVec<AssetHandle<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS> = mtl_file.textures.iter().map(|t|
+        let textures: ArrayVec<Ash<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS> = mtl_file.textures.iter().map(|t|
         {
            request.load_dependency(*t)
         }).collect();

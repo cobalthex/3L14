@@ -21,6 +21,8 @@ const CUBOID_VERTICES: [Vec4; 8] =
     Vec4::new( 1.0,  1.0,  1.0, 1.0), // far top right
 ];
 
+// TODO: pre-upload vertices and use instance drawing?
+
 // #[repr(packed)]
 #[repr(align(16))]
 struct DebugLineVertex

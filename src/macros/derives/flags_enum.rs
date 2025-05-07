@@ -1,8 +1,6 @@
-use std::ops::{BitAnd, Shr};
 use proc_macro2::Ident;
 use quote::quote;
 use syn::{parse_macro_input, Attribute, Data, DeriveInput, Expr, ExprLit, Fields, Lit};
-use crate::has_derive::has_derive;
 
 fn get_repr_size(attrs: &[Attribute]) -> Option<Ident>
 {
@@ -61,13 +59,26 @@ pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
         variant_names.push(quote!(Self::#variant_ident => stringify!(#variant_ident)));
 
         let Fields::Unit = variant.fields else { panic!("#[derive(Flags)]{type_name} must have unit variants only"); };
-        let Some((_, disc))  = &variant.discriminant else { panic!("{type_name} variant {variant_ident} must have a discriminant"); };
+        let Some((_, disc))  = &variant.discriminant else { panic!("{type_name}::{variant_ident} must have a discriminant"); };
 
         let Expr::Lit(ExprLit { lit: Lit::Int(int), .. }) = disc else { continue; };
-        let Ok(n) = int.base10_parse::<u128>() else { continue; };
+        let Ok(variant_value) = int.base10_parse::<u128>() else { continue; };
         // panic!("{type_name}::{variant_name} discriminant = {} {}", int, int.base10_digits());
 
-        known_values |= n;
+        if variant_value == 0
+        {
+            panic!("{type_name}::{variant_ident} cannot be 0. Use {type_name}::none() instead");
+        }
+
+        // allow for custom attrib to enable this?
+        if (variant_value & known_values) != 0
+        {
+            panic!("{type_name}::{variant_ident} has a discriminant that overlaps with another variant");
+        }
+
+        // TODO: check for duplicates
+
+        known_values |= variant_value;
     }
     // negative values don't seem to count towards size of enum...
 
@@ -85,11 +96,16 @@ pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     {
         impl #type_name
         {
+            // Create an instance of this enum with no values set
+            pub const fn none() -> Self { unsafe { ::core::mem::transmute(0 as #repr_size) } }
+
+            // check if one or more flags are set on this enum
             pub const fn has_flag(&self, flag: Self) -> bool
             {
                 let n = (*self as #repr_size) & (flag as #repr_size);
                 n == (flag as #repr_size)
             }
+            // return a value with all of the available bits set
             pub const fn all_flags() -> Self
             {
                 unsafe { ::core::mem::transmute(#known_values as #repr_size) }

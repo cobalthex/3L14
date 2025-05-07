@@ -240,6 +240,11 @@ impl AsRef<AssetHandleInner> for UntypedAssetHandle
 unsafe impl Sync for UntypedAssetHandle { }
 unsafe impl Send for UntypedAssetHandle { }
 
+// A more convenient alias for AssetHandle<A>
+pub type Ash<A> = AssetHandle<A>;
+
+// A hot-reloadable handle to an asset.
+// Do not store references to the internal payload longer than necessary
 #[repr(transparent)]
 pub struct AssetHandle<A: Asset>
 {
