@@ -5,12 +5,13 @@ use glam::{Mat3, Mat4, Vec2, Vec3, Vec4Swizzles};
 use std::sync::Arc;
 use std::time::Duration;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, QueueWriteBufferView, RenderPass};
-use asset_3l14::Asset;
-use math_3l14::{Affine3, CanSee, Frustum, IsOnOrInside, Sphere, TransformUniform};
-use crate::assets::Model;
+use asset_3l14::{Asset, AssetPayload};
+use math_3l14::{Affine3, CanSee, DualQuat, Frustum, IsOnOrInside, Sphere, StaticGeoUniform};
+use nab_3l14::debug_panic;
+use crate::assets::{Geometry, Model, MAX_SKINNED_BONES};
 use crate::camera::{Camera, CameraProjection, CameraUniform};
 use crate::pipeline_cache::{DebugMode, PipelineCache};
-use crate::uniforms_pool::{UniformsPoolEntryGuard, WgpuBufferWriter, WriteTyped};
+use crate::uniforms_pool::{UniformsPoolEntryGuard, WgpuBufferWriter, BufferWrite};
 
 struct CurrentUniformsWriter<'f>
 {
@@ -178,9 +179,9 @@ impl<'f> View<'f>
 
         let camera = self.pipeline_cache.uniforms.take_camera();
         {
-            let mut camera_writer = camera.write(self.renderer.queue());
+            let mut camera_writer = camera.record(self.renderer.queue());
             // TODO: view/proj order may be arch dependent?
-            camera_writer.write_typed(0, CameraUniform::new(self.camera_mtx, self.runtime));
+            camera_writer.write_type(0, CameraUniform::new(self.camera_mtx, self.runtime));
         }
 
         for (pipeline_hash, draws) in self.sorter.sort()
@@ -195,7 +196,11 @@ impl<'f> View<'f>
                 let mesh = &draw.geometry.meshes[draw.mesh_index as usize];
 
                 camera.bind(render_pass, 0, 0);
-                self.used_uniforms_pools[(draw.uniform_id >> 8) as usize].bind(render_pass, 1, draw.uniform_id as u8);
+                self.used_uniforms_pools[(draw.transform_uniform_id >> 8) as usize].bind(render_pass, 1, draw.transform_uniform_id as u8);
+                if let Some(poses_uniform_id) = draw.poses_uniform_id
+                {
+                    self.used_uniforms_pools[(poses_uniform_id >> 8) as usize].bind(render_pass, 2, poses_uniform_id as u8);
+                }
 
                 // TODO: don't create on the fly
                 let mut bge = ArrayVec::<_, 18>::new();
@@ -226,7 +231,7 @@ impl<'f> View<'f>
                     layout: &draw.material.bind_layout,
                     entries: &bge,
                 });
-                render_pass.set_bind_group(2, &mtl_bind_group, &[]);
+                render_pass.set_bind_group(3, &mtl_bind_group, &[]);
 
                 // bind sub-buffers?
                 render_pass.set_vertex_buffer(0, draw.geometry.vertices.slice(..));
@@ -238,7 +243,13 @@ impl<'f> View<'f>
         self.used_uniforms_pools.push(camera);
     }
 
-    pub fn draw_model_static(&mut self, model: Arc<Model>, object_transform: Mat4) -> bool
+    fn can_see(&self, geo: &Geometry, object_transform: Mat4) -> bool
+    {
+        let geo_transform = geo.bounds_sphere.transform(&(object_transform));
+        self.camera_clip.can_see(geo_transform)
+    }
+
+    fn draw_model_common(&mut self, model: Arc<Model>, world_transform: Mat4, poses_uniforms: Option<u32>) -> bool
     {
         // this may be heavy-handed
         if !model.all_dependencies_loaded()
@@ -247,42 +258,39 @@ impl<'f> View<'f>
         }
 
         let geo = model.geometry.payload().unwrap();
-        let geo_transform = geo.bounds_sphere.transform(&(object_transform));
-        if !self.camera_clip.can_see(geo_transform)
-        {
-            return false;
-        }
+        if !self.can_see(&geo, world_transform) { return false; }
 
-        // TODO: verify this math all works
-        let rad = object_transform.x_axis.x.max(object_transform.y_axis.y.max(object_transform.z_axis.z));
-        let depth = object_transform.w_axis.xyz().distance_squared(self.camera_pos) - (rad * rad);
+        // TODO: these should be per-mesh
+        let rad = world_transform.x_axis.x.max(world_transform.y_axis.y.max(world_transform.z_axis.z));
+        let depth = world_transform.w_axis.xyz().distance_squared(self.camera_pos) - (rad * rad);
 
         // todo: these need to reuse between draw calls
-        let mut uniforms = self.pipeline_cache.uniforms.take_transforms();
-        let mut next_uniform = 0;
-        let mut uniforms_writer = uniforms.write(self.renderer.queue());
+        let mut txfm_uniforms = self.pipeline_cache.uniforms.take_transforms();
+        let mut next_txfm_uniform = 0;
+        let mut txfm_uniforms_writer = txfm_uniforms.record(self.renderer.queue());
+        let txfm_uniform_id =
+        {
+            if next_txfm_uniform >= txfm_uniforms.count as usize
+            {
+                drop(txfm_uniforms_writer);
+                let mut swap_uniforms = self.pipeline_cache.uniforms.take_transforms();
+                std::mem::swap(&mut txfm_uniforms, &mut swap_uniforms);
+                self.used_uniforms_pools.push(swap_uniforms);
+                txfm_uniforms_writer = txfm_uniforms.record(self.renderer.queue());
+
+                next_txfm_uniform = 0;
+            }
+            txfm_uniforms_writer.write_type(next_txfm_uniform, StaticGeoUniform
+            {
+                world: world_transform,
+            });
+            let uniform_id = ((self.used_uniforms_pools.len() << 8) + next_txfm_uniform) as u32; // todo: ensure bits are enough
+            next_txfm_uniform += 1;
+            uniform_id
+        };
 
         for mesh_index in 0..model.mesh_count
         {
-            if next_uniform >= uniforms.count as usize
-            {
-                drop(uniforms_writer);
-                let mut swap_uniforms = self.pipeline_cache.uniforms.take_transforms();
-                std::mem::swap(&mut uniforms, &mut swap_uniforms);
-                self.used_uniforms_pools.push(swap_uniforms);
-                uniforms_writer = uniforms.write(self.renderer.queue());
-
-                next_uniform = 0;
-            }
-
-            // todo: one per model?
-            uniforms_writer.write_typed(next_uniform, TransformUniform
-            {
-                world: object_transform,
-            });
-            let uniform_id = ((self.used_uniforms_pools.len() << 8) + next_uniform) as u32; // todo: ensure bits are enough
-            next_uniform += 1;
-
             let (mtl, vsh, psh) =
             {
                 let surf = &model.surfaces[mesh_index as usize];
@@ -304,10 +312,11 @@ impl<'f> View<'f>
 
             self.sorter.push(pipeline_sorter::Draw
             {
-                transform: object_transform,
+                transform: world_transform,
                 depth,
                 mesh_index,
-                uniform_id,
+                transform_uniform_id: txfm_uniform_id,
+                poses_uniform_id: poses_uniforms,
                 pipeline_hash,
                 geometry: geo.clone(),
                 material: mtl,
@@ -317,13 +326,30 @@ impl<'f> View<'f>
             });
         }
 
-        drop(uniforms_writer);
-        self.used_uniforms_pools.push(uniforms);
+        drop(txfm_uniforms_writer);
+        self.used_uniforms_pools.push(txfm_uniforms);
         true
     }
 
-    fn draw_model_skinned(&mut self, model: Arc<Model>, object_transform: Mat4, pose: &[Affine3]) -> bool
+    pub fn draw_model_static(&mut self, model: Arc<Model>, world_transform: Mat4) -> bool
     {
-        todo!()
+        self.draw_model_common(model, world_transform, None)
+    }
+
+    pub fn draw_model_skinned(&mut self, model: Arc<Model>, world_transform: Mat4, poses: &[DualQuat; MAX_SKINNED_BONES]) -> bool
+    {
+        // TODO: this needs to pass vis-checks first
+
+        // todo: cleanup/standardize this logic
+        let mut poses_uniforms = self.pipeline_cache.uniforms.take_poses();
+        {
+            let mut poses_uniforms_writer = poses_uniforms.record(self.renderer.queue());
+            poses_uniforms_writer.write_slice(0, poses);
+        }
+
+        let poses_uniform_id = (self.used_uniforms_pools.len() << 8) as u32; // todo: ensure bits are enough
+        self.used_uniforms_pools.push(poses_uniforms);
+
+        self.draw_model_common(model, world_transform, Some(poses_uniform_id))
     }
 }

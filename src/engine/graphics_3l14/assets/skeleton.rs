@@ -1,4 +1,4 @@
-use asset_3l14::{AssetDebugData, AssetLifecycler, TrivialAssetLifecycler};
+use asset_3l14::{AssetDebugData, TrivialAssetLifecycler};
 use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
 use egui::Ui;
@@ -8,7 +8,9 @@ use proc_macros_3l14::Asset;
 use std::hash::{Hash, Hasher};
 use nab_3l14::hashing::hash64_to_32;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
+pub const MAX_SKINNED_BONES: usize = 128; // TODO: share with HLSL
+
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
 pub struct BoneId(pub u32); // TODO: 32 bits should be sufficient
 impl BoneId
 {
@@ -22,19 +24,20 @@ impl BoneId
     }
 }
 
-#[derive(Encode, Decode)]
+#[derive(Encode, Decode, Hash)]
 pub struct BoneRelation
 {
     pub id: BoneId,
-    pub parent_index: u32,
+    pub parent_index: i16, // negative values indicate no parent
+    // fill out remaining 16 bytes?
 }
 
 #[derive(Asset, Encode, Decode)]
 pub struct Skeleton
 {
-    pub bones: Box<[BoneRelation]>, // bones are ordered with root first in DFS order
-    pub bind_poses: Box<[DualQuat]>,
-    pub inv_bind_poses: Box<[DualQuat]>, // only store one of these?
+    pub hierarchy: Box<[BoneRelation]>, // bones are ordered with parents first (with the root at the front), // store just parents here?
+    pub bind_poses: Box<[DualQuat]>, // necessary?
+    pub inv_bind_poses: Box<[DualQuat]>,
 }
 
 impl AssetDebugData for Skeleton

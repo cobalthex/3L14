@@ -7,7 +7,7 @@ use proc_macros_3l14::Asset;
 use crate::assets::BoneId;
 
 // todo: standardize
-#[derive(Copy, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct AnimFrameNumber(pub u32);
 
 #[derive(Asset, Encode, Decode)]

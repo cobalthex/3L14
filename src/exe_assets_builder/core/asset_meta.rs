@@ -54,8 +54,9 @@ impl<'de> Deserialize<'de> for BuilderHash
 pub struct AssetMetadata
 {
     pub key: AssetKey,
-    pub build_timestamp: chrono::DateTime<chrono::Utc>,
+    pub name: Option<String>,
     pub source_path: PathBuf, // relative to the sources directory
+    pub build_timestamp: chrono::DateTime<chrono::Utc>,
     pub builder_hash: BuilderHash,
     pub format_hash: BuilderHash,
     pub dependencies: Box<[AssetKey]>,

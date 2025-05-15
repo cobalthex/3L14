@@ -42,6 +42,7 @@ impl Asset for Model
     fn all_dependencies_loaded(&self) -> bool
     {
         self.geometry.is_loaded_recursive() &&
+        self.skeleton.as_ref().map_or(true, |s| s.is_loaded_recursive()) &&
         self.surfaces.iter().all(|s|
             {
                 s.material.is_loaded_recursive() &&

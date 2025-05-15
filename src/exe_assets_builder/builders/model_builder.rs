@@ -7,7 +7,7 @@ use glam::{Mat4, Quat, Vec3};
 use gltf::animation::util::{ReadOutputs, Translations};
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
-use graphics_3l14::assets::{AnimFrameNumber, BoneId, GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat, VertexLayout};
+use graphics_3l14::assets::{AnimFrameNumber, BoneId, BoneRelation, GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat, VertexLayout};
 use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
 use log::kv::Key;
 use math_3l14::{DualQuat, Ratio, Sphere, AABB};
@@ -29,7 +29,7 @@ use toml::value::Index;
 use unicase::UniCase;
 use wgpu::VertexBufferLayout;
 
-const DEFAULT_ANIM_SAMPLE_RATE: Ratio<u32> = Ratio::new(30, 1);
+const DEFAULT_ANIM_SAMPLE_RATE: Ratio<u32> = Ratio::new(1, 30);
 
 #[derive(Hash)]
 struct ShaderHash
@@ -50,6 +50,8 @@ pub enum ModelImportError
     NoNormalData,
     NoIndexData,
     MismatchedVertexCount,
+    DuplicateBoneParents,
+    TooManyBones,
     AnimationTimesOutOfOrder,
 }
 impl Display for ModelImportError
@@ -107,7 +109,12 @@ impl AssetBuilder for ModelBuilder
 {
     type BuildConfig = ModelBuildConfig;
 
-    fn build_assets(&self, _config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(
+        &self,
+        _config: Self::BuildConfig,
+        input: &mut SourceInput,
+        outputs: &mut BuildOutputs)
+    -> Result<(), Box<dyn Error>>
     {
         if input.file_extension() == &UniCase::new("glb") ||
             input.file_extension() == &UniCase::new("gltf")
@@ -143,13 +150,15 @@ impl ModelBuilder
         buffers: &Vec<gltf::buffer::Data>,
         images: &Vec<gltf::image::Data>,
         skeletons: &[SkelInfo],
-        outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+        outputs: &mut BuildOutputs)
+    -> Result<(), Box<dyn Error>>
     {
         // pass in node?
         let Some(in_mesh) = in_node.mesh() else { return Ok(()); };
         let in_skin = in_node.skin();
 
         let mut model_output = outputs.add_output(AssetTypeId::Model)?;
+        in_node.name().map(|n| model_output.set_name(n)); // different name from mesh?
 
         let mut meshes = Vec::new();
         let mut surfaces = Vec::new();
@@ -161,7 +170,8 @@ impl ModelBuilder
         let maybe_skel_info = if let Some(skin) = &in_skin
         {
             vertex_layout |= VertexLayout::Skinned;
-            let skel = skeletons.iter().find(|s| s.gltf_index == skin.index()).expect("Node has a skin not in the document skins list??");
+            let skel = skeletons.iter().find(|s| s.gltf_index == skin.index())
+                .expect("Node has a skin not in the document skins list??");
             Some(skel)
         } else { None };
 
@@ -201,7 +211,7 @@ impl ModelBuilder
             let mut maybe_weights = prim_reader.read_weights(0).map(|w| w.into_f32());
 
             let mut mesh_vertex_count = 0;
-            for pos in positions.into_iter()
+            for pos in positions
             {
                 mesh_points.push(pos.into());
 
@@ -219,12 +229,12 @@ impl ModelBuilder
                 // todo: cleanup
                 if let Some(skel_info) = &maybe_skel_info
                 {
-                    let iremap = |ind: [u16;4]| ind.map(|i| skel_info.remapped_bone_indices[i as usize]);
+                    // let iremap = |ind: [u16;4]| ind.map(|i| skel_info.remapped_bone_indices[i as usize]);
 
                     // todo: verify matching attrib counts?
                     let skinned_vertex = SkinnedVertex
                     {
-                        indices: maybe_joints.as_mut().and_then(|j| j.next().map(iremap)).unwrap_or([0, 0, 0, 0]),
+                        indices: maybe_joints.as_mut().and_then(|j| j.next()/*.map(iremap)*/).unwrap_or([0, 0, 0, 0]),
                         weights: maybe_weights.as_mut().and_then(|w| w.next()).unwrap_or([0.0, 0.0, 0.0, 0.0]),
                     };
                     vertex_data.write_all(unsafe { as_u8_array(&skinned_vertex) })?;
@@ -274,6 +284,7 @@ impl ModelBuilder
                 let tex_data = &images[tex_index];
 
                 let mut tex_output = outputs.add_output(AssetTypeId::Texture)?;
+                tex.texture().name().map(|n| tex_output.set_name(n));
 
                 tex_output.serialize(&TextureFile
                 {
@@ -304,11 +315,13 @@ impl ModelBuilder
                 model_output.depends_on(tex);
             }
 
+            // TODO: read material info from gltf
             let material_class = MaterialClass::SimpleOpaque; // TODO
             let material =
             {
                 // call into MaterialBuilder?
                 let mut mtl_output = outputs.add_output(AssetTypeId::Material)?;
+                mtl_output.set_name(format!("{:?}", material_class));
 
                 mtl_output.depends_on_multiple(&textures);
 
@@ -342,6 +355,7 @@ impl ModelBuilder
                 log::debug!("Compiling vertex shader {:?}", vshader_output.asset_key());
 
                 let shader_file = self.shaders_root.join(format!("SkinnedOpaque.vs.hlsl"));
+                shader_file.to_str().map(|sf| vshader_output.set_name(sf));
 
                 let shader_source = std::fs::read_to_string(&shader_file)?;
                 let mut shader_module = InlineWriteHash::<MetroHash64, _>::new(Vec::new());
@@ -376,6 +390,7 @@ impl ModelBuilder
                 log::debug!("Compiling pixel shader {:?}", pshader_output.asset_key());
 
                 let shader_file = self.shaders_root.join(format!("{material_class:?}.ps.hlsl"));
+                shader_file.to_str().map(|sf| pshader_output.set_name(sf));
 
                 let shader_source = std::fs::read_to_string(&shader_file)?;
                 let mut shader_module = InlineWriteHash::<MetroHash64, _>::new(Vec::new());
@@ -427,6 +442,7 @@ impl ModelBuilder
         let geometry =
         {
             let mut geom_output = outputs.add_output(AssetTypeId::Geometry)?;
+            in_mesh.name().map(|n| geom_output.set_name(n));
             geom_output.serialize(&GeometryFile
             {
                 bounds_aabb: model_bounds_aabb,
@@ -451,39 +467,68 @@ impl ModelBuilder
         Ok(())
     }
 
-    fn parse_gltf_skin(&self, in_skin: &gltf::Skin, buffers: &[gltf::buffer::Data], outputs: &mut BuildOutputs) -> Result<SkelInfo, Box<dyn Error>>
+    fn parse_gltf_skin(
+        &self,
+        in_skin: &gltf::Skin,
+        buffers: &[gltf::buffer::Data],
+        outputs: &mut BuildOutputs)
+    -> Result<SkelInfo, Box<dyn Error>>
     {
-        let bone_names: Box<[String]> = in_skin.joints().enumerate().map(|(i, n)|
+        // todo: enumerate nodes to determine hierarchy
+        let mut bone_parents = HashMap::new();
+        let mut bone_names = alloc_slice_default(in_skin.joints().len());
+        let mut skel_bind_poses = alloc_slice_default(in_skin.joints().len());
+        for (i, joint) in in_skin.joints().enumerate()
+        {
+            if joint.index() > i16::MAX as usize
             {
-                n.name().map(|n| n.to_string()).unwrap_or_else(|| format!("{}", i))
-            }).collect();
-        let bone_ids: Box<_> = bone_names.iter().map(|jn| BoneId::from_name(&jn)).collect();
-        let mut remapped_bone_indices: Box<_> = (0..bone_ids.len() as u16).collect();
-        remapped_bone_indices.sort_by_key(|i| bone_ids[*i as usize]); // explicit sort rule?
+                return Err(Box::new(ModelImportError::TooManyBones));
+            }
 
-        let mut skel_inv_bind_pose = alloc_slice_default(bone_ids.len());
+            for child in joint.children()
+            {
+                let None = bone_parents.insert(child.index(), joint.index() as i16)
+                else { return Err(Box::new(ModelImportError::DuplicateBoneParents)); };
+            }
+
+            bone_parents.entry(joint.index()).or_insert_with(|| -1);
+            bone_names[i] = joint.name().map(|n| n.to_string()).unwrap_or_else(|| format!("{}", i));
+            skel_bind_poses[i] =
+            {
+                let (trans, rot, _scale) = joint.transform().decomposed();
+                DualQuat::from_rot_trans(Quat::from_array(rot), Vec3::from_array(trans))
+            };
+        }
+
+        let bone_relations: Box<_> = in_skin.joints().enumerate().map(|(i, joint)| BoneRelation
+        {
+            id: BoneId::from_name(&bone_names[i]),
+            parent_index: *bone_parents.get(&i).unwrap_or(&-1),
+        }).collect();
+
+        let mut skel_inv_bind_pose = alloc_slice_default(bone_relations.len());
         let reader = in_skin.reader(|b| Some(&buffers[b.index()]));
         for (i, ibm) in reader.read_inverse_bind_matrices().unwrap().enumerate() // error handling?
         {
             let mtx = Mat4::from_cols_array_2d(&ibm);
             let dq = DualQuat::from(&mtx);
-            skel_inv_bind_pose[remapped_bone_indices[i] as usize] = dq;
+            skel_inv_bind_pose[i] = dq;
         }
 
         let skeleton =
         {
             // TODO: this probably is not sufficient to determine uniqueness
-            let skel_key = AssetKeySynthHash::generate(&bone_ids);
-            if let Some(mut output) = outputs.add_synthetic(AssetTypeId::Skeleton, skel_key, false)?
+            let skel_key = AssetKeySynthHash::generate(&bone_relations);
+            if let Some(mut skel_output) = outputs.add_synthetic(AssetTypeId::Skeleton, skel_key, false)?
             {
-                output.serialize(&Skeleton
+                skel_output.serialize(&Skeleton
                 {
-                    bones: todo!(),
-                    bind_poses: todo!(),
+                    hierarchy: bone_relations,
+                    bind_poses: skel_bind_poses,
                     inv_bind_poses: skel_inv_bind_pose,
                 })?;
-                output.serialize_debug::<Skeleton>(&SkeletonDebugData { bone_names, })?;
-                output.finish()?;
+                skel_output.serialize_debug::<Skeleton>(&SkeletonDebugData { bone_names, })?;
+                skel_output.finish()?;
             }
             AssetKey::synthetic(AssetTypeId::Skeleton, skel_key)
         };
@@ -492,12 +537,15 @@ impl ModelBuilder
         {
             asset: skeleton,
             gltf_index: in_skin.index(),
-            bone_ids,
-            remapped_bone_indices,
         })
     }
 
-    fn parse_gltf_anim(&self, in_anim: gltf::Animation, buffers: &[gltf::buffer::Data], outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn parse_gltf_anim(
+        &self,
+        in_anim: gltf::Animation,
+        buffers: &[gltf::buffer::Data],
+        outputs: &mut BuildOutputs)
+    -> Result<(), Box<dyn Error>>
     {
         let mut anim_name_buf = String::new();
         let anim_name = in_anim.name().unwrap_or_else(||
@@ -540,10 +588,7 @@ impl ModelBuilder
             Ok(())
         }
 
-        // TODO: by bone
-        // transforms by bone, frame number
         let mut bone_keyframes: HashMap<usize, BoneData> = HashMap::new();
-
         let mut frame_count = 0;
 
         // todo: This can be parallelized
@@ -554,12 +599,12 @@ impl ModelBuilder
 
             // todo: figure out if in_chan.sampler().interpolation() is necessary
 
-            let mut inputs = ch_reader.read_inputs().unwrap();
+            let inputs = ch_reader.read_inputs().unwrap();
             match ch_reader.read_outputs().unwrap()
             {
                 ReadOutputs::Translations(read_translations) =>
                 {
-                    let mut translations = &mut bone_keyframes.entry(target_node.index())
+                    let translations = &mut bone_keyframes.entry(target_node.index())
                         .or_insert_with(|| BoneData { name: target_node.name(), .. Default::default() })
                         .translations;
 
@@ -579,7 +624,7 @@ impl ModelBuilder
                 }
                 ReadOutputs::Rotations(read_rotations) =>
                 {
-                    let mut rotations = &mut bone_keyframes.entry(target_node.index())
+                    let rotations = &mut bone_keyframes.entry(target_node.index())
                         .or_insert_with(|| BoneData { name: target_node.name(), .. Default::default() })
                         .rotations;
 
@@ -629,15 +674,16 @@ impl ModelBuilder
             }
         }
 
-        let mut output = outputs.add_output(AssetTypeId::SkeletalAnimation)?;
-        output.serialize(&SkeletalAnimation
+        let mut anim_output = outputs.add_output(AssetTypeId::SkeletalAnimation)?;
+        in_anim.name().map(|n| anim_output.set_name(n));
+        anim_output.serialize(&SkeletalAnimation
         {
             sample_rate,
             frame_count: AnimFrameNumber(frame_count as u32),
             bones: bone_ids,
             poses,
         })?;
-        output.finish()?;
+        anim_output.finish()?;
 
         // todo: output sorted based on hash of bone name
 
@@ -649,6 +695,4 @@ struct SkelInfo
 {
     asset: AssetKey,
     gltf_index: usize,
-    bone_ids: Box<[BoneId]>,
-    remapped_bone_indices: Box<[u16]>,
 }

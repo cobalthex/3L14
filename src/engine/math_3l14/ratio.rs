@@ -48,6 +48,11 @@ impl Ratio<i32>
     {
         self.numerator as f32 / self.denominator as f32
     }
+    #[inline] #[must_use]
+    pub fn to_f32_recip(self) -> f32
+    {
+        self.denominator as f32 / self.numerator as f32
+    }
 }
 impl Ratio<u32>
 {
@@ -56,8 +61,17 @@ impl Ratio<u32>
     {
         self.numerator as f32 / self.denominator as f32
     }
+    #[inline] #[must_use]
+    pub fn to_f32_recip(self) -> f32
+    {
+        self.denominator as f32 / self.numerator as f32
+    }
+    
+    pub fn to_ratio_u64(self) -> Ratio<u64>
+    {
+        Ratio::new(self.numerator as u64, self.denominator as u64)
+    }
 }
-
 
 #[cfg(test)]
 mod tests

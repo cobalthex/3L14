@@ -1,24 +1,25 @@
 #include "Colors.hlsli"
+#include "math/DualQuat.hlsli"
 
 [[vk::binding(0, 0)]]
-cbuffer Camera
+cbuffer PerView_Camera
 {
     float4x4 ProjView;
     uint TotalSecsWhole;
     float TotalSecsFrac;
 };
 [[vk::binding(0, 1)]]
-cbuffer World
+cbuffer PerModel_World
 {
     float4x4 World;
 };
 
-#define MAX_BONES 128
+#define MAX_SKINNED_BONES 128
 
 [[vk::binding(0, 2)]]
-cbuffer Bones
+cbuffer PerModel_SkinnedPoses
 {
-    float3x3 Bones[MAX_BONES];
+    DualQuat SkinnedPoses[MAX_SKINNED_BONES];
 }
 
 struct VertexOutput
@@ -39,9 +40,20 @@ VertexOutput vs_main(
     float4 weights: BLENDWEIGHT)
 {
     VertexOutput out_vertex;
-    out_vertex.world_position = mul(World, float4(in_position, 1));
+
+    DualQuat blended = DualQuatBlend4(
+        SkinnedPoses[indices.x], weights.x,
+        SkinnedPoses[indices.y], weights.y,
+        SkinnedPoses[indices.z], weights.z,
+        SkinnedPoses[indices.w], weights.w);
+    float3 transformed_pos = DualQuatTransformPoint(blended, in_position);
+
+    float3 transform_norm = DualQuatTransformDirection(blended, in_normal);
+//     float4 transform_tan = float4(DualQuatTransformDirection(blended, in_tangent.xyz), in_tangent.w);
+
+    out_vertex.world_position = mul(World, float4(transformed_pos, 1.0));
     out_vertex.clip_position = mul(ProjView, out_vertex.world_position);
-    out_vertex.normal = float4(in_normal, 1);
+    out_vertex.normal = float4(transform_norm, 1.0);
     out_vertex.texcoord = in_texcoord;
     out_vertex.color = UnpackRgba(color);
     return out_vertex;

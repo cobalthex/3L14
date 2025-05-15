@@ -98,6 +98,19 @@ pub trait ShortTypeName
 {
     fn short_type_name() -> &'static str;
 }
+impl<T> ShortTypeName for [T]
+{
+    #[inline] #[must_use]
+    fn short_type_name() -> &'static str
+    {
+        let type_name = std::any::type_name::<T>();
+        match type_name.rfind(':')
+        {
+            None => type_name,
+            Some(i) => &type_name[(i + 1)..]
+        }
+    }
+}
 impl<T> ShortTypeName for T
 {
     #[inline] #[must_use]

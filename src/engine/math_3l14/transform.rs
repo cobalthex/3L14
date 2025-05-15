@@ -114,13 +114,14 @@ impl From<Mat4> for Transform
     }
 }
 
+// TODO: move
 #[derive(Default, Clone, Copy)]
 #[repr(C, align(16))]
-pub struct TransformUniform
+pub struct StaticGeoUniform
 {
     pub world: Mat4,
 }
-impl From<Transform> for TransformUniform
+impl From<Transform> for StaticGeoUniform
 {
     fn from(transform: Transform) -> Self
     {

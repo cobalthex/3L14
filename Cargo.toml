@@ -31,7 +31,7 @@ members = ["./src/engine/*"]
 asset_3l14 = { workspace = true, features = ["asset_names", "asset_debug_data"] }
 containers_3l14 = { workspace = true, features = [] }
 debug_3l14 = { workspace = true, features = [] }
-graphics_3l14 = { workspace = true, features = [] }
+graphics_3l14 = { workspace = true, features = ["debug_gpu_labels"] }
 input_3l14 = { workspace = true, features = [] }
 math_3l14 = { workspace = true, features = [] }
 nab_3l14 = { workspace = true, features = [] }

@@ -4,8 +4,9 @@ use std::sync::Arc;
 use egui::Ui;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, QueueWriteBufferView, RenderPass, ShaderStages};
 use containers_3l14::{ObjectPool, ObjectPoolEntryGuard};
-use math_3l14::TransformUniform;
+use math_3l14::{DualQuat, StaticGeoUniform};
 use nab_3l14::utils::ShortTypeName;
+use crate::assets::MAX_SKINNED_BONES;
 use crate::camera::CameraUniform;
 
 pub struct UniformBufferEntry
@@ -22,10 +23,11 @@ pub struct UniformsPool
     max_ubo_size: usize,
     cameras: ObjectPool<UniformBufferEntry>,
     transforms: ObjectPool<UniformBufferEntry>,
+    poses: ObjectPool<UniformBufferEntry>,
 
     pub camera_bind_layout: BindGroupLayout,
     pub transform_bind_layout: BindGroupLayout,
-    pub skeleton_bind_layout: BindGroupLayout,
+    pub poses_bind_layout: BindGroupLayout,
 }
 impl UniformsPool
 {
@@ -70,13 +72,13 @@ impl UniformsPool
                         min_binding_size: None,
                     },
                     count: None,
-                }
+                },
             ],
         });
 
-        let skeleton_bind_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
+        let poses_bind_layout = renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
         {
-            label: debug_label!("Skeleton vsh bind layout"),
+            label: debug_label!("Skinning pose vsh bind layout"),
             entries:
             &[
                 BindGroupLayoutEntry
@@ -86,11 +88,11 @@ impl UniformsPool
                     ty: BindingType::Buffer
                     {
                         ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
+                        has_dynamic_offset: true,
                         min_binding_size: None,
                     },
                     count: None,
-                }
+                },
             ],
         });
 
@@ -99,10 +101,11 @@ impl UniformsPool
             max_ubo_size,
             cameras: ObjectPool::default(),
             transforms: ObjectPool::default(),
+            poses: ObjectPool::default(),
             renderer,
             camera_bind_layout,
             transform_bind_layout,
-            skeleton_bind_layout,
+            poses_bind_layout,
         }
     }
 
@@ -155,7 +158,12 @@ impl UniformsPool
     #[inline] #[must_use]
     pub fn take_transforms(&self) -> ObjectPoolEntryGuard<'_, UniformBufferEntry>
     {
-        self.transforms.take(|_| self.create_pool_entry::<TransformUniform>(&self.transform_bind_layout, None))
+        self.transforms.take(|_| self.create_pool_entry::<StaticGeoUniform>(&self.transform_bind_layout, None))
+    }
+
+    pub fn take_poses(&self) -> ObjectPoolEntryGuard<'_, UniformBufferEntry>
+    {
+        self.poses.take(|_| self.create_pool_entry::<[DualQuat; MAX_SKINNED_BONES]>(&self.poses_bind_layout, None))
     }
 }
 impl DebugGui for UniformsPool
@@ -174,41 +182,48 @@ pub type UniformsPoolEntryGuard<'a> = ObjectPoolEntryGuard<'a, UniformBufferEntr
 
 pub trait WgpuBufferWriter<'q>
 {
-    fn write(&'q self, queue: &'q wgpu::Queue) -> QueueWriteBufferView<'q>;
+    fn record(&'q self, queue: &'q wgpu::Queue) -> QueueWriteBufferView<'q>;
 
     fn bind(&self, render_pass: &mut RenderPass, bind_index: u32, buffer_index: u8);
 }
 impl<'p> WgpuBufferWriter<'p> for UniformsPoolEntryGuard<'p>
 {
-    fn write(&'p self, queue: &'p wgpu::Queue) -> QueueWriteBufferView<'p>
+    fn record(&'p self, queue: &'p wgpu::Queue) -> QueueWriteBufferView<'p>
     {
         let buf_size = unsafe { BufferSize::new_unchecked(self.buffer.size()) };
         queue.write_buffer_with(&self.buffer, 0, buf_size).unwrap()
     }
 
     #[inline]
-    fn bind(&self, render_pass: &mut RenderPass, bind_index: u32, buffer_index: u8)
+    fn bind(&self, render_pass: &mut RenderPass, bind_group_index: u32, buffer_index: u8)
     {
         let offset = buffer_index as u32 * self.entry_size;
-        render_pass.set_bind_group(bind_index, &self.bind_group, &[offset]);
+        render_pass.set_bind_group(bind_group_index, &self.bind_group, &[offset]);
     }
 }
 
-// todo: better name, impl for &[u8] ?
-pub trait WriteTyped
-{
-    fn write_typed<T>(&mut self, index: usize, value: T);
-}
-
-impl<'p> WriteTyped for QueueWriteBufferView<'p>
+pub trait BufferWrite
 {
     #[inline]
-    fn write_typed<T>(&mut self, index: usize, value: T)
+    fn write_type<T>(&mut self, index: usize, value: T)
+    {
+        self.write_slice::<T>(index, &[value]);
+    }
+    fn write_slice<T>(&mut self, index: usize, slice: &[T]);
+}
+
+impl<'p> BufferWrite for QueueWriteBufferView<'p>
+{
+    #[inline]
+    fn write_slice<T>(&mut self, index: usize, slice: &[T])
     {
         unsafe
         {
-            let ptr = self.as_mut_ptr() as *mut T;
-            std::ptr::write_unaligned(ptr.add(index), value);
+            let num_bytes = slice.len() * size_of::<T>();
+            std::ptr::copy(
+                slice.as_ptr() as *const u8,
+                self.as_mut_ptr().add(index),
+                num_bytes,);
         }
     }
 }

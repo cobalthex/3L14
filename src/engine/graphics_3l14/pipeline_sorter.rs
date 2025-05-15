@@ -12,7 +12,8 @@ pub struct Draw
     pub transform: Mat4,
     pub depth: f32,
     pub mesh_index: u32,
-    pub uniform_id: u32,
+    pub transform_uniform_id: u32,
+    pub poses_uniform_id: Option<u32>, // separate draw call?
     pub pipeline_hash: PipelineHash,
     pub geometry: Arc<Geometry>,
     pub material: Arc<Material>,

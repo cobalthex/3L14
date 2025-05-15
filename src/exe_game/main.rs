@@ -4,7 +4,7 @@ use debug_3l14::debug_gui;
 use debug_3l14::debug_menu::{DebugMenu, DebugMenuMemory};
 use debug_3l14::sparkline::Sparkline;
 use glam::{FloatExt, Mat4, Quat, Vec3, Vec4};
-use graphics_3l14::assets::{GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, SkeletalAnimation, SkeletalAnimationLifecycler, SkeletonLifecycler, TextureLifecycler};
+use graphics_3l14::assets::{AnimFrameNumber, GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, SkeletalAnimation, SkeletalAnimationLifecycler, SkeletonLifecycler, TextureLifecycler, MAX_SKINNED_BONES};
 use graphics_3l14::camera::{Camera, CameraProjection};
 use graphics_3l14::debug_draw::DebugDraw;
 use graphics_3l14::pipeline_cache::{DebugMode, PipelineCache};
@@ -16,7 +16,7 @@ use input_3l14::{Input, KeyCode, KeyMods};
 use nab_3l14::app;
 use nab_3l14::app::{AppFolder, AppRun, ExitReason};
 use nab_3l14::{CompletionState, RenderFrameNumber, ToggleState};
-use math_3l14::{Degrees, Frustum, Plane, Radians, Transform};
+use math_3l14::{Degrees, DualQuat, Frustum, Plane, Radians, Ratio, Transform};
 use nab_3l14::timing::Clock;
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use std::ops::Deref;
@@ -89,19 +89,21 @@ fn main() -> ExitReason
 
     {
         #[cfg(debug_assertions)]
+        let debug_gui_savestate_path = app_run.app_dir.join("debug_gui.state");
+        #[cfg(debug_assertions)]
         let mut debug_menu_memory;
         #[cfg(debug_assertions)]
         {
-            debug_menu_memory = DebugMenuMemory::load("debug_gui.state");
+            debug_menu_memory = DebugMenuMemory::load(&debug_gui_savestate_path);
             debug_menu_memory.set_state_active_by_name::<debug_gui::AppStats>("App Stats", true); // a big fragile...
         }
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        let model_key: AssetKey = 0x009000007528b6e9.into();
+        let model_key: AssetKey = 0x00900000f9da6656.into();
         let test_model = assets.load::<Model>(model_key);
 
-        let test_anim = assets.load::<SkeletalAnimation>(0x00a000007528b6e9.into());
+        let test_anim = assets.load::<SkeletalAnimation>(0x00a00000f9da6656.into());
 
         let mut camera = Camera::default();
         camera.update_projection(CameraProjection::Perspective
@@ -312,7 +314,7 @@ fn main() -> ExitReason
                             if model.all_dependencies_loaded()
                             {
                                 let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(25.0, 0.0, 0.0));
-                                view.draw_model_static(model.clone(), obj_world);
+                                // view.draw_model_static(model.clone(), obj_world);
                                 debug_draw.draw_wire_cube(obj_world, colors::WHITE);
 
                                 let geo = model.geometry.payload().unwrap();
@@ -320,21 +322,60 @@ fn main() -> ExitReason
                                 debug_draw.draw_wire_sphere(sp_txfm, colors::TOMATO);
 
                                 obj_world = Mat4::from_rotation_translation(obj_rot.inverse(), Vec3::new(-5.0, 0.0, -2.0));
-                                view.draw_model_static(model.clone(), obj_world);
+                                // view.draw_model_static(model.clone(), obj_world);
                                 debug_draw.draw_wire_cube(obj_world, colors::WHITE);
 
                                 if let Some(skel_handle) = &model.skeleton
                                 {
                                     let skel = skel_handle.payload().unwrap();
-                                    for bone in &skel.inv_bind_pose
-                                    {
-                                        debug_draw.draw_cross3(obj_world * Mat4::from(bone), colors::WHITE);
-                                    }
-                                }
 
-                                if let AssetPayload::Available(anim) = test_anim.payload()
-                                {
-                                    println!("{:?}", anim.bones);
+                                    // todo: check on load
+                                    debug_assert_eq!(skel.hierarchy.len(), skel.inv_bind_poses.len());
+                                    debug_assert_eq!(skel.hierarchy.len(), skel.bind_poses.len());
+
+                                    let mut poses = [DualQuat::IDENTITY; MAX_SKINNED_BONES];
+                                    let num_poses =
+                                    {
+                                        let len = poses.len().min(skel.bind_poses.len());
+                                        poses[..len].copy_from_slice(&skel.bind_poses[..len]);
+                                        len
+                                    };
+
+                                    if let AssetPayload::Available(anim) = test_anim.payload()
+                                    {
+
+                                        let runtime = frame_time.total_runtime.as_millis() as u64;
+                                        let mut frame = anim.sample_rate.to_ratio_u64().scale(runtime);
+                                        frame %= anim.frame_count.0 as u64;
+                                        // TODO: real anim
+                                        //let frame= 20;
+                                        for (i, pose) in anim.get_pose_for_frame(AnimFrameNumber(frame as u32)).into_iter().enumerate()
+                                        {
+                                            let bone_idx = skel.hierarchy.iter().position(|b| b.id == anim.bones[i]).expect("Did not find matching bone??");
+                                            poses[bone_idx] = *pose * poses[bone_idx];
+                                        }
+                                    }
+
+                                    for i in 0..num_poses
+                                    {
+                                        let parent = skel.hierarchy[i].parent_index;
+                                        if parent >= 0
+                                        {
+                                            poses[i] = poses[parent as usize] * poses[i];
+                                        }
+                                    }
+                                    for i in 0..num_poses
+                                    {
+                                        poses[i] = skel.inv_bind_poses[i] * poses[i];
+                                    }
+
+                                    for pose in &poses[..num_poses]
+                                    {
+                                        debug_draw.draw_cross3(obj_world * Mat4::from(pose), colors::WHITE);
+                                    }
+
+                                    // view.draw_model_static(model, obj_world);
+                                    view.draw_model_skinned(model, obj_world, &poses);
                                 }
                             }
                         }
@@ -376,7 +417,7 @@ fn main() -> ExitReason
                 debug_menu.add(&pipeline_cache);
                 debug_menu.present();
 
-                debug_menu_memory.save_if_dirty("debug_gui.state");
+                debug_menu_memory.save_if_dirty(&debug_gui_savestate_path);
             }
 
             renderer.present(render_frame);

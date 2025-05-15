@@ -1,17 +1,17 @@
 #include "Colors.hlsli"
 #include "Lighting.hlsli"
 
-[[vk::binding(0, 2)]]
-cbuffer Pbr
+[[vk::binding(0, 3)]]
+cbuffer PerMesh_Pbr
 {
     uint albedo_color;
     float metallicity;
     float roughness;
 };
 
-[[vk::binding(1, 2)]]
+[[vk::binding(1, 3)]]
 SamplerState Sampler;
-[[vk::binding(2, 2)]]
+[[vk::binding(2, 3)]]
 Texture2D<float4> Tex;
 
 struct PixelInput

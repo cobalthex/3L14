@@ -10,7 +10,7 @@ use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use arrayvec::ArrayVec;
-use wgpu::{AddressMode, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerDescriptor, StencilState, TextureFormat, VertexBufferLayout, VertexState};
+use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutEntry, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerDescriptor, StencilState, TextureFormat, VertexBufferLayout, VertexState};
 use crate::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
 
 #[derive(Debug, Clone, Copy, Hash)]
@@ -130,6 +130,7 @@ impl PipelineCache
                 bind_group_layouts: &[
                     &self.uniforms.camera_bind_layout,
                     &self.uniforms.transform_bind_layout,
+                    &self.uniforms.poses_bind_layout,
                     &material.bind_layout,
                 ],
                 push_constant_ranges: &[],

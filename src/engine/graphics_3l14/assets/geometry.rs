@@ -1,16 +1,13 @@
-use std::fmt::{Debug, Formatter, Write};
-use std::hash::{Hash, Hasher};
 use crate::{debug_label, Renderer};
 use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
 use math_3l14::{Sphere, AABB};
 use proc_macros_3l14::{Asset, Flags};
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{Buffer, BufferUsages, VertexAttribute, VertexBufferLayout, VertexStepMode};
-use nab_3l14::enum_helpers::FlagsEnum;
+use wgpu::{Buffer, BufferUsages};
+use nab_3l14::FlagsEnum;
 use crate::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
 
 // The vertex buffers used for a particular piece of geometry.

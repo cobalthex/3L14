@@ -40,12 +40,12 @@ impl AssetsBuilderConfig
 {
     pub const SOURCE_META_FILE_EXTENSION: UniCase<&'static str> = UniCase::unicode("sork");
 
-    pub fn new<P: AsRef<Path>>(sources_root: P, assets_root: P) -> Self
+    pub fn new<P: Into<PathBuf>>(sources_root: P, assets_root: P) -> Self
     {
         Self
         {
-            sources_root: PathBuf::from(sources_root.as_ref()),
-            assets_root: PathBuf::from(assets_root.as_ref()),
+            sources_root: sources_root.into(),
+            assets_root: assets_root.into(),
             builders_version_hash: Self::hash_bstrings(0, &[
                 b"Initial"
             ]),
@@ -134,7 +134,7 @@ impl AssetsBuilder
             }
             else
             {
-                source_path.as_ref().to_path_buf()
+                source_path.as_ref().into()
             }
         }.canonicalize().map_err(BuildError::SourceIOError)?;
 
@@ -297,6 +297,7 @@ pub struct BuildOutput<W: BuildOutputWrite>
     builder_hash: BuilderHash,
     format_hash: BuilderHash,
     asset_key: AssetKey,
+    name: Option<String>,
     source_path: PathBuf,
     dependencies: Vec<AssetKey>,
 }
@@ -319,6 +320,8 @@ impl<W: BuildOutputWrite> BuildOutput<W>
     - useful?
     - type hashing (type_hash)?
      */
+
+    pub fn set_name(&mut self, name: impl Into<String>) { self.name = Some(name.into()); }
 
     pub fn depends_on(&mut self, dependency: AssetKey)
     {
@@ -370,8 +373,9 @@ impl<W: BuildOutputWrite> BuildOutput<W>
         let asset_meta = AssetMetadata
         {
             key: self.asset_key,
-            build_timestamp: chrono::Utc::now(),
+            name: self.name,
             source_path: self.source_path,
+            build_timestamp: chrono::Utc::now(),
             builder_hash: self.builder_hash,
             format_hash: self.format_hash,
             dependencies: self.dependencies.into_boxed_slice(),
@@ -458,6 +462,7 @@ impl<'b> BuildOutputs<'b>
             builder_hash: self.builder_hash,
             format_hash: self.format_hash,
             asset_key,
+            name: None,
             source_path: self.rel_source_path.to_path_buf(),
             dependencies: Vec::new(),
         };

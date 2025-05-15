@@ -111,7 +111,7 @@ impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler fo
             }
             Err(err) =>
             {
-                log::warn!("Failed to load {retyped:#?}: {err:?}");
+                log::error!("Failed to load {retyped:#?}: {err:?}");
                 retyped.store_payload(AssetPayload::Unavailable(AssetLoadError::Parse))
             },
         }
