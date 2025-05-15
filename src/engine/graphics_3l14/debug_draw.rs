@@ -631,7 +631,7 @@ impl DebugDraw
 }
 impl DebugGui for DebugDraw
 {
-    fn name(&self) -> &str { "Debug drawing" }
+    fn display_name(&self) -> &str { "Debug drawing" }
 
     fn debug_gui(&self, ui: &mut Ui)
     {

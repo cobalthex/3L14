@@ -89,6 +89,6 @@ impl AssetLifecycler for ModelLifecycler
 }
 impl DebugGui for ModelLifecycler
 {
-    fn name(&self) -> &str { "Models" }
+    fn display_name(&self) -> &str { "Models" }
     fn debug_gui(&self, ui: &mut egui::Ui) { }
 }

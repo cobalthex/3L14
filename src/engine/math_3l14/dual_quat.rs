@@ -15,7 +15,7 @@ impl DualQuat
     pub const IDENTITY: Self = Self { real: Quat::IDENTITY, dual: Quat::IDENTITY };
 
     #[inline] #[must_use]
-    pub fn new(rotation: Quat, translation: Vec3) -> Self
+    pub fn from_rot_trans(rotation: Quat, translation: Vec3) -> Self
     {
         let dual = Quat::from_vec4(translation.extend(0.0)) * 0.5 * rotation;
         Self { real: rotation, dual }
@@ -54,6 +54,29 @@ impl DualQuat
         let mut dq = *self;
         dq.rotate(normalized_rotation);
         dq
+    }
+
+    // linearly lerp two dual-quaternions, and (simplified) normalize after
+    // note: t is not clamped internally
+    #[must_use]
+    pub fn nlerp(&self, rhs: DualQuat, t: f32) -> Self
+    {
+        // let t = t.clamp(0.0, 1.0); // necessary?
+        let t_inv = 1.0 - t;
+        Self
+        {
+            real: (self.real * t_inv) + (rhs.real * t),
+            dual: (self.dual * t_inv) + (rhs.dual * t),
+        }.simple_normalized()
+    }
+
+    // spherically lerp two dual-quaternions, and (true) normalize after
+    #[must_use]
+    pub fn slerp(&self, rhs: DualQuat, t: f32) -> Self
+    {
+        let translation = Vec3::lerp(self.translation(), rhs.translation(), t);
+        let rotation = Quat::slerp(self.rotation(), rhs.rotation(), t);
+        Self::from_rot_trans(rotation, translation).true_normalized()
     }
 
     #[inline] #[must_use]
@@ -140,7 +163,7 @@ impl From<&Mat4> for DualQuat
     fn from(value: &Mat4) -> Self
     {
         let (_, rotation, translation) = value.to_scale_rotation_translation();
-        Self::new(rotation, translation)
+        Self::from_rot_trans(rotation, translation)
     }
 }
 impl From<Mat4> for DualQuat { fn from(value: Mat4) -> Self { Self::from(&value) } }
@@ -255,7 +278,7 @@ mod tests
         let r = Quat::from_rotation_y(0.345);
         let t = Vec3::new(1.0, 2.0, 3.0);
 
-        let dq = DualQuat::new(r, t);
+        let dq = DualQuat::from_rot_trans(r, t);
 
         assert_relative_eq!(dq.rotation(), r);
         assert_relative_eq!(dq.translation(), t);
@@ -301,7 +324,7 @@ mod tests
         let t = Vec3::new(1.0, 40.0, 3.0);
 
         let m = Mat4::from_rotation_translation(r, t);
-        let dq = DualQuat::new(r, t);
+        let dq = DualQuat::from_rot_trans(r, t);
 
         let test = Vec3::new(10.0, 3.032, 8.5);
 
@@ -314,11 +337,11 @@ mod tests
     {
         let r = Quat::IDENTITY;
         let t = Vec3::new(1.0, 40.0, 3.0);
-        let dq = DualQuat::new(r, t);
+        let dq = DualQuat::from_rot_trans(r, t);
 
         let test = Vec3::new(10.0, 11.0, 12.0);
 
-        assert_relative_eq!(DualQuat::new(r, t + test), dq.translated(test));
+        assert_relative_eq!(DualQuat::from_rot_trans(r, t + test), dq.translated(test));
         // assert_relative_eq!(DualQuat::new(-r, -(t + test)), dq.translated(test)); // TODO
     }
 
@@ -327,11 +350,11 @@ mod tests
     {
         let r = Quat::from_rotation_y(3.5);
         let t = Vec3::ZERO;
-        let dq = DualQuat::new(r, t);
+        let dq = DualQuat::from_rot_trans(r, t);
 
         let test = Quat::from_rotation_y(3.0);
 
-        assert_relative_eq!(DualQuat::new(r * test, t), dq.rotated(test));
+        assert_relative_eq!(DualQuat::from_rot_trans(r * test, t), dq.rotated(test));
     }
 
     // TODO: to/from mat4

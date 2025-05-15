@@ -12,7 +12,7 @@ use glam::UVec2;
 use wgpu::rwh::{HasRawDisplayHandle, HasRawWindowHandle};
 use wgpu::*;
 use input_3l14::Input;
-use nab_3l14::core_types::FrameNumber;
+use nab_3l14::RenderFrameNumber;
 
 pub const MAX_CONSECUTIVE_FRAMES: usize = 3;
 
@@ -325,7 +325,7 @@ impl Renderer
     #[inline] #[must_use] pub fn msaa_max_sample_count(&self) -> u32 { self.max_sample_count }
 
     #[must_use]
-    pub fn frame(&self, frame_number: FrameNumber, input: &Input) -> RenderFrame
+    pub fn frame(&self, frame_number: RenderFrameNumber, input: &Input) -> RenderFrame
     {
         puffin::profile_function!();
 
@@ -477,7 +477,7 @@ impl Renderer
 }
 impl DebugGui for Renderer
 {
-    fn name(&self) -> &str { "Renderer" }
+    fn display_name(&self) -> &str { "Renderer" }
 
     fn debug_gui(&self, ui: &mut Ui)
     {
@@ -487,7 +487,7 @@ impl DebugGui for Renderer
 
 pub struct RenderFrame
 {
-    pub frame_number: FrameNumber,
+    pub frame_number: RenderFrameNumber,
 
     back_buffer: SurfaceTexture,
     pub back_buffer_view: TextureView,

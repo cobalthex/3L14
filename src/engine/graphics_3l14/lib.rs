@@ -1,3 +1,5 @@
+extern crate core;
+
 pub mod render_passes;
 pub mod colors;
 pub use colors::Rgba;

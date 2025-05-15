@@ -90,7 +90,7 @@ impl Transform
     #[inline] #[must_use]
     pub fn to_dual_quat(&self) -> DualQuat
     {
-        DualQuat::new(self.rotation, self.position)
+        DualQuat::from_rot_trans(self.rotation, self.position)
     }
 }
 

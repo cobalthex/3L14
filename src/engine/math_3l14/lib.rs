@@ -27,3 +27,6 @@ pub use basic_types::*;
 
 mod ratio;
 pub use ratio::*;
+
+mod lerp;
+pub use lerp::*;

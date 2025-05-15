@@ -242,7 +242,7 @@ impl Input
 
 impl DebugGui for Input
 {
-    fn name(&self) -> &str { "Input state" }
+    fn display_name(&self) -> &str { "Input state" }
     fn debug_gui(&self, ui: &mut egui::Ui)
     {
         ui.horizontal_top(|hui|

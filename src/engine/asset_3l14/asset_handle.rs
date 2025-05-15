@@ -56,7 +56,8 @@ impl<A: Asset> AssetPayload<A>
         match self
         {
             AssetPayload::Available(a) => a.clone(),
-            _ => panic!("Asset of type {:?} is not available", A::asset_type()),
+            AssetPayload::Pending => panic!("Asset payload of type {:?} is pending", A::asset_type()),
+            AssetPayload::Unavailable(err) => panic!("Asset payload of type {:?} is unavailable (error: {err:?})", A::asset_type()),
         }
     }
 }
@@ -240,18 +241,15 @@ impl AsRef<AssetHandleInner> for UntypedAssetHandle
 unsafe impl Sync for UntypedAssetHandle { }
 unsafe impl Send for UntypedAssetHandle { }
 
-// A more convenient alias for AssetHandle<A>
-pub type Ash<A> = AssetHandle<A>;
-
 // A hot-reloadable handle to an asset.
 // Do not store references to the internal payload longer than necessary
 #[repr(transparent)]
-pub struct AssetHandle<A: Asset>
+pub struct Ash<A: Asset>
 {
     pub(super) inner: *const AssetHandleInner, // store v-table? (use box), would *maybe* allow calls to virtual methods (test?)
     pub(super) phantom: PhantomData<A>,
 }
-impl<A: Asset> AssetHandle<A>
+impl<A: Asset> Ash<A>
 {
     pub(super) unsafe fn into_inner(self) -> UntypedAssetHandle
     {
@@ -349,9 +347,9 @@ impl<A: Asset> AssetHandle<A>
         inner.store_payload(payload);
     }
 }
-unsafe impl<A: Asset> Send for AssetHandle<A> {}
-unsafe impl<A: Asset> Sync for AssetHandle<A> {}
-impl<A: Asset> Clone for AssetHandle<A>
+unsafe impl<A: Asset> Send for Ash<A> {}
+unsafe impl<A: Asset> Sync for Ash<A> {}
+impl<A: Asset> Clone for Ash<A>
 {
     fn clone(&self) -> Self
     {
@@ -363,7 +361,7 @@ impl<A: Asset> Clone for AssetHandle<A>
         }
     }
 }
-impl<A: Asset> Drop for AssetHandle<A>
+impl<A: Asset> Drop for Ash<A>
 {
     fn drop(&mut self)
     {
@@ -386,7 +384,7 @@ impl<A: Asset> Drop for AssetHandle<A>
         inner.dropper.send(AssetLifecycleRequest::Drop(UntypedAssetHandle(self.inner))).expect("Failed to drop asset as the drop channel already closed"); // todo: error handling (can just drop it here?)
     }
 }
-impl<A: Asset> Future for &AssetHandle<A> // non-reffing requires being able to consume an Arc
+impl<A: Asset> Future for &Ash<A> // non-reffing requires being able to consume an Arc
 {
     type Output = AssetPayload<A>;
 
@@ -415,14 +413,14 @@ impl<A: Asset> Future for &AssetHandle<A> // non-reffing requires being able to 
         }
     }
 }
-impl<A: Asset> PartialEq for AssetHandle<A>
+impl<A: Asset> PartialEq for Ash<A>
 {
     fn eq(&self, other: &Self) -> bool
     {
         self.inner == other.inner
     }
 }
-impl<A: Asset> PartialEq<AssetKey> for AssetHandle<A> // let's hope there's never a collision
+impl<A: Asset> PartialEq<AssetKey> for Ash<A> // let's hope there's never a collision
 {
     fn eq(&self, key: &AssetKey) -> bool
     {
@@ -430,7 +428,7 @@ impl<A: Asset> PartialEq<AssetKey> for AssetHandle<A> // let's hope there's neve
     }
 }
 
-impl<A: Asset> Debug for AssetHandle<A>
+impl<A: Asset> Debug for Ash<A>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {

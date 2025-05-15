@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use std::time::Instant;
 use glam::IVec2;
-use nab_3l14::core_types::ToggleState;
+use nab_3l14::ToggleState;
 use nab_3l14::utils::NoOpDebug;
 use super::{ButtonState, InputReader};
 

@@ -147,6 +147,6 @@ impl AssetLifecycler for GeometryLifecycler
 }
 impl DebugGui for GeometryLifecycler
 {
-    fn name(&self) -> &str { "Geometry" }
+    fn display_name(&self) -> &str { "Geometry" }
     fn debug_gui(&self, _ui: &mut egui::Ui) { }
 }

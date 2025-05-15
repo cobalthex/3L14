@@ -1,10 +1,10 @@
 use egui::{Context, Ui, Window};
-use nab_3l14::core_types::FrameNumber;
+use nab_3l14::RenderFrameNumber;
 
 pub trait DebugGuiBase
 {
     // This should be a unique name
-    fn name(&self) -> &str;
+    fn display_name(&self) -> &str;
 
     fn debug_gui_base(&self, is_active: &mut bool, debug_gui: &egui::Context);
 }
@@ -12,19 +12,19 @@ pub trait DebugGuiBase
 pub trait DebugGui // TODO: get rid of lifetime param
 {
     // This should be a unique name
-    fn name(&self) -> &str;
+    fn display_name(&self) -> &str;
 
     fn debug_gui(&self, ui: &mut Ui);
 }
 impl<T: DebugGui> DebugGuiBase for T
 {
-    fn name(&self) -> &str {
-        self.name()
+    fn display_name(&self) -> &str {
+        self.display_name()
     }
 
     fn debug_gui_base(&self, is_active: &mut bool, debug_gui: &Context)
     {
-        Window::new(self.name())
+        Window::new(self.display_name())
             .movable(true)
             .resizable(true)
             .open(is_active)
@@ -35,7 +35,7 @@ impl<T: DebugGui> DebugGuiBase for T
 pub struct FrameProfiler;
 impl DebugGuiBase for FrameProfiler
 {
-    fn name(&self) -> &str { "Frame Profiler" }
+    fn display_name(&self) -> &str { "Frame Profiler" }
 
     fn debug_gui_base(&self, is_active: &mut bool, debug_gui: &Context)
     {
@@ -50,7 +50,7 @@ impl DebugGuiBase for FrameProfiler
 pub struct AppStats
 {
     pub fps: f32,
-    pub frame_number: FrameNumber,
+    pub frame_number: RenderFrameNumber,
     pub app_runtime: f64,
 
     pub main_window_size: (u32, u32),
@@ -58,11 +58,11 @@ pub struct AppStats
 }
 impl DebugGuiBase for AppStats
 {
-    fn name(&self) -> &str { "App Stats" }
+    fn display_name(&self) -> &str { "App Stats" }
 
     fn debug_gui_base(&self, is_active: &mut bool, debug_gui: &Context)
     {
-        Window::new(self.name())
+        Window::new(self.display_name())
             .movable(true)
             .resizable(true)
             .title_bar(false)

@@ -117,12 +117,12 @@ pub fn flags_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
             }
 
             // iterate all the flags active in this enum
-            pub const fn iter_set_flags(self) -> ::nab_3l14::enum_helpers::FlagsEnumIter<Self>
+            pub const fn iter_set_flags(self) -> ::nab_3l14::FlagsEnumIter<Self>
             {
-                ::nab_3l14::enum_helpers::FlagsEnumIter::new(self)
+                ::nab_3l14::FlagsEnumIter::new(self)
             }
         }
-        impl ::nab_3l14::enum_helpers::FlagsEnum<#type_name> for #type_name
+        impl ::nab_3l14::FlagsEnum<#type_name> for #type_name
         {
             type Repr = #repr_size;
 

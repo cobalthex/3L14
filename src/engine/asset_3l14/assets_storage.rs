@@ -37,7 +37,7 @@ pub(super) struct AssetsStorage
 impl AssetsStorage
 {
     #[must_use]
-    fn create_or_update_handle<A: Asset>(&self, asset_key: AssetKey) -> (bool /* pre-existing */, AssetHandle<A>)
+    fn create_or_update_handle<A: Asset>(&self, asset_key: AssetKey) -> (bool /* pre-existing */, Ash<A>)
     {
         // debug assert?
         assert_eq!(A::asset_type(), asset_key.asset_type()); // todo: return an error handle
@@ -66,7 +66,7 @@ impl AssetsStorage
             UntypedAssetHandle::alloc::<A>(asset_key, self.lifecycle_channel.clone())
         });
 
-        (pre_existing, unsafe { AssetHandle::<A>::clone_from(handle) })
+        (pre_existing, unsafe { Ash::<A>::clone_from(handle) })
     }
 
     fn drop_handle(&self, untyped_handle: UntypedAssetHandle)
@@ -109,7 +109,7 @@ impl AssetsStorage
     pub fn enqueue_load<A: Asset, F: FnOnce(UntypedAssetHandle) -> AssetLifecycleRequest>(
         self: &Arc<Self>,
         asset_key: AssetKey,
-        input_fn: F) -> AssetHandle<A>
+        input_fn: F) -> Ash<A>
     {
         let (pre_existed, asset_handle) = self.create_or_update_handle(asset_key);
 
@@ -413,7 +413,7 @@ impl Assets
     }
 
     #[must_use]
-    pub fn load<A: Asset>(&self, asset_key: AssetKey) -> AssetHandle<A>
+    pub fn load<A: Asset>(&self, asset_key: AssetKey) -> Ash<A>
     {
         self.storage.enqueue_load(asset_key, AssetLifecycleRequest::LoadFileBacked)
     }
@@ -423,7 +423,7 @@ impl Assets
         &self,
         asset_key: AssetKey,
         input_data: impl AssetRead + 'static // static not ideal here
-    ) -> AssetHandle<A>
+    ) -> Ash<A>
     {
         self.storage.enqueue_load(asset_key, |h| AssetLifecycleRequest::LoadFromMemory(h, Box::new(input_data)))
     }
@@ -434,7 +434,7 @@ impl Assets
         &self,
         asset_key: AssetKey,
         input_data: impl AssetRead + 'static // static not ideal here
-    ) -> AssetHandle<A>
+    ) -> Ash<A>
     {
         let lifecycler = self.storage.get_lifecycler::<A>().expect("No lifecycler found for asset type");
         let handle = self.storage.create_or_update_handle(asset_key);
@@ -456,7 +456,7 @@ impl Assets
 }
 impl DebugGui for Assets
 {
-    fn name(&self) -> &str
+    fn display_name(&self) -> &str
     {
         "Assets"
     }
@@ -467,12 +467,12 @@ impl DebugGui for Assets
         let inspected_lifecycler = self.storage.lifecyclers.get(&debug_state.inspected_lifecycler);
 
         egui::ComboBox::from_label("Lifecyclers")
-            .selected_text(inspected_lifecycler.map_or("(None)", |l| l.lifecycler.name()))
+            .selected_text(inspected_lifecycler.map_or("(None)", |l| l.lifecycler.display_name()))
             .show_ui(ui, |cui|
             {
                 for (asset_type, lifecycler) in &self.storage.lifecyclers
                 {
-                    cui.selectable_value(&mut debug_state.inspected_lifecycler, *asset_type, lifecycler.lifecycler.name());
+                    cui.selectable_value(&mut debug_state.inspected_lifecycler, *asset_type, lifecycler.lifecycler.display_name());
                 }
             });
 
@@ -584,7 +584,7 @@ mod tests
     struct TestAsset
     {
         name: String,
-        nested: Option<AssetHandle<NestedAsset>>,
+        nested: Option<Ash<NestedAsset>>,
     }
     impl Asset for TestAsset
     {
@@ -639,7 +639,7 @@ mod tests
     }
     impl DebugGui for TestAssetLifecycler
     {
-        fn name(&self) -> &str { "TestAssetLifecycle" }
+        fn display_name(&self) -> &str { "TestAssetLifecycle" }
         fn debug_gui(&self, ui: &mut Ui) { }
     }
 
@@ -679,7 +679,7 @@ mod tests
     }
     impl DebugGui for NestedAssetLifecycler
     {
-        fn name(&self) -> &str { "NestedAssetLifecycle" }
+        fn display_name(&self) -> &str { "NestedAssetLifecycle" }
         fn debug_gui(&self, ui: &mut Ui) { }
     }
 
@@ -701,7 +701,7 @@ mod tests
         tal.get_passthru_call_count()
     }
 
-    fn await_asset<A: Asset>(handle: &AssetHandle<A>) -> AssetPayload<A>
+    fn await_asset<A: Asset>(handle: &Ash<A>) -> AssetPayload<A>
     {
         futures::executor::block_on(handle)
     }
@@ -719,7 +719,7 @@ mod tests
         {
             let assets = Assets::new(AssetLifecyclers::default(), AssetsConfig::test());
 
-            let req: AssetHandle<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
             await_asset(&req);
         }
 
@@ -730,7 +730,7 @@ mod tests
                 .add_lifecycler(TestAssetLifecycler::default());
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
-            let req: AssetHandle<TestAsset> = assets.load::<TestAsset>(TEST_ASSET_1);
+            let req: Ash<TestAsset> = assets.load::<TestAsset>(TEST_ASSET_1);
             match await_asset(&req)
             {
                 AssetPayload::Unavailable(AssetLoadError::Fetch) => {},
@@ -750,7 +750,7 @@ mod tests
                 Err(Box::new(TestError))
             }));
 
-            let req: AssetHandle<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
             match await_asset(&req)
             {
                 AssetPayload::Unavailable(AssetLoadError::Parse) => {},
@@ -765,7 +765,7 @@ mod tests
                 .add_lifecycler(TestAssetLifecycler::default());
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
-            let req: AssetHandle<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
             match req.payload()
             {
                 AssetPayload::Pending => {},
@@ -786,14 +786,14 @@ mod tests
 
             assert_eq!(Some(0), get_passthru_call_count::<TestAssetLifecycler>(&assets));
 
-            let _req1: AssetHandle<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+            let _req1: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
             std::thread::sleep(std::time::Duration::from_secs(1)); // crude
             assert_eq!(Some(1), get_passthru_call_count::<TestAssetLifecycler>(&assets));
 
-            let _req2: AssetHandle<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+            let _req2: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
             assert_eq!(Some(1), get_passthru_call_count::<TestAssetLifecycler>(&assets));
 
-            let _req3: AssetHandle<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+            let _req3: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
             assert_eq!(Some(1), get_passthru_call_count::<TestAssetLifecycler>(&assets));
         }
 
@@ -815,10 +815,10 @@ mod tests
             }));
             // TODO: broken
 
-            let req: AssetHandle<TestAsset> = assets.load_direct_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+            let req: Ash<TestAsset> = assets.load_direct_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
             assert!(req.is_loaded_recursive());
 
-            let req2: AssetHandle<NestedAsset> = assets.load_from::<NestedAsset>(TEST_ASSET_2, Cursor::new([]));
+            let req2: Ash<NestedAsset> = assets.load_from::<NestedAsset>(TEST_ASSET_2, Cursor::new([]));
             match await_asset(&req2)
             {
                 AssetPayload::Available(a) => assert_eq!(a.id, 123),

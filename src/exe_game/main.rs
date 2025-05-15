@@ -4,7 +4,7 @@ use debug_3l14::debug_gui;
 use debug_3l14::debug_menu::{DebugMenu, DebugMenuMemory};
 use debug_3l14::sparkline::Sparkline;
 use glam::{FloatExt, Mat4, Quat, Vec3, Vec4};
-use graphics_3l14::assets::{GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, SkeletalAnimationLifecycler, SkeletonLifecycler, TextureLifecycler};
+use graphics_3l14::assets::{GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, SkeletalAnimation, SkeletalAnimationLifecycler, SkeletonLifecycler, TextureLifecycler};
 use graphics_3l14::camera::{Camera, CameraProjection};
 use graphics_3l14::debug_draw::DebugDraw;
 use graphics_3l14::pipeline_cache::{DebugMode, PipelineCache};
@@ -15,7 +15,7 @@ use graphics_3l14::{colors, render_passes, renderer, Renderer, Rgba};
 use input_3l14::{Input, KeyCode, KeyMods};
 use nab_3l14::app;
 use nab_3l14::app::{AppFolder, AppRun, ExitReason};
-use nab_3l14::core_types::{CompletionState, FrameNumber, ToggleState};
+use nab_3l14::{CompletionState, RenderFrameNumber, ToggleState};
 use math_3l14::{Degrees, Frustum, Plane, Radians, Transform};
 use nab_3l14::timing::Clock;
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
@@ -24,7 +24,6 @@ use std::time::Duration;
 use metrohash::MetroHash64;
 use sdl2::messagebox::MessageBoxFlag;
 use wgpu::{BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
-use asset_3l14::AssetTypeId::SkeletalAnimation;
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -102,6 +101,8 @@ fn main() -> ExitReason
         let model_key: AssetKey = 0x009000007528b6e9.into();
         let test_model = assets.load::<Model>(model_key);
 
+        let test_anim = assets.load::<SkeletalAnimation>(0x00a000007528b6e9.into());
+
         let mut camera = Camera::default();
         camera.update_projection(CameraProjection::Perspective
         {
@@ -128,7 +129,7 @@ fn main() -> ExitReason
 
         let mut clip_camera = None;
 
-        let mut frame_number = FrameNumber(0);
+        let mut frame_number = RenderFrameNumber(0);
         let mut fps_sparkline = Sparkline::<100>::new(); // todo: use
         'main_loop: loop
         {
@@ -329,6 +330,11 @@ fn main() -> ExitReason
                                     {
                                         debug_draw.draw_cross3(obj_world * Mat4::from(bone), colors::WHITE);
                                     }
+                                }
+
+                                if let AssetPayload::Available(anim) = test_anim.payload()
+                                {
+                                    println!("{:?}", anim.bones);
                                 }
                             }
                         }

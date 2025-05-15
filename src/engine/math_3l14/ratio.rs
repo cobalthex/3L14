@@ -13,7 +13,7 @@ pub struct Ratio<T>
 impl<T> Ratio<T>
 {
     #[inline] #[must_use]
-    pub fn new(numerator: T, denominator: T) -> Self { Self { numerator, denominator } }
+    pub const fn new(numerator: T, denominator: T) -> Self { Self { numerator, denominator } }
     // from_seconds
 
     #[inline] #[must_use]
@@ -23,20 +23,41 @@ impl<T> Ratio<T>
     }
 
     #[inline] #[must_use]
-    pub fn scale(&self, value: T) -> T
-        where T: Copy + Mul<T, Output = T> + Div<T, Output = T>
+    pub fn scale<U>(&self, value: U) -> U
+        where
+            T: Copy,
+            U: Copy + Mul<T, Output = U> + Div<T, Output = U>
     {
-        (self.numerator * value) / self.denominator
+        (value * self.numerator) / self.denominator
     }
 
     // reciprocal scale?
     #[inline] #[must_use]
-    pub fn inverse_scale(&self, value: T) -> T
-        where T: Copy + Mul<T, Output = T> + Div<T, Output = T>
+    pub fn inverse_scale<U>(&self, value: U) -> U
+    where
+        T: Copy,
+        U: Copy + Mul<T, Output = U> + Div<T, Output = U>
     {
-        (self.denominator * value) / self.numerator
+        (value * self.denominator) / self.numerator
     }
 }
+impl Ratio<i32>
+{
+    #[inline] #[must_use]
+    pub fn to_f32(self) -> f32
+    {
+        self.numerator as f32 / self.denominator as f32
+    }
+}
+impl Ratio<u32>
+{
+    #[inline] #[must_use]
+    pub fn to_f32(self) -> f32
+    {
+        self.numerator as f32 / self.denominator as f32
+    }
+}
+
 
 #[cfg(test)]
 mod tests

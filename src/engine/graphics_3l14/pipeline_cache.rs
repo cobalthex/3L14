@@ -219,13 +219,13 @@ impl PipelineCache
 }
 impl DebugGui for PipelineCache
 {
-    fn name(&self) -> &str { "Render pipelines" }
+    fn display_name(&self) -> &str { "Render pipelines" }
 
     fn debug_gui(&self, ui: &mut Ui)
     {
         ui.label(format!("Layouts: {}", self.pipeline_layouts.lock().len()));
         ui.label(format!("Pipelines: {}", self.pipelines.read().len()));
 
-        ui.collapsing(self.uniforms.name(), |cui| self.uniforms.debug_gui(cui));
+        ui.collapsing(self.uniforms.display_name(), |cui| self.uniforms.debug_gui(cui));
     }
 }

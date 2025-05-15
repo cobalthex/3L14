@@ -90,6 +90,6 @@ impl AssetLifecycler for ShaderLifecycler
 }
 impl DebugGui for ShaderLifecycler
 {
-    fn name(&self) -> &str { "Shaders" }
+    fn display_name(&self) -> &str { "Shaders" }
     fn debug_gui(&self, _ui: &mut egui::Ui) { }
 }

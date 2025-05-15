@@ -1,29 +1,35 @@
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap};
-use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionStrings};
-use crate::helpers::shader_compiler::{ShaderCompileFlags, ShaderCompilation, ShaderCompiler};
+use crate::core::{AssetBuilder, AssetBuilderMeta, BuildError, BuildOutputs, SourceInput, VersionStrings};
+use crate::helpers::shader_compiler::{ShaderCompilation, ShaderCompileFlags, ShaderCompiler};
 use arrayvec::ArrayVec;
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
+use debug_3l14::debug_gui::DebugGuiBase;
 use glam::{Mat4, Quat, Vec3};
+use gltf::animation::util::{ReadOutputs, Translations};
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
-use graphics_3l14::assets::{GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat, VertexLayout};
+use graphics_3l14::assets::{AnimFrameNumber, BoneId, GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat, VertexLayout};
 use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
-use math_3l14::{DualQuat, Sphere, AABB};
+use log::kv::Key;
+use math_3l14::{DualQuat, Ratio, Sphere, AABB};
 use metrohash::MetroHash64;
+use nab_3l14::timing::FSeconds;
 use nab_3l14::utils::alloc_slice::{alloc_slice_default, alloc_slice_uninit, alloc_u8_slice};
 use nab_3l14::utils::as_u8_array;
 use nab_3l14::utils::inline_hash::InlineWriteHash;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+use std::collections::{btree_map, BTreeMap, HashMap};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
+use std::iter::Peekable;
 use std::path::{Path, PathBuf};
-use gltf::animation::util::ReadOutputs;
+use toml::value::Index;
 use unicase::UniCase;
 use wgpu::VertexBufferLayout;
-use nab_3l14::timing::FSeconds;
+
+const DEFAULT_ANIM_SAMPLE_RATE: Ratio<u32> = Ratio::new(30, 1);
 
 #[derive(Hash)]
 struct ShaderHash
@@ -44,6 +50,7 @@ pub enum ModelImportError
     NoNormalData,
     NoIndexData,
     MismatchedVertexCount,
+    AnimationTimesOutOfOrder,
 }
 impl Display for ModelImportError
 {
@@ -110,6 +117,10 @@ impl AssetBuilder for ModelBuilder
             let buffers =  gltf::import_buffers(&document, None, blob)?;
             let images = gltf::import_images(&document, None, &buffers)?;
 
+            let skeletons: Box<_> = document.skins()
+                .map(|in_skin| self.parse_gltf_skin(&in_skin, &buffers, outputs))
+                .collect::<Result<_, _>>()?;
+
             for anim in document.animations()
             {
                 self.parse_gltf_anim(anim, &buffers, outputs)?;
@@ -117,7 +128,7 @@ impl AssetBuilder for ModelBuilder
 
             for gltf_node in document.nodes()
             {
-                self.parse_gltf_mesh(gltf_node, &buffers, &images, outputs)?;
+                self.parse_gltf_mesh(gltf_node, &buffers, &images, &skeletons, outputs)?;
             }
         }
 
@@ -126,8 +137,13 @@ impl AssetBuilder for ModelBuilder
 }
 impl ModelBuilder
 {
-
-    fn parse_gltf_mesh(&self, in_node: gltf::Node, buffers: &Vec<gltf::buffer::Data>, images: &Vec<gltf::image::Data>, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn parse_gltf_mesh(
+        &self,
+        in_node: gltf::Node,
+        buffers: &Vec<gltf::buffer::Data>,
+        images: &Vec<gltf::image::Data>,
+        skeletons: &[SkelInfo],
+        outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         // pass in node?
         let Some(in_mesh) = in_node.mesh() else { return Ok(()); };
@@ -140,55 +156,13 @@ impl ModelBuilder
         let mut model_bounds_aabb = AABB::MAX_MIN;
 
         // TODO: split up this file
-        // TODO: rethink vertex parsing
-
-        struct SkelInfo
-        {
-            asset: AssetKey,
-            remapped_bone_indices: Box<[u16]>,
-            joint_name_hashes: Box<[u64]>,
-        }
 
         let mut vertex_layout = VertexLayout::Static;
         let maybe_skel_info = if let Some(skin) = &in_skin
         {
             vertex_layout |= VertexLayout::Skinned;
-
-            let bone_names: Box<[String]> = skin.joints().enumerate().map(|(i, n)|
-            {
-                n.name().map(|n| n.to_string()).unwrap_or_else(|| format!("{}", i))
-            }).collect();
-            let bone_name_hashes: Box<_> = bone_names.iter().map(|jn| hash_bone_name(&jn)).collect();
-            let mut remapped_bone_indices: Box<_> = (0..bone_name_hashes.len() as u16).collect();
-            remapped_bone_indices.sort_by_key(|i| bone_name_hashes[*i as usize]); // explicit sort rule?
-
-            let mut skel_inv_bind_pose = alloc_slice_default(bone_name_hashes.len());
-            let reader = skin.reader(|b| Some(&buffers[b.index()]));
-            for (i, ibm) in reader.read_inverse_bind_matrices().unwrap().enumerate() // error handling?
-            {
-                let mtx = Mat4::from_cols_array_2d(&ibm);
-                let dq = DualQuat::from(&mtx);
-                skel_inv_bind_pose[remapped_bone_indices[i] as usize] = dq;
-            }
-
-            let skeleton =
-            {
-                let skel_key = AssetKeySynthHash::generate(&bone_name_hashes);
-                if let Some(mut output) = outputs.add_synthetic(AssetTypeId::Skeleton, skel_key, false)?
-                {
-                    output.serialize(&Skeleton { inv_bind_pose: skel_inv_bind_pose })?;
-                    output.serialize_debug::<Skeleton>(&SkeletonDebugData { bone_names, })?;
-                    output.finish()?;
-                }
-                AssetKey::synthetic(AssetTypeId::Skeleton, skel_key)
-            };
-
-            Some(SkelInfo
-            {
-                asset: skeleton,
-                remapped_bone_indices,
-                joint_name_hashes: bone_name_hashes,
-            })
+            let skel = skeletons.iter().find(|s| s.gltf_index == skin.index()).expect("Node has a skin not in the document skins list??");
+            Some(skel)
         } else { None };
 
         // acts as versioning for the vertex formats
@@ -198,6 +172,8 @@ impl ModelBuilder
             VertexLayoutBuilder::from(vertex_layout).hash(&mut hasher);
             hasher.finish()
         };
+
+        // TODO: rethink vertex parsing
 
         let mut vertex_data = Vec::new();
         let mut total_vertex_count = 0;
@@ -475,7 +451,53 @@ impl ModelBuilder
         Ok(())
     }
 
-    fn parse_gltf_anim(&self, in_anim: gltf::Animation, buffers: &Vec<gltf::buffer::Data>, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn parse_gltf_skin(&self, in_skin: &gltf::Skin, buffers: &[gltf::buffer::Data], outputs: &mut BuildOutputs) -> Result<SkelInfo, Box<dyn Error>>
+    {
+        let bone_names: Box<[String]> = in_skin.joints().enumerate().map(|(i, n)|
+            {
+                n.name().map(|n| n.to_string()).unwrap_or_else(|| format!("{}", i))
+            }).collect();
+        let bone_ids: Box<_> = bone_names.iter().map(|jn| BoneId::from_name(&jn)).collect();
+        let mut remapped_bone_indices: Box<_> = (0..bone_ids.len() as u16).collect();
+        remapped_bone_indices.sort_by_key(|i| bone_ids[*i as usize]); // explicit sort rule?
+
+        let mut skel_inv_bind_pose = alloc_slice_default(bone_ids.len());
+        let reader = in_skin.reader(|b| Some(&buffers[b.index()]));
+        for (i, ibm) in reader.read_inverse_bind_matrices().unwrap().enumerate() // error handling?
+        {
+            let mtx = Mat4::from_cols_array_2d(&ibm);
+            let dq = DualQuat::from(&mtx);
+            skel_inv_bind_pose[remapped_bone_indices[i] as usize] = dq;
+        }
+
+        let skeleton =
+        {
+            // TODO: this probably is not sufficient to determine uniqueness
+            let skel_key = AssetKeySynthHash::generate(&bone_ids);
+            if let Some(mut output) = outputs.add_synthetic(AssetTypeId::Skeleton, skel_key, false)?
+            {
+                output.serialize(&Skeleton
+                {
+                    bones: todo!(),
+                    bind_poses: todo!(),
+                    inv_bind_poses: skel_inv_bind_pose,
+                })?;
+                output.serialize_debug::<Skeleton>(&SkeletonDebugData { bone_names, })?;
+                output.finish()?;
+            }
+            AssetKey::synthetic(AssetTypeId::Skeleton, skel_key)
+        };
+
+        Ok(SkelInfo
+        {
+            asset: skeleton,
+            gltf_index: in_skin.index(),
+            bone_ids,
+            remapped_bone_indices,
+        })
+    }
+
+    fn parse_gltf_anim(&self, in_anim: gltf::Animation, buffers: &[gltf::buffer::Data], outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         let mut anim_name_buf = String::new();
         let anim_name = in_anim.name().unwrap_or_else(||
@@ -485,57 +507,137 @@ impl ModelBuilder
             &anim_name_buf
         });
 
-        #[derive(Default, Debug)]
-        struct Keyframe
+        let sample_rate = DEFAULT_ANIM_SAMPLE_RATE;
+        let sample_rate_f = sample_rate.to_f32();
+
+        #[derive(Default)]
+        struct BoneData<'n>
         {
-            translation: Option<Vec3>,
-            rotation: Option<Quat>,
+            name: Option<&'n str>,
+            translations: Vec<Vec3>,
+            rotations: Vec<Quat>,
         }
 
-        let mut anims = HashMap::new();
+        fn for_each_subval<F: FnMut(f32)>(min: f32, max: f32, rate: f32, mut callback: F) -> Result<(), Box<dyn Error>>
+        {
+            let range = max - min;
+            if range < 0.0
+            {
+                // todo: add more context to error
+                return Err(Box::new(ModelImportError::AnimationTimesOutOfOrder));
+            }
 
+            let start = (min / rate).ceil() as u32;
+            let end = (max / rate).ceil() as u32;
+
+            for i in start..end
+            {
+                // todo: interoplation method
+                let t = ((i as f32 * rate) - min) / range;
+                callback(t);
+            }
+
+            Ok(())
+        }
+
+        // TODO: by bone
+        // transforms by bone, frame number
+        let mut bone_keyframes: HashMap<usize, BoneData> = HashMap::new();
+
+        let mut frame_count = 0;
+
+        // todo: This can be parallelized
         for in_chan in in_anim.channels()
         {
             let ch_reader = in_chan.reader(|b| Some(&buffers[b.index()]));
             let target_node = in_chan.target().node();
-            let mut keyframes = &mut anims.entry(target_node.index()).or_insert_with(|| (target_node.name(), BTreeMap::new())).1; // TODO: need to group by node
 
             // todo: figure out if in_chan.sampler().interpolation() is necessary
 
             let mut inputs = ch_reader.read_inputs().unwrap();
             match ch_reader.read_outputs().unwrap()
             {
-                ReadOutputs::Translations(translations) =>
+                ReadOutputs::Translations(read_translations) =>
                 {
-                    for (time, translation) in inputs.zip(translations)
+                    let mut translations = &mut bone_keyframes.entry(target_node.index())
+                        .or_insert_with(|| BoneData { name: target_node.name(), .. Default::default() })
+                        .translations;
+
+                    let mut outputs = inputs.zip(read_translations);
+                    let mut cur = (0.0, [0.0, 0.0, 0.0]);
+                    while let Some(next) = outputs.next()
                     {
-                        let mut entry = keyframes.entry(FSeconds(time)).or_insert_with(|| Keyframe::default());
-                        // round to n digits?
-                        entry.translation = Some(translation.into());
+                        let a = Vec3::from_array(cur.1);
+                        let b = Vec3::from_array(next.1);
+                        for_each_subval(cur.0, next.0, sample_rate_f, |t| translations.push(Vec3::lerp(a, b, t)))?;
+                        cur = next;
                     }
+
+                    // any frames after the last timestep will just extend the last value
+                    translations.push(Vec3::from_array(cur.1));
+                    frame_count = frame_count.max(translations.len());
                 }
-                ReadOutputs::Rotations(rotations) =>
+                ReadOutputs::Rotations(read_rotations) =>
                 {
-                    for (time, rotation) in inputs.zip(rotations.into_f32())
+                    let mut rotations = &mut bone_keyframes.entry(target_node.index())
+                        .or_insert_with(|| BoneData { name: target_node.name(), .. Default::default() })
+                        .rotations;
+
+                    let mut outputs = inputs.zip(read_rotations.into_f32());
+                    let mut cur = (0.0, [0.0, 0.0, 0.0, 0.0]);
+                    while let Some(next) = outputs.next()
                     {
-                        let mut entry = keyframes.entry(FSeconds(time)).or_insert_with(|| Keyframe::default());
-                        entry.rotation = Some(Quat::from_array(rotation)); // normalize?
+                        let a = Quat::from_array(cur.1);
+                        let b = Quat::from_array(next.1);
+                        for_each_subval(cur.0, next.0, sample_rate_f, |t| rotations.push(Quat::slerp(a, b, t)))?;
+                        cur = next;
                     }
-                }
+
+                    // any frames after the last timestep will just extend the last value
+                    rotations.push(Quat::from_array(cur.1));
+                    frame_count = frame_count.max(rotations.len());
+                },
                 ReadOutputs::Scales(_) => {} // unsupported (currently)
                 ReadOutputs::MorphTargetWeights(_) => {} // unsupported
             }
         }
 
-        let mut test = std::fs::File::create(format!("C:\\users\\matt\\desktop\\dump_{}.anim", in_anim.name().unwrap_or("ZZZ")))?;
-        for (bone, (name, keyframes)) in anims.iter()
+        // TODO: need to sort bones and poses based on bones
+        let mut bone_ids = alloc_slice_default(bone_keyframes.len());
+        let mut poses = alloc_slice_default(bone_ids.len() * frame_count);
+
+        let mut temp_str = String::new();
+        for (bone, (gltf_index, bone_data)) in bone_keyframes.iter().enumerate()
         {
-            writeln!(test, "{} {:?}:", bone, name)?;
-            for keyframe in keyframes.iter()
+            // ugly
+            let id = BoneId::from_name(bone_data.name.unwrap_or_else(||
             {
-                writeln!(test, "  {:.4} - {:?}", keyframe.0.0, keyframe.1)?;
+                // todo: make sure this is unified w/ above
+                temp_str.clear();
+                std::fmt::Write::write_fmt(&mut temp_str, format_args!("{}", gltf_index)).unwrap();
+                &temp_str
+            }));
+            bone_ids[bone] = id;
+
+            for fr in 0..frame_count
+            {
+                let translation = bone_data.translations.get(usize::min(fr, bone_data.translations.len() - 1))
+                    .cloned().unwrap_or_default();
+                let rotation = bone_data.rotations.get(usize::min(fr, bone_data.rotations.len() - 1))
+                    .cloned().unwrap_or_default();
+                poses[fr * bone_ids.len() + bone] = DualQuat::from_rot_trans(rotation, translation);
             }
         }
+
+        let mut output = outputs.add_output(AssetTypeId::SkeletalAnimation)?;
+        output.serialize(&SkeletalAnimation
+        {
+            sample_rate,
+            frame_count: AnimFrameNumber(frame_count as u32),
+            bones: bone_ids,
+            poses,
+        })?;
+        output.finish()?;
 
         // todo: output sorted based on hash of bone name
 
@@ -543,9 +645,10 @@ impl ModelBuilder
     }
 }
 
-fn hash_bone_name(name: &str) -> u64
+struct SkelInfo
 {
-    let mut hasher = MetroHash64::new();
-    name.hash(&mut hasher);
-    hasher.finish()
+    asset: AssetKey,
+    gltf_index: usize,
+    bone_ids: Box<[BoneId]>,
+    remapped_bone_indices: Box<[u16]>,
 }

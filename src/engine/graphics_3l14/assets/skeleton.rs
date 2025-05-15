@@ -6,9 +6,10 @@ use math_3l14::DualQuat;
 use metrohash::MetroHash64;
 use proc_macros_3l14::Asset;
 use std::hash::{Hash, Hasher};
+use nab_3l14::hashing::hash64_to_32;
 
-#[derive(Encode, Decode, PartialOrd, PartialEq)]
-pub struct BoneId(pub u64);
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
+pub struct BoneId(pub u32); // TODO: 32 bits should be sufficient
 impl BoneId
 {
     // names are case-sensitive
@@ -16,15 +17,24 @@ impl BoneId
     {
         let mut hasher = MetroHash64::new();
         value.hash(&mut hasher);
-        Self(hasher.finish())
+        let trunc = hash64_to_32(hasher.finish());
+        Self(trunc)
     }
+}
+
+#[derive(Encode, Decode)]
+pub struct BoneRelation
+{
+    pub id: BoneId,
+    pub parent_index: u32,
 }
 
 #[derive(Asset, Encode, Decode)]
 pub struct Skeleton
 {
-    // bone IDs?
-    pub inv_bind_pose: Box<[DualQuat]>, // ordered by numerically sorted bone ID hash
+    pub bones: Box<[BoneRelation]>, // bones are ordered with root first in DFS order
+    pub bind_poses: Box<[DualQuat]>,
+    pub inv_bind_poses: Box<[DualQuat]>, // only store one of these?
 }
 
 impl AssetDebugData for Skeleton
@@ -42,7 +52,7 @@ pub struct SkeletonLifecycler;
 impl TrivialAssetLifecycler for SkeletonLifecycler { type Asset = Skeleton; }
 impl DebugGui for SkeletonLifecycler
 {
-    fn name(&self) -> &str { "Skeletons" }
+    fn display_name(&self) -> &str { "Skeletons" }
 
     fn debug_gui(&self, ui: &mut Ui)
     {

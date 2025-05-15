@@ -132,11 +132,11 @@ impl<const N_ENTRIES: usize> egui::Widget for &Sparkline<N_ENTRIES>
 }
 impl<const N_ENTRIES: usize> DebugGuiBase for Sparkline<N_ENTRIES>
 {
-    fn name(&self) -> &str { "FPS over time" }
+    fn display_name(&self) -> &str { "FPS over time" }
 
     fn debug_gui_base(&self, is_active: &mut bool, debug_gui: &Context)
     {
-        Window::new(self.name())
+        Window::new(self.display_name())
             .movable(true)
             .resizable(true)
             .title_bar(false)

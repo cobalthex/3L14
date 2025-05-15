@@ -152,7 +152,7 @@ impl AssetLifecycler for TextureLifecycler
 
 impl DebugGui for TextureLifecycler
 {
-    fn name(&self) -> &str { "Textures" }
+    fn display_name(&self) -> &str { "Textures" }
 
     fn debug_gui(&self, ui: &mut Ui)
     {

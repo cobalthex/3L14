@@ -1,6 +1,5 @@
 use std::fmt;
-use std::fmt::Formatter;
-use serde::Serializer;
+use std::fmt::{Display, Formatter};
 
 // TODO: clean up this file
 
@@ -22,24 +21,24 @@ impl std::ops::Sub for TickCount
 }
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct FrameNumber(pub u64);
-impl FrameNumber
+pub struct RenderFrameNumber(pub u64);
+impl RenderFrameNumber
 {
     pub fn increment(&mut self) -> Self { self.0 += 1; *self }
 }
-impl std::fmt::Display for FrameNumber
+impl Display for RenderFrameNumber
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result
     {
-        f.serialize_u64(self.0)
+        Display::fmt(&self.0, f)
     }
 }
-impl std::ops::Add for FrameNumber
+impl std::ops::Add for RenderFrameNumber
 {
     type Output = Self;
     fn add(self, other: Self) -> Self { Self(self.0 + other.0) }
 }
-impl std::ops::Sub for FrameNumber
+impl std::ops::Sub for RenderFrameNumber
 {
     type Output = Self;
     fn sub(self, other: Self) -> Self { Self(self.0 - other.0) }

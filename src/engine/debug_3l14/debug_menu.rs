@@ -172,7 +172,7 @@ impl DebugMenuMemory
     #[inline]
     pub fn gui_id<T: DebugGuiBase>(gui: &T) -> DebugMenuId
     {
-        Self::gui_id_by_name::<T>(gui.name())
+        Self::gui_id_by_name::<T>(gui.display_name())
     }
 
     fn get_or_create_state<T: DebugGuiBase>(&mut self, gui: &T) -> &mut DebugMenuItemState
@@ -182,7 +182,7 @@ impl DebugMenuMemory
         {
             DebugMenuItemState
             {
-                name: gui.name().to_string(),
+                name: gui.display_name().to_string(),
                 is_active: false
             }
         })

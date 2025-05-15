@@ -51,7 +51,7 @@ impl AssetLoadRequest
 
     // Load another asset and queue this asset for reloading if the requested asset is reloaded
     #[must_use]
-    pub fn load_dependency<A: Asset>(&self, asset_key: AssetKey) -> AssetHandle<A>
+    pub fn load_dependency<A: Asset>(&self, asset_key: AssetKey) -> Ash<A>
     {
         // pattern matches Assets::load()
         self.storage.enqueue_load(asset_key, |h| AssetLifecycleRequest::LoadFileBacked(h))
@@ -102,7 +102,7 @@ impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler fo
 {
     fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedAssetHandle, input: Box<dyn AssetRead>)
     {
-        let retyped = unsafe { AssetHandle::<A>::attach_from(untyped_handle) };
+        let retyped = unsafe { Ash::<A>::attach_from(untyped_handle) };
         match self.load(AssetLoadRequest { asset_key: retyped.key(), input, storage })
         {
             Ok(asset) =>
@@ -121,7 +121,7 @@ impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler fo
     // special case for internal errors
     fn error_untyped(&self, untyped_handle: UntypedAssetHandle, error: AssetLoadError)
     {
-        let retyped = unsafe { AssetHandle::<A>::attach_from(untyped_handle) };
+        let retyped = unsafe { Ash::<A>::attach_from(untyped_handle) };
         retyped.store_payload(AssetPayload::Unavailable(error));
     }
 }

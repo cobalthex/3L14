@@ -107,7 +107,7 @@ impl Default for Camera
 }
 impl DebugGui for Camera
 {
-    fn name(&self) -> &str { "Camera" }
+    fn display_name(&self) -> &str { "Camera" }
 
     fn debug_gui(&self, ui: &mut Ui)
     {

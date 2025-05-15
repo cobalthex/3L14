@@ -160,7 +160,7 @@ impl UniformsPool
 }
 impl DebugGui for UniformsPool
 {
-    fn name(&self) -> &str { "Uniforms" }
+    fn display_name(&self) -> &str { "Uniforms" }
 
     fn debug_gui(&self, ui: &mut Ui)
     {
