@@ -1,6 +1,6 @@
 use crate::{debug_label, Renderer};
 use bitcode::{Decode, Encode};
-use proc_macros_3l14::{Asset, FancyEnum};
+use proc_macros_3l14::{asset, FancyEnum};
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::error::Error;
@@ -30,7 +30,7 @@ pub struct ShaderFile
     pub module_hash: u64,
 }
 
-#[derive(Asset)]
+#[asset]
 pub struct Shader
 {
     pub stage: ShaderStage,

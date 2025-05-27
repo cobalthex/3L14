@@ -15,4 +15,4 @@ pub mod debug_draw;
 pub mod camera;
 pub mod dynamic_geo;
 pub mod vertex_layouts;
-mod skeletal_animator;
+pub mod skeleton_poser;

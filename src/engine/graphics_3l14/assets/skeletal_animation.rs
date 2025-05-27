@@ -3,14 +3,15 @@ use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
 use egui::Ui;
 use math_3l14::{DualQuat, Ratio};
-use proc_macros_3l14::Asset;
+use proc_macros_3l14::asset;
 use crate::assets::BoneId;
 
 // todo: standardize
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Encode, Decode)]
 pub struct AnimFrameNumber(pub u32);
 
-#[derive(Asset, Encode, Decode)]
+#[asset]
+#[derive(Encode, Decode)]
 pub struct SkeletalAnimation
 {
     pub sample_rate: Ratio<u32>,

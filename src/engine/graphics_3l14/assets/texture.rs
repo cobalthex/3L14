@@ -1,6 +1,5 @@
 use bitcode::{Decode, Encode};
 use egui::Ui;
-use proc_macros_3l14::Asset;
 use std::error::Error;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
@@ -20,9 +19,8 @@ pub enum TextureFilePixelFormat
     // Uncompressed formats
     R8 = 1,
     Rg8 = 2,
-    // Rgb8 = 3,
-    Rgba8 = 4,
-    Rgba8Srgb = 5,
+    Rgba8 = 3,
+    Rgba8Srgb = 4,
 
     // TODO: compressed formats (bc#)
 
@@ -41,7 +39,7 @@ pub struct TextureFile
     // all mips are stored contiguously w/out gaps
 }
 
-#[derive(Asset)]
+#[proc_macros_3l14::asset]
 pub struct Texture
 {
     pub gpu_tex: wgpu::Texture,

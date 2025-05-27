@@ -8,7 +8,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::Error;
 use nab_3l14::const_assert;
 use nab_3l14::utils::format_width_hex_bytes;
-use crate::{AssetTypeId, ASSET_DEBUG_FILE_EXTENSION, ASSET_FILE_EXTENSION, ASSET_META_FILE_EXTENSION};
+use crate::{AssetFileType, AssetTypeId};
 
 type AssetKeyDerivedIdRepr = u16;
 type AssetKeySynthHashRepr = u64;
@@ -230,30 +230,12 @@ impl AssetKey
     }
 
     #[inline] #[must_use]
-    pub fn as_file_name(&self) -> PathBuf
+    pub fn as_file_name(&self, fty: AssetFileType) -> PathBuf
     {
-        PathBuf::from(format!("{:0width$x}.{}",
-                              self.0,
-                              ASSET_FILE_EXTENSION,
-                              width = format_width_hex_bytes(AssetKey::TOTAL_BITS)))
-    }
-
-    #[inline] #[must_use]
-    pub fn as_meta_file_name(&self) -> PathBuf
-    {
-        PathBuf::from(format!("{:0width$x}.{}",
-                              self.0,
-                              ASSET_META_FILE_EXTENSION,
-                              width = format_width_hex_bytes(AssetKey::TOTAL_BITS)))
-    }
-
-    #[inline] #[must_use]
-    pub fn as_debug_file_name(&self) -> PathBuf
-    {
-        PathBuf::from(format!("{:0width$x}.{}",
-                              self.0,
-                              ASSET_DEBUG_FILE_EXTENSION,
-                              width = format_width_hex_bytes(AssetKey::TOTAL_BITS)))
+        PathBuf::from(format!("{:0key_width$x}.{}",
+            self.0,
+            fty.file_extension(),
+            key_width = format_width_hex_bytes(AssetKey::TOTAL_BITS)))
     }
 }
 // custom serialize/deserialize b/c TOML doesn't support u64
@@ -261,7 +243,7 @@ impl Serialize for AssetKey
 {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>
     {
-        format!("{:0width$x}", self.0, width = format_width_hex_bytes(AssetKey::TOTAL_BITS)).serialize(serializer)
+        format!("{:0key_width$x}", self.0, key_width = format_width_hex_bytes(AssetKey::TOTAL_BITS)).serialize(serializer)
     }
 }
 impl<'de> Deserialize<'de> for AssetKey
@@ -284,14 +266,14 @@ impl Debug for AssetKey
         match f.alternate()
         {
             true =>
-                f.write_fmt(format_args!("⟨{:?}|{:0width$x}⟩",
+                f.write_fmt(format_args!("⟨{:?}|{:0key_width$x}⟩",
                                          self.asset_type(),
                                          self.0,
-                                         width = format_width_hex_bytes(AssetKey::TOTAL_BITS))),
+                                         key_width = format_width_hex_bytes(AssetKey::TOTAL_BITS))),
             false =>
-                f.write_fmt(format_args!("⟨{:0width$x}⟩",
+                f.write_fmt(format_args!("⟨{:0key_width$x}⟩",
                                          self.0,
-                                         width = format_width_hex_bytes(AssetKey::TOTAL_BITS))),
+                                         key_width = format_width_hex_bytes(AssetKey::TOTAL_BITS))),
         }
     }
 }

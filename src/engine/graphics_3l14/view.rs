@@ -336,7 +336,7 @@ impl<'f> View<'f>
         self.draw_model_common(model, world_transform, None)
     }
 
-    pub fn draw_model_skinned(&mut self, model: Arc<Model>, world_transform: Mat4, poses: &[DualQuat; MAX_SKINNED_BONES]) -> bool
+    pub fn draw_model_skinned(&mut self, model: Arc<Model>, world_transform: Mat4, poses: &[DualQuat]) -> bool
     {
         // TODO: this needs to pass vis-checks first
 

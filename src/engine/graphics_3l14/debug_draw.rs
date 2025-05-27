@@ -542,7 +542,7 @@ impl DebugDraw
     // take points by value w/ template size?
     pub fn draw_polyline(&mut self, points: &[Vec3], connect_ends: bool, color: Rgba)
     {
-        if points.len() <= 2 { return; } // not bother?
+        if points.len() < 2 { return; } // not bother?
 
         self.lines.vertices.reserve(points.len());
         self.lines.indices.reserve(2 * points.len());

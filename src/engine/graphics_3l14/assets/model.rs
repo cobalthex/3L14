@@ -38,6 +38,7 @@ pub struct Model
 }
 impl Asset for Model
 {
+    type DebugData = ();
     fn asset_type() -> AssetTypeId { AssetTypeId::Model }
     fn all_dependencies_loaded(&self) -> bool
     {

@@ -212,7 +212,7 @@ pub trait BufferWrite
     fn write_slice<T>(&mut self, index: usize, slice: &[T]);
 }
 
-impl<'p> BufferWrite for QueueWriteBufferView<'p>
+impl BufferWrite for QueueWriteBufferView<'_>
 {
     #[inline]
     fn write_slice<T>(&mut self, index: usize, slice: &[T])

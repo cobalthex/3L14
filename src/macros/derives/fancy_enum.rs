@@ -2,8 +2,11 @@ use std::collections::HashMap;
 use quote::quote;
 use syn::{parse_macro_input, Data, DeriveInput, Fields, LitStr};
 
-// TODO: make enum_prop_opt and enum_prop (checks all entries)
+// TODO: make enum_prop_opt
 
+// Fancy enum options: names, name_hashes; others?
+
+// supports, for each variant: [enum_prop(key = "value")
 pub fn fancy_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 {
     let derive = parse_macro_input!(input as DeriveInput);
@@ -44,9 +47,10 @@ pub fn fancy_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
             Fields::Unit => quote!(Self::#variant_ident => #vindex),
         });
 
-        for attr in &variant.attrs
+        for attr in variant.attrs.iter()
         {
             // TODO: optional props
+            // TODO: support other basic types besides strings for prop vals
             if !attr.path().is_ident("enum_prop") { continue; }
 
             attr.parse_nested_meta(|meta|

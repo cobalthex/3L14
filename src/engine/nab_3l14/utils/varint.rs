@@ -61,7 +61,7 @@ pub const fn decode(bytes: &[u8]) -> u64
     n >> (8 * (7 - more))
 }
 
-pub fn decode_from<R: io::Read>(reader: &mut R) -> io::Result<u64>
+pub fn decode_from<R: io::Read + ?Sized>(reader: &mut R) -> io::Result<u64>
 {
     let mut be_bytes = [0u8; 8];
     reader.read_exact(&mut be_bytes[0..1])?;

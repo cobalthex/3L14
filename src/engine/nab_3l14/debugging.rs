@@ -1,9 +1,11 @@
 #[macro_export]
 macro_rules! debug_panic
 {
-    ( $msg:expr ) =>
+    ($($arg:tt)*) =>
     {
-        #[cfg(debug_assertions)]
-        panic!($msg)
+        if cfg!(debug_assertions)
+        {
+            panic!($($arg)*)
+        }
     }
 }

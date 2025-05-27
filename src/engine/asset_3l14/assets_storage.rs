@@ -7,6 +7,7 @@ use notify_debouncer_full::{Debouncer, FileIdMap};
 use parking_lot::Mutex;
 use std::any::TypeId;
 use std::collections::HashMap;
+use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -170,9 +171,9 @@ impl AssetsStorage
     // }
 
     #[inline]
-    pub fn asset_key_to_file_path(&self, asset_key: AssetKey) -> PathBuf
+    pub fn asset_key_to_file_path(&self, asset_key: AssetKey, fty: AssetFileType) -> PathBuf
     {
-        self.assets_root.as_path().join(asset_key.as_file_name())
+        self.assets_root.as_path().join(asset_key.as_file_name(fty))
     }
 
     #[inline]
@@ -232,13 +233,30 @@ impl AssetsStorage
                                 let lifecycler = &self.lifecyclers.get(&inner.asset_type())
                                     .expect("Unsupported asset type!").lifecycler; // this should fail in load()
 
-                                let asset_file_path = self.asset_key_to_file_path(inner.key());
+                                #[cfg(feature = "asset_debug_data")]
+                                let debug_asset_data: Option<Box<dyn AssetRead>> =
+                                {
+                                    let asset_debug_path = self.asset_key_to_file_path(inner.key(), AssetFileType::DebugData);
+                                    match Self::open_asset_from_file(asset_debug_path)
+                                    {
+                                        Ok(dbg_data) => Some(Box::new(dbg_data)),
+                                        Err(_) => None, // log specific errors?
+                                    }
+                                };
+
+                                let asset_file_path = self.asset_key_to_file_path(inner.key(), AssetFileType::Asset);
                                 match Self::open_asset_from_file(asset_file_path)
                                 {
-                                    Ok(read) => lifecycler.load_untyped(self.clone(), untyped_handle, Box::new(read)),
+                                    Ok(read) => lifecycler.load_untyped(
+                                        self.clone(),
+                                        untyped_handle,
+                                        Box::new(read),
+                                        #[cfg(feature = "asset_debug_data")] debug_asset_data),
                                     Err(err) =>
                                     {
-                                        log::warn!("Failed to read {:?} asset file {:?}: {err}", inner.asset_type(), self.asset_key_to_file_path(inner.key()));
+                                        log::warn!("Failed to read {:?} asset file {:?}: {err}",
+                                            inner.asset_type(),
+                                            self.asset_key_to_file_path(inner.key(), AssetFileType::Asset));
                                         lifecycler.error_untyped(untyped_handle, AssetLoadError::Fetch);
                                     }
                                 };
@@ -248,7 +266,11 @@ impl AssetsStorage
                                 let lifecycler = &self.lifecyclers.get(&untyped_handle.as_ref().asset_type())
                                     .expect("Unsupported asset type!").lifecycler; // this should fail in load()
 
-                                lifecycler.load_untyped(self.clone(), untyped_handle, reader);
+                                lifecycler.load_untyped(
+                                    self.clone(),
+                                    untyped_handle,
+                                    reader,
+                                    #[cfg(feature = "asset_debug_data")] None);
                             },
                             AssetLifecycleRequest::Drop(untyped_handle) =>
                             {
@@ -438,7 +460,11 @@ impl Assets
     {
         let lifecycler = self.storage.get_lifecycler::<A>().expect("No lifecycler found for asset type");
         let handle = self.storage.create_or_update_handle(asset_key);
-        lifecycler.load_untyped(self.storage.clone(), unsafe { handle.1.clone().into_inner() }, Box::new(input_data));
+        lifecycler.load_untyped(
+            self.storage.clone(),
+            unsafe { handle.1.clone().into_inner() },
+            Box::new(input_data),
+            #[cfg(feature = "asset_debug_data")] None);
         handle.1
     }
 

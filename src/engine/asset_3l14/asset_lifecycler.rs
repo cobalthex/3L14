@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::io::{Read, Seek};
 use std::sync::Arc;
+use log::debug;
 use debug_3l14::debug_gui::DebugGui;
 use nab_3l14::utils::alloc_slice::alloc_slice_uninit;
 use nab_3l14::utils::{varint, ShortTypeName};
@@ -23,13 +24,19 @@ pub struct AssetLoadRequest
 }
 impl AssetLoadRequest
 {
+    // TODO: unify implementations between this and asset builder
+    fn deserialize_data<T: DecodeOwned>(input: &mut dyn AssetRead) -> Result<T, Box<dyn Error>>
+    {
+        let size = varint::decode_from(input)?;
+        let mut bytes = unsafe { alloc_slice_uninit(size as usize) }; // todo: cache this (bitcode Buffer)
+        input.read_exact(&mut bytes)?;
+        Ok(bitcode::decode::<T>(&bytes)?)
+    }
+
     // deserialize a pre-sized type from the stream
     pub fn deserialize<T: DecodeOwned>(&mut self) -> Result<T, Box<dyn Error>>
     {
-        let size = varint::decode_from(&mut self.input)?;
-        let mut input = unsafe { alloc_slice_uninit(size as usize) }; // todo: cache this (bitcode Buffer)
-        self.input.read_exact(&mut input)?;
-        Ok(bitcode::decode::<T>(&input)?)
+        Self::deserialize_data(&mut self.input)
     }
 
     // read a size-prefixed span of bytes, all or nothing
@@ -81,6 +88,7 @@ pub trait AssetLifecycler: Sync + Send + DebugGui
     // reload ?
 }
 
+
 pub trait TrivialAssetLifecycler: Sync + Send + DebugGui { type Asset: Asset + DecodeOwned; }
 impl<L: TrivialAssetLifecycler> AssetLifecycler for L
 {
@@ -94,15 +102,33 @@ impl<L: TrivialAssetLifecycler> AssetLifecycler for L
 // only for use internally in the asset system, mostly just utility methods for interacting with generics
 pub(super) trait UntypedAssetLifecycler: Sync + Send + DebugGui
 {
-    fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedAssetHandle, input: Box<dyn AssetRead>);
+    fn load_untyped(
+        &self,
+        storage: Arc<AssetsStorage>,
+        untyped_handle: UntypedAssetHandle,
+        input: Box<dyn AssetRead>,
+        #[cfg(feature = "asset_debug_data")] maybe_debug_input: Option<Box<dyn AssetRead>>);
 
-    fn error_untyped(&self, untyped_handle: UntypedAssetHandle, error: AssetLoadError);
+    fn error_untyped(
+        &self,
+        untyped_handle: UntypedAssetHandle,
+        error: AssetLoadError);
 }
 impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler for L
 {
-    fn load_untyped(&self, storage: Arc<AssetsStorage>, untyped_handle: UntypedAssetHandle, input: Box<dyn AssetRead>)
+    fn load_untyped(
+        &self,
+        storage: Arc<AssetsStorage>,
+        untyped_handle: UntypedAssetHandle,
+        input: Box<dyn AssetRead>,
+        #[cfg(feature = "asset_debug_data")] mut maybe_debug_input: Option<Box<dyn AssetRead>>)
     {
         let retyped = unsafe { Ash::<A>::attach_from(untyped_handle) };
+
+        #[cfg(feature = "asset_debug_data")]
+        retyped.inner().store_debug_data::<A>(None);
+        // barrier?
+
         match self.load(AssetLoadRequest { asset_key: retyped.key(), input, storage })
         {
             Ok(asset) =>
@@ -115,6 +141,22 @@ impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler fo
                 retyped.store_payload(AssetPayload::Unavailable(AssetLoadError::Parse))
             },
         }
+
+        #[cfg(feature = "asset_debug_data")]
+        if let Some(debug_input) = &mut maybe_debug_input
+        {
+            let hydrated: A::DebugData = match AssetLoadRequest::deserialize_data(debug_input)
+            {
+                Ok(data) => data,
+                Err(err) =>
+                {
+                    log::error!("Failed to load debug data for {retyped:?}: {err:?}");
+                    return;
+                },
+            };
+            println!("LOADED DEBUG DATA FOR {:?}", retyped);
+            retyped.inner().store_debug_data::<A>(Some(Arc::new(hydrated)));
+        }
     }
 
     // this doesn't really make sense here
@@ -122,6 +164,7 @@ impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler fo
     fn error_untyped(&self, untyped_handle: UntypedAssetHandle, error: AssetLoadError)
     {
         let retyped = unsafe { Ash::<A>::attach_from(untyped_handle) };
+        retyped.inner().store_debug_data::<A>(None); //barrier?
         retyped.store_payload(AssetPayload::Unavailable(error));
     }
 }

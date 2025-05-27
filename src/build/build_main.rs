@@ -52,6 +52,7 @@ fn main()
         Err(err) =>
         {
             println!("cargo::warning=Failed to find assets build dir: {err}\nMaking new one");
+            // todo: this can fail with already created error (curiously when dir doesn't exist)
             fs::create_dir_all(assets_symlink_target).expect("Failed to create empty assets target dir");
         },
     }

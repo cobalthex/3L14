@@ -7,7 +7,7 @@ use glam::{Mat4, Quat, Vec3};
 use gltf::animation::util::{ReadOutputs, Translations};
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
-use graphics_3l14::assets::{AnimFrameNumber, BoneId, BoneRelation, GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat, VertexLayout};
+use graphics_3l14::assets::{AnimFrameNumber, BoneId, GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat, VertexLayout};
 use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
 use log::kv::Key;
 use math_3l14::{DualQuat, Ratio, Sphere, AABB};
@@ -286,6 +286,21 @@ impl ModelBuilder
                 let mut tex_output = outputs.add_output(AssetTypeId::Texture)?;
                 tex.texture().name().map(|n| tex_output.set_name(n));
 
+                let (pixel_format, need_conv) = match tex_data.format
+                {
+                    Format::R8 => (TextureFilePixelFormat::R8, false),
+                    Format::R8G8 => (TextureFilePixelFormat::Rg8, false),
+                    Format::R8G8B8 => (TextureFilePixelFormat::Rgba8, true),
+                    Format::R8G8B8A8 => (TextureFilePixelFormat::Rgba8, false),
+                    Format::R16 => todo!("R16 textures"),
+                    Format::R16G16 => todo!("R16G16 textures"),
+                    Format::R16G16B16 => todo!("R16G16B16 textures"),
+                    Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
+                    Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
+                    Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
+                };
+
+
                 tex_output.serialize(&TextureFile
                 {
                     width: tex_data.width,
@@ -293,22 +308,30 @@ impl ModelBuilder
                     depth: 1,
                     mip_count: 1,
                     mip_offsets: Default::default(),
-                    pixel_format: match tex_data.format
-                    {
-                        Format::R8 => TextureFilePixelFormat::R8,
-                        Format::R8G8 => TextureFilePixelFormat::Rg8,
-                        Format::R8G8B8 => todo!("R8G8B8 textures"),
-                        Format::R8G8B8A8 => TextureFilePixelFormat::Rgba8,
-                        Format::R16 => todo!("R16 textures"),
-                        Format::R16G16 => todo!("R16G16 textures"),
-                        Format::R16G16B16 => todo!("R16G16B16 textures"),
-                        Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
-                        Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
-                        Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
-                    }
+                    pixel_format,
                 })?;
 
-                tex_output.write_all(&tex_data.pixels)?;
+                // TODO: texture compression
+                if need_conv
+                {
+                    match tex_data.format
+                    {
+                        Format::R8G8B8 =>
+                        {
+                            // todo: check length
+                            for i in 0..(tex_data.width * tex_data.height) as usize
+                            {
+                                tex_output.write_all(&tex_data.pixels[(i * 3)..((i + 1) * 3)])?;
+                                tex_output.write_all(&[u8::MAX])?;
+                            }
+                        }
+                        _ => todo!("Other texture format conversions"),
+                    }
+                }
+                else
+                {
+                    tex_output.write_all(&tex_data.pixels)?;
+                }
 
                 let tex = tex_output.finish()?;
                 textures.try_push(tex)?;
@@ -492,7 +515,7 @@ impl ModelBuilder
             }
 
             bone_parents.entry(joint.index()).or_insert_with(|| -1);
-            bone_names[i] = joint.name().map(|n| n.to_string()).unwrap_or_else(|| format!("{}", i));
+            bone_names[i] = joint.name().map(|n| n.to_string()).unwrap_or_else(|| format!("{}", joint.index()));
             skel_bind_poses[i] =
             {
                 let (trans, rot, _scale) = joint.transform().decomposed();
@@ -500,10 +523,17 @@ impl ModelBuilder
             };
         }
 
-        let bone_relations: Box<_> = in_skin.joints().enumerate().map(|(i, joint)| BoneRelation
+        #[derive(Hash)]
+        struct BoneRelation { id: BoneId, parent_index: i16 };
+        let bone_relations: Box<_> = in_skin.joints().enumerate().map(|(i, joint)|
         {
-            id: BoneId::from_name(&bone_names[i]),
-            parent_index: *bone_parents.get(&i).unwrap_or(&-1),
+            let Some(parent_index) = bone_parents.get(&joint.index()).cloned()
+                else { panic!("joint {} (#{i}) does not have a parent?", joint.index()) }; // TODO: better fallback name
+            BoneRelation
+            {
+                id: BoneId::from_name(&bone_names[i]),
+                parent_index,
+            }
         }).collect();
 
         let mut skel_inv_bind_pose = alloc_slice_default(bone_relations.len());
@@ -523,7 +553,8 @@ impl ModelBuilder
             {
                 skel_output.serialize(&Skeleton
                 {
-                    hierarchy: bone_relations,
+                    bone_ids: bone_relations.as_ref().iter().map(|b| b.id).collect(),
+                    parent_indices: bone_relations.as_ref().iter().map(|b| b.parent_index).collect(),
                     bind_poses: skel_bind_poses,
                     inv_bind_poses: skel_inv_bind_pose,
                 })?;
@@ -659,7 +690,7 @@ impl ModelBuilder
             {
                 // todo: make sure this is unified w/ above
                 temp_str.clear();
-                std::fmt::Write::write_fmt(&mut temp_str, format_args!("{}", gltf_index)).unwrap();
+                std::fmt::Write::write_fmt(&mut temp_str, format_args!("{}", gltf_index)).unwrap(); // TODO: better fallback name
                 &temp_str
             }));
             bone_ids[bone] = id;

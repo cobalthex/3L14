@@ -14,7 +14,7 @@ use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use unicase::UniCase;
-use asset_3l14::{Asset, AssetDebugData, AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetTypeId};
+use asset_3l14::{Asset, AssetFileType, AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetTypeId};
 use nab_3l14::utils::inline_hash::InlineWriteHash;
 use nab_3l14::utils::{varint, ShortTypeName};
 use walkdir::WalkDir;
@@ -341,7 +341,7 @@ impl<W: BuildOutputWrite> BuildOutput<W>
     }
 
     // Optionally serialize debug metadata to this asset
-    pub fn serialize_debug<D: AssetDebugData>(&mut self, value: &D::DebugData) -> Result<(), BuildError>
+    pub fn serialize_debug<A: Asset>(&mut self, value: &A::DebugData) -> Result<(), BuildError>
     {
         // TODO: clean up error types here
 
@@ -352,7 +352,7 @@ impl<W: BuildOutputWrite> BuildOutput<W>
         };
 
         let val = bitcode::encode(value);
-        varint::encode_into(val.len() as u64, &mut self.writer).map_err(BuildError::OutputIOError)?;
+        varint::encode_into(val.len() as u64, &mut debug_writer).map_err(BuildError::OutputIOError)?;
         debug_writer.write_all(val.as_slice()).map_err(|e| BuildError::OutputDebugIOError(e.kind()))
     }
 
@@ -433,7 +433,7 @@ impl<'b> BuildOutputs<'b>
     {
         let asset_key = AssetKey::synthetic(asset_type, asset_hash);
         
-        let output_path = self.abs_output_dir.join(asset_key.as_file_name()); // todo: shared method w/ below
+        let output_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::Asset)); // todo: shared method w/ below
         if !force_build && output_path.exists()
         {
             self.results.push(asset_key); // TODO: only do if successful?
@@ -445,13 +445,13 @@ impl<'b> BuildOutputs<'b>
 
     fn add_asset(&mut self, asset_key: AssetKey) -> Result<BuildOutput<impl BuildOutputWrite + use<'b>>, BuildError>
     {
-        let output_path = self.abs_output_dir.join(asset_key.as_file_name());
+        let output_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::Asset));
         let output_writer = File::create(&output_path).map_err(BuildError::OutputIOError)?;
 
-        let output_meta_path = self.abs_output_dir.join(asset_key.as_meta_file_name());
+        let output_meta_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::MetaData));
         let output_meta_writer = File::create(&output_meta_path).map_err(BuildError::OutputIOError)?;
 
-        let output_debug_path = self.abs_output_dir.join(asset_key.as_debug_file_name());
+        let output_debug_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::DebugData));
         let output_debug_writer = move || File::create(output_debug_path);
 
         let output = BuildOutput

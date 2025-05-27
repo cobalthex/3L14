@@ -1,5 +1,6 @@
-pub use intel_tex_2::RgbaSurface;
 use proc_macros_3l14::Flags;
+
+// TODO: go back to intel_tex_2? (ISPC is deprecated)
 
 pub enum CompressionQuality
 {
@@ -29,9 +30,9 @@ pub enum ChannelMapping
     Alpha = 0b1000,
 }
 
-pub struct TextureInput<'t>
+pub struct TextureInput
 {
-    pub texels: RgbaSurface<'t>,
+    pub texels: (), // todo
     pub channels: ChannelMapping,
 }
 
@@ -58,12 +59,7 @@ impl TextureCompressor
             }
             CompressionQuality::HighDetail =>
             {
-                let settings = match input.channels.has_flag(ChannelMapping::Alpha)
-                {
-                    true => intel_tex_2::bc7::alpha_basic_settings(),
-                    false => intel_tex_2::bc7::opaque_basic_settings(),
-                };
-                intel_tex_2::bc7::compress_blocks(todo!(), &input.texels)
+                todo!()
             }
             CompressionQuality::Lossless =>
             {

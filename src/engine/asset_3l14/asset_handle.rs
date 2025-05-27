@@ -81,7 +81,7 @@ pub(super) struct AssetHandleInner
     payload: AtomicUsize, // if high bit is 1, stores Arc<Asset>
 
     #[cfg(feature = "asset_debug_data")]
-    debug_data: AtomicUsize,
+    debug_data: AtomicUsize, // if 0, no debug data is stored, else stores Arc<AssetDebugData>
 }
 
 impl AssetHandleInner
@@ -163,16 +163,37 @@ impl AssetHandleInner
     }
 
     #[cfg(feature = "asset_debug_data")]
-    #[inline] #[must_use]
-    pub fn debug_data<A: AssetDebugData>(&self) -> Option<Arc<A>>
+    pub fn store_debug_data<A: Asset>(&self, debug_data: Option<Arc<A::DebugData>>)
     {
+        #[cfg(feature = "debug_asset_lifetimes")]
+        log::debug!("{:?} storing new debug data", self.key());
+
+        let old_val = match debug_data
+        {
+            Some(arc) => self.debug_data.swap(Arc::into_raw(arc) as usize, Ordering::AcqRel),
+            None => self.debug_data.swap(0, Ordering::AcqRel),
+        };
+
+        if old_val != 0
+        {
+            // drop the old arc
+            let _arc = unsafe { Arc::from_raw(old_val as *const A) };
+        }
+    }
+
+    #[cfg(feature = "asset_debug_data")]
+    #[inline] #[must_use]
+    pub fn debug_data<A: Asset>(&self) -> Option<Arc<A::DebugData>>
+    {
+        // TODO: make available but return none if asset_debug_data disabled?
+
         let ptr = self.debug_data.load(Ordering::Acquire);
         match ptr
         {
             0 => None,
             p =>
             {
-                let arc = unsafe { Arc::from_raw(p as *const A) };
+                let arc = unsafe { Arc::from_raw(p as *const A::DebugData) };
                 let debug_data = arc.clone();
                 std::mem::forget(arc);
                 Some(debug_data)
@@ -251,6 +272,7 @@ pub struct Ash<A: Asset>
 }
 impl<A: Asset> Ash<A>
 {
+    #[must_use]
     pub(super) unsafe fn into_inner(self) -> UntypedAssetHandle
     {
         let untyped = UntypedAssetHandle(self.inner);
@@ -258,6 +280,7 @@ impl<A: Asset> Ash<A>
         untyped
     }
 
+    #[must_use]
     pub(super) unsafe fn clone_from(untyped_handle: &UntypedAssetHandle) -> Self
     {
         let handle = Self
@@ -270,6 +293,7 @@ impl<A: Asset> Ash<A>
         handle
     }
 
+    #[must_use]
     pub(super) unsafe fn attach_from(untyped_handle: UntypedAssetHandle) -> Self
     {
         let handle = Self
@@ -281,7 +305,7 @@ impl<A: Asset> Ash<A>
         handle
     }
 
-    #[inline]
+    #[inline] #[must_use]
     fn debug_assert_type(&self)
     {
         debug_assert_eq!(A::asset_type(), self.key().asset_type());
@@ -289,14 +313,14 @@ impl<A: Asset> Ash<A>
 
     // creation managed by <Assets>
 
-    #[inline]
+    #[inline] #[must_use]
     pub(super) fn inner(&self) -> &AssetHandleInner
     {
         unsafe { &*self.inner }
     }
 
     // The key uniquely identifying this asset
-    #[inline]
+    #[inline] #[must_use]
     pub fn key(&self) -> AssetKey
     {
         self.inner().key
@@ -313,18 +337,28 @@ impl<A: Asset> Ash<A>
     // }
 
     // Retrieve the current payload, holds a strong reference for as long as the guard exists
-    #[inline]
+    #[inline] #[must_use]
     pub fn payload(&self) -> AssetPayload<A> { self.inner().payload() }
 
+    // Retrieve optional debug data for this asset. Returns none if the asset_debug_data feature is disabled
+    #[inline] #[must_use]
+    pub fn debug_data(&self) -> Option<Arc<A::DebugData>>
+    {
+        #[cfg(feature = "asset_debug_data")]
+        return self.inner().debug_data::<A>();
+        #[cfg(not(feature = "asset_debug_data"))]
+        return None;
+    }
+
     // The number of references to this asset
-    #[inline]
+    #[inline] #[must_use]
     pub fn ref_count(&self) -> isize
     {
         self.inner().ref_count()
     }
     
     // // Is this asset + all dependencies loaded
-    #[inline]
+    #[inline] #[must_use]
     pub fn is_loaded_recursive(&self) -> bool
     {
         self.payload().is_loaded_recursive()
@@ -341,6 +375,7 @@ impl<A: Asset> Ash<A>
         log::debug!("{self:?} increment ref to {}", old_refs + 1);
     }
 
+    #[inline]
     pub(super) fn store_payload(&self, payload: AssetPayload<A>)
     {
         let inner = unsafe { &*self.inner };

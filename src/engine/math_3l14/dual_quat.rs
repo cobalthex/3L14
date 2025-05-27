@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use crate::Affine3;
 use approx::{AbsDiffEq, RelativeEq};
 use bitcode::{Decode, Encode};
@@ -12,13 +13,20 @@ pub struct DualQuat
 }
 impl DualQuat
 {
-    pub const IDENTITY: Self = Self { real: Quat::IDENTITY, dual: Quat::IDENTITY };
+    pub const IDENTITY: Self = Self { real: Quat::IDENTITY, dual: Quat::from_xyzw(0.0, 0.0, 0.0, 0.0) };
 
     #[inline] #[must_use]
     pub fn from_rot_trans(rotation: Quat, translation: Vec3) -> Self
     {
         let dual = Quat::from_vec4(translation.extend(0.0)) * 0.5 * rotation;
         Self { real: rotation, dual }
+        // normalize?
+    }
+
+    #[inline] #[must_use]
+    pub fn from_raw(real: Quat, dual: Quat) -> Self
+    {
+        Self { real, dual }
         // normalize?
     }
 
@@ -263,6 +271,13 @@ impl RelativeEq for DualQuat
         // assumes normalized
         self.real.relative_eq(&other.real, epsilon, max_relative) &&
         self.dual.relative_eq(&other.dual, epsilon, max_relative)
+    }
+}
+impl Display for DualQuat
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    {
+        f.write_fmt(format_args!("{{ Rotation: {}, Translation: {} }}", self.rotation(), self.translation()))
     }
 }
 

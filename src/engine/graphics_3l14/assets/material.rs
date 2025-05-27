@@ -1,13 +1,13 @@
 use crate::{debug_label, Renderer, Rgba};
 use arrayvec::ArrayVec;
 use bitcode::{Decode, Encode};
-use proc_macros_3l14::{Asset, FancyEnum};
+use proc_macros_3l14::{asset, FancyEnum};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::sync::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, Buffer, BufferBindingType, BufferSize, BufferUsages, SamplerBindingType, ShaderStages, TextureSampleType, TextureViewDimension};
-use asset_3l14::{Ash, AssetKey, AssetLifecycler, AssetLoadRequest};
+use asset_3l14::{Ash, Asset, AssetKey, AssetLifecycler, AssetLoadRequest, AssetTypeId};
 use debug_3l14::debug_gui::DebugGui;
 use crate::assets::Texture;
 
@@ -43,13 +43,21 @@ pub struct MaterialFile
     pub props: Box<[u8]>,
 }
 
-#[derive(Asset)]
 pub struct Material
 {
     pub class: MaterialClass,
     pub props: Buffer,
     pub bind_layout: BindGroupLayout,
     pub textures: ArrayVec<Ash<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS>,
+}
+impl Asset for Material
+{
+    type DebugData = ();
+    fn asset_type() -> AssetTypeId { AssetTypeId::Material }
+    fn all_dependencies_loaded(&self) -> bool
+    {
+        self.textures.iter().all(|t| t.is_loaded_recursive())
+    }
 }
 
 pub struct MaterialLifecycler

@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::path::{Path, PathBuf};
 use unicase::UniCase;
-use asset_3l14::{AssetKeySourceId, ASSET_FILE_EXTENSION, ASSET_META_FILE_EXTENSION};
+use asset_3l14::{AssetFileType, AssetKeySourceId};
 use super::{AssetMetadata, AssetsBuilderConfig, SourceMetadataSlim};
 
 #[derive(Debug)]
@@ -114,7 +114,7 @@ impl Iterator for ScanAssets
                 if !entry.path().extension().is_some_and(|ext| match ext.to_str()
                 {
                     None => false, // ideally this should be able to compare outside unicode
-                    Some(p) => UniCase::new(p) == ASSET_META_FILE_EXTENSION
+                    Some(p) => UniCase::new(p) == UniCase::new(AssetFileType::MetaData.file_extension())
                 })
                 {
                     continue;
@@ -131,7 +131,7 @@ impl Iterator for ScanAssets
                     }
                 };
 
-                let asset_file = entry.path().with_extension(ASSET_FILE_EXTENSION.as_ref());
+                let asset_file = entry.path().with_extension(AssetFileType::Asset.file_extension());
                 if !asset_file.try_exists().map_err(ScanError::IOError).ok()?
                 {
                     return Some(Err(ScanError::NoAssetFile

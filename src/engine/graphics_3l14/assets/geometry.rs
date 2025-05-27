@@ -3,7 +3,7 @@ use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
 use math_3l14::{Sphere, AABB};
-use proc_macros_3l14::{Asset, Flags};
+use proc_macros_3l14::{asset, Flags};
 use std::sync::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{Buffer, BufferUsages};
@@ -81,7 +81,7 @@ pub struct GeometryMesh
     pub index_range: (u32, u32), // start, end
 }
 
-#[derive(Asset)]
+#[asset]
 pub struct Geometry
 {
     pub bounds_aabb: AABB, // note; these are untransformed

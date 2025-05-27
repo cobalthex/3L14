@@ -211,4 +211,7 @@ pub const CORNFLOWER_BLUE: Rgba = Rgba { red: 100, green: 149, blue: 237, alpha:
 pub const GOOD_PURPLE: Rgba = Rgba { red: 64, green: 72, blue: 255, alpha: 255 };
 pub const BAD_RED: Rgba = Rgba { red: 102, green: 6, blue: 32, alpha: 255 };
 pub const TOMATO: Rgba = Rgba { red: 255, green: 99, blue: 71, alpha: 255 };
+pub const TURQUOISE: Rgba = Rgba { red: 64, green: 224, blue: 208, alpha: 255 };
+pub const CHARTREUSE: Rgba = Rgba { red: 127, green: 255, blue: 0, alpha: 255 };
+pub const ORANGE: Rgba = Rgba { red: 255, green: 165, blue: 0, alpha: 255 };
 pub const LIME: Rgba = Rgba { red: 200, green: 255, blue: 0, alpha: 255 };
