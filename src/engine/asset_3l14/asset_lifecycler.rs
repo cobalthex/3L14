@@ -123,6 +123,8 @@ impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler fo
         input: Box<dyn AssetRead>,
         #[cfg(feature = "asset_debug_data")] mut maybe_debug_input: Option<Box<dyn AssetRead>>)
     {
+        // TODO: asset storage should prevent this from running on multiple threads for the same asset concurrently
+
         let retyped = unsafe { Ash::<A>::attach_from(untyped_handle) };
 
         #[cfg(feature = "asset_debug_data")]
@@ -164,7 +166,7 @@ impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler fo
     fn error_untyped(&self, untyped_handle: UntypedAssetHandle, error: AssetLoadError)
     {
         let retyped = unsafe { Ash::<A>::attach_from(untyped_handle) };
-        retyped.inner().store_debug_data::<A>(None); //barrier?
+        retyped.inner().store_debug_data::<A>(None);
         retyped.store_payload(AssetPayload::Unavailable(error));
     }
 }

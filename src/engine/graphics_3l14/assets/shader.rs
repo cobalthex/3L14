@@ -30,12 +30,18 @@ pub struct ShaderFile
     pub module_hash: u64,
 }
 
-#[asset]
+#[asset(debug_type = ShaderDebugData)]
 pub struct Shader
 {
     pub stage: ShaderStage,
     pub module: wgpu::ShaderModule,
     pub module_hash: u64, // likely duplicates asset key but oh well
+}
+
+#[derive(Encode, Decode)]
+pub struct ShaderDebugData
+{
+    pub source_file: String,
 }
 
 pub struct ShaderLifecycler

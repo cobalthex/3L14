@@ -337,7 +337,7 @@ fn main() -> ExitReason
                                 {
                                     let skel = skel_handle.payload().unwrap();
 
-                                    let mut poser = SkeletonPoser::new(&skel);
+                                    // let mut poser = SkeletonPoser::new(&skel);
 
                                     // if let AssetPayload::Available(anim) = test_anim.payload()
                                     // {
@@ -348,9 +348,11 @@ fn main() -> ExitReason
                                     //     poser.blend(&anim, AnimFrameNumber(frame as u32));
                                     // }
 
-                                    let posed = poser.build();
+                                    // let posed = poser.build();
 
                                     let maybe_names = skel_handle.debug_data();
+                                    
+                                    let posed = &skel.bind_poses;
 
                                     for i in 0..posed.len()
                                     {

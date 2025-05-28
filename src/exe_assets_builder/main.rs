@@ -2,7 +2,7 @@ mod core;
 mod builders;
 mod helpers;
 
-use crate::core::{AssetMetadata, AssetsBuilder, AssetsBuilderConfig, ScanError};
+use crate::core::{AssetMetadata, AssetsBuilder, AssetsBuilderConfig, BuildRule, ScanError};
 use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use log::log;
@@ -20,6 +20,8 @@ pub enum CliCommands
         #[arg(long, exclusive = true, value_delimiter = ',', num_args = 1..)]
         source: Vec<String>,
 
+        #[arg(long)]
+        rule: Option<BuildRule>,
         // build IDs ?
     },
     #[clap(about = "List known source files and their source ID")]
@@ -52,9 +54,6 @@ fn main()
 
     let mut builder_cfg = AssetsBuilderConfig::new(&src_assets_root, &built_assets_root);
     builder_cfg.add_builder(builders::ModelBuilder::new(&assets_root));
-    builder_cfg.add_builder(builders::TextureBuilder);
-    builder_cfg.add_builder(builders::MaterialBuilder);
-
     let builder = AssetsBuilder::new(builder_cfg);
 
     match &app_run.args.command
@@ -63,13 +62,14 @@ fn main()
         {
             todo!();
         },
-        CliCommands::Build { all: false, source: sources } =>
+        CliCommands::Build { all: false, source: sources, rule } =>
         {
             for source in sources
             {
                 let src_path = Path::new(&source);
+                let build_rule = rule.unwrap_or_default();
 
-                match builder.build_source(src_path)
+                match builder.build_source(src_path, build_rule)
                 {
                     Ok(results) =>
                     {

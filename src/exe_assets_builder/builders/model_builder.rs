@@ -7,7 +7,7 @@ use glam::{Mat4, Quat, Vec3};
 use gltf::animation::util::{ReadOutputs, Translations};
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
-use graphics_3l14::assets::{AnimFrameNumber, BoneId, GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat, VertexLayout};
+use graphics_3l14::assets::{AnimFrameNumber, BoneId, GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, Shader, ShaderDebugData, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat, VertexLayout};
 use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
 use log::kv::Key;
 use math_3l14::{DualQuat, Ratio, Sphere, AABB};
@@ -157,9 +157,6 @@ impl ModelBuilder
         let Some(in_mesh) = in_node.mesh() else { return Ok(()); };
         let in_skin = in_node.skin();
 
-        let mut model_output = outputs.add_output(AssetTypeId::Model)?;
-        in_node.name().map(|n| model_output.set_name(n)); // different name from mesh?
-
         let mut meshes = Vec::new();
         let mut surfaces = Vec::new();
         let mut model_bounds_aabb = AABB::MAX_MIN;
@@ -283,70 +280,67 @@ impl ModelBuilder
                 let tex_index = tex.texture().source().index();
                 let tex_data = &images[tex_index];
 
-                let mut tex_output = outputs.add_output(AssetTypeId::Texture)?;
-                tex.texture().name().map(|n| tex_output.set_name(n));
-
-                let (pixel_format, need_conv) = match tex_data.format
+                let tex_asset = outputs.add_output(AssetTypeId::Texture, |mut tex_output|
                 {
-                    Format::R8 => (TextureFilePixelFormat::R8, false),
-                    Format::R8G8 => (TextureFilePixelFormat::Rg8, false),
-                    Format::R8G8B8 => (TextureFilePixelFormat::Rgba8, true),
-                    Format::R8G8B8A8 => (TextureFilePixelFormat::Rgba8, false),
-                    Format::R16 => todo!("R16 textures"),
-                    Format::R16G16 => todo!("R16G16 textures"),
-                    Format::R16G16B16 => todo!("R16G16B16 textures"),
-                    Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
-                    Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
-                    Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
-                };
+                    tex.texture().name().map(|n| tex_output.set_name(n));
 
+                    let (pixel_format, need_conv) = match tex_data.format
+                    {
+                        Format::R8 => (TextureFilePixelFormat::R8, false),
+                        Format::R8G8 => (TextureFilePixelFormat::Rg8, false),
+                        Format::R8G8B8 => (TextureFilePixelFormat::Rgba8, true),
+                        Format::R8G8B8A8 => (TextureFilePixelFormat::Rgba8, false),
+                        Format::R16 => todo!("R16 textures"),
+                        Format::R16G16 => todo!("R16G16 textures"),
+                        Format::R16G16B16 => todo!("R16G16B16 textures"),
+                        Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
+                        Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
+                        Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
+                    };
 
-                tex_output.serialize(&TextureFile
-                {
-                    width: tex_data.width,
-                    height: tex_data.height,
-                    depth: 1,
-                    mip_count: 1,
-                    mip_offsets: Default::default(),
-                    pixel_format,
+                    tex_output.serialize(&TextureFile
+                    {
+                        width: tex_data.width,
+                        height: tex_data.height,
+                        depth: 1,
+                        mip_count: 1,
+                        mip_offsets: Default::default(),
+                        pixel_format,
+                    })?;
+
+                    // TODO: texture compression
+                    if need_conv
+                    {
+                        match tex_data.format
+                        {
+                            Format::R8G8B8 =>
+                                {
+                                    // todo: check length
+                                    for i in 0..(tex_data.width * tex_data.height) as usize
+                                    {
+                                        tex_output.write_all(&tex_data.pixels[(i * 3)..((i + 1) * 3)])?;
+                                        tex_output.write_all(&[u8::MAX])?;
+                                    }
+                                }
+                            _ => todo!("Other texture format conversions"),
+                        }
+                    } else {
+                        tex_output.write_all(&tex_data.pixels)?;
+                    }
+
+                    Ok(())
                 })?;
 
-                // TODO: texture compression
-                if need_conv
-                {
-                    match tex_data.format
-                    {
-                        Format::R8G8B8 =>
-                        {
-                            // todo: check length
-                            for i in 0..(tex_data.width * tex_data.height) as usize
-                            {
-                                tex_output.write_all(&tex_data.pixels[(i * 3)..((i + 1) * 3)])?;
-                                tex_output.write_all(&[u8::MAX])?;
-                            }
-                        }
-                        _ => todo!("Other texture format conversions"),
-                    }
-                }
-                else
-                {
-                    tex_output.write_all(&tex_data.pixels)?;
-                }
-
-                let tex = tex_output.finish()?;
-                textures.try_push(tex)?;
-                model_output.depends_on(tex);
+                textures.try_push(tex_asset)?;
             }
 
             // TODO: read material info from gltf
             let material_class = MaterialClass::SimpleOpaque; // TODO
-            let material =
+            let material = outputs.add_output(AssetTypeId::Material, |mtl_output|
             {
                 // call into MaterialBuilder?
-                let mut mtl_output = outputs.add_output(AssetTypeId::Material)?;
                 mtl_output.set_name(format!("{:?}", material_class));
-
-                mtl_output.depends_on_multiple(&textures);
+                mtl_output.depends_on_multiple(textures.clone());
 
                 mtl_output.serialize(&MaterialFile
                 {
@@ -359,8 +353,9 @@ impl ModelBuilder
                         roughness: pbr.roughness_factor(),
                     }),
                 })?;
-                mtl_output.finish()?
-            };
+
+                Ok(())
+            })?;
 
             let shader_compile_flags = ShaderCompileFlags::Debug;
 
@@ -372,8 +367,7 @@ impl ModelBuilder
                 vertex_layout_hash,
                 compile_flags: shader_compile_flags,
             });
-            const FORCE_BUILD_SHADERS: bool = true;
-            if let Some(mut vshader_output) = outputs.add_synthetic(AssetTypeId::Shader, vertex_shader_key, FORCE_BUILD_SHADERS)?
+            outputs.add_synthetic(AssetTypeId::Shader, vertex_shader_key, |mut vshader_output|
             {
                 log::debug!("Compiling vertex shader {:?}", vshader_output.asset_key());
 
@@ -390,6 +384,7 @@ impl ModelBuilder
                     flags: shader_compile_flags,
                     defines: vec![],
                 })?;
+
                 let (module_hash, module_bytes) = shader_module.finish();
                 vshader_output.serialize(&ShaderFile
                 {
@@ -397,8 +392,14 @@ impl ModelBuilder
                     module_bytes: module_bytes.into_boxed_slice(),
                     module_hash,
                 })?;
-                vshader_output.finish()?;
-            }
+
+                vshader_output.serialize_debug::<Shader>(&ShaderDebugData
+                {
+                    source_file: shader_source,
+                })?;
+
+                Ok(())
+            })?;
 
             // todo: better asset key
             let pixel_shader_key = AssetKeySynthHash::generate(ShaderHash
@@ -408,7 +409,7 @@ impl ModelBuilder
                 vertex_layout_hash,
                 compile_flags: shader_compile_flags,
             });
-            if let Some(mut pshader_output) = outputs.add_synthetic(AssetTypeId::Shader, pixel_shader_key, FORCE_BUILD_SHADERS)?
+            outputs.add_synthetic(AssetTypeId::Shader, pixel_shader_key, |mut pshader_output|
             {
                 log::debug!("Compiling pixel shader {:?}", pshader_output.asset_key());
 
@@ -425,6 +426,7 @@ impl ModelBuilder
                     flags: shader_compile_flags,
                     defines: vec![], // TODO
                 })?;
+
                 let (module_hash, module_bytes) = shader_module.finish();
                 pshader_output.serialize(&ShaderFile
                 {
@@ -432,8 +434,15 @@ impl ModelBuilder
                     module_bytes: module_bytes.into_boxed_slice(),
                     module_hash,
                 })?;
-                pshader_output.finish()?;
-            }
+
+                pshader_output.serialize_debug::<Shader>(&ShaderDebugData
+                {
+                    source_file: shader_source,
+                })?;
+
+                Ok(())
+            })?;
+            // TODO: material depends on shaders
 
             let mesh_bounds_aabb = AABB::new(bb.min.into(), bb.max.into());
             model_bounds_aabb.union_with(mesh_bounds_aabb);
@@ -462,9 +471,8 @@ impl ModelBuilder
             });
         }
 
-        let geometry =
+        let geometry = outputs.add_output(AssetTypeId::Geometry, |geom_output|
         {
-            let mut geom_output = outputs.add_output(AssetTypeId::Geometry)?;
             in_mesh.name().map(|n| geom_output.set_name(n));
             geom_output.serialize(&GeometryFile
             {
@@ -476,16 +484,26 @@ impl ModelBuilder
                 indices: index_data.into_boxed_slice(),
                 meshes: meshes.into_boxed_slice(),
             })?;
-            geom_output.finish()?
-        };
 
-        model_output.serialize(&ModelFile
-        {
-            geometry,
-            skeleton: maybe_skel_info.map(|s| s.asset),
-            surfaces: surfaces.into_boxed_slice(),
+            Ok(())
         })?;
-        model_output.finish()?;
+
+        outputs.add_output(AssetTypeId::Model, |mut model_output|
+        {
+            in_node.name().map(|n| model_output.set_name(n)); // different name from mesh?
+            model_output.depends_on(geometry);
+            if let Some(skel_info) = maybe_skel_info { model_output.depends_on(skel_info.asset); };
+            model_output.depends_on_multiple(surfaces.iter().map(|s| s.material));
+
+            model_output.serialize(&ModelFile
+            {
+                geometry,
+                skeleton: maybe_skel_info.map(|s| s.asset),
+                surfaces: surfaces.into_boxed_slice(),
+            })?;
+
+            Ok(())
+        })?;
 
         Ok(())
     }
@@ -545,24 +563,21 @@ impl ModelBuilder
             skel_inv_bind_pose[i] = dq;
         }
 
-        let skeleton =
+        // TODO: this probably is not sufficient to determine uniqueness
+        let skel_key = AssetKeySynthHash::generate(&bone_relations);
+        let skeleton = outputs.add_synthetic(AssetTypeId::Skeleton, skel_key, |skel_output|
         {
-            // TODO: this probably is not sufficient to determine uniqueness
-            let skel_key = AssetKeySynthHash::generate(&bone_relations);
-            if let Some(mut skel_output) = outputs.add_synthetic(AssetTypeId::Skeleton, skel_key, false)?
+            skel_output.serialize(&Skeleton
             {
-                skel_output.serialize(&Skeleton
-                {
-                    bone_ids: bone_relations.as_ref().iter().map(|b| b.id).collect(),
-                    parent_indices: bone_relations.as_ref().iter().map(|b| b.parent_index).collect(),
-                    bind_poses: skel_bind_poses,
-                    inv_bind_poses: skel_inv_bind_pose,
-                })?;
-                skel_output.serialize_debug::<Skeleton>(&SkeletonDebugData { bone_names, })?;
-                skel_output.finish()?;
-            }
-            AssetKey::synthetic(AssetTypeId::Skeleton, skel_key)
-        };
+                bone_ids: bone_relations.as_ref().iter().map(|b| b.id).collect(),
+                parent_indices: bone_relations.as_ref().iter().map(|b| b.parent_index).collect(),
+                bind_poses: skel_bind_poses,
+                inv_bind_poses: skel_inv_bind_pose,
+            })?;
+            skel_output.serialize_debug::<Skeleton>(&SkeletonDebugData { bone_names, })?;
+
+            Ok(())
+        })?;
 
         Ok(SkelInfo
         {
@@ -705,16 +720,19 @@ impl ModelBuilder
             }
         }
 
-        let mut anim_output = outputs.add_output(AssetTypeId::SkeletalAnimation)?;
-        in_anim.name().map(|n| anim_output.set_name(n));
-        anim_output.serialize(&SkeletalAnimation
+        outputs.add_output(AssetTypeId::SkeletalAnimation, |anim_output|
         {
-            sample_rate,
-            frame_count: AnimFrameNumber(frame_count as u32),
-            bones: bone_ids,
-            poses,
+            in_anim.name().map(|n| anim_output.set_name(n));
+            anim_output.serialize(&SkeletalAnimation
+            {
+                sample_rate,
+                frame_count: AnimFrameNumber(frame_count as u32),
+                bones: bone_ids,
+                poses,
+            })?;
+
+            Ok(())
         })?;
-        anim_output.finish()?;
 
         // todo: output sorted based on hash of bone name
 

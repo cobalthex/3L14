@@ -177,7 +177,7 @@ impl AssetHandleInner
         if old_val != 0
         {
             // drop the old arc
-            let _arc = unsafe { Arc::from_raw(old_val as *const A) };
+            let _arc = unsafe { Arc::from_raw(old_val as *const A::DebugData) };
         }
     }
 

@@ -2,7 +2,7 @@ use std::cell::{LazyCell, UnsafeCell};
 use super::*;
 use bitcode::Encode;
 use metrohash::MetroHash64;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt::{Debug, Display, Formatter};
@@ -13,6 +13,7 @@ use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
+use clap::ValueEnum;
 use unicase::UniCase;
 use asset_3l14::{Asset, AssetFileType, AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetTypeId};
 use nab_3l14::utils::inline_hash::InlineWriteHash;
@@ -26,6 +27,15 @@ struct AssetBuilderEntry
     builder: Box<dyn ErasedAssetBuilder>,
     builder_hash: BuilderHash,
     format_hash: BuilderHash,
+}
+
+#[derive(Debug, Default, Clone, Copy, ValueEnum)]
+#[clap(rename_all = "kebab_case")]
+pub enum BuildRule
+{
+    #[default]
+    OnlyIfChanged,
+    ForceBuildAll,
 }
 
 pub struct AssetsBuilderConfig
@@ -124,7 +134,7 @@ impl AssetsBuilder
     }
 
     // transform a source file into one or more built asset, returns the built count
-    pub fn build_source<P: AsRef<Path> + Debug>(&self, source_path: P) -> Result<BuildResults, BuildError>
+    pub fn build_source<P: AsRef<Path> + Debug>(&self, source_path: P, build_rule: BuildRule) -> Result<BuildResults, BuildError>
     {
         let canonical_path =
         {
@@ -196,6 +206,7 @@ impl AssetsBuilder
 
         let mut outputs = BuildOutputs
         {
+            build_rule,
             source_id: source_meta.source_id,
             timestamp: chrono::Utc::now(),
             rel_source_path: rel_path,
@@ -203,7 +214,7 @@ impl AssetsBuilder
             builder_hash: builder.builder_hash,
             format_hash: builder.format_hash,
             derived_ids: HashMap::new(),
-            results: Vec::new(),
+            results: HashSet::new(),
         };
 
         match builder.builder.build_assets(source_meta.build_config, &mut input, &mut outputs)
@@ -244,7 +255,7 @@ impl Display for BuildError
 }
 impl Error for BuildError { }
 
-pub type BuildResults = Vec<AssetKey>;
+pub type BuildResults = HashSet<AssetKey>; // TODO: IndexSet
 
 struct Lazy<T, F: FnOnce() -> T>
 {
@@ -289,11 +300,11 @@ impl<T, F: FnOnce() -> T> DerefMut for Lazy<T, F>
     }
 }
 
-pub struct BuildOutput<W: BuildOutputWrite>
+pub struct BuildOutput
 {
-    writer: W,
-    meta_writer: W,
-    debug_writer: Lazy<io::Result<W>, Box<dyn FnOnce() -> io::Result<W>>>,
+    writer: Box<dyn BuildOutputWrite>,
+    meta_writer: Box<dyn BuildOutputWrite>,
+    debug_data_file_path: PathBuf,
     builder_hash: BuilderHash,
     format_hash: BuilderHash,
     asset_key: AssetKey,
@@ -301,16 +312,16 @@ pub struct BuildOutput<W: BuildOutputWrite>
     source_path: PathBuf,
     dependencies: Vec<AssetKey>,
 }
-impl<W: BuildOutputWrite> Write for BuildOutput<W>
+impl Write for BuildOutput
 {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> { self.writer.write(buf) } // todo: inline hash?
     fn flush(&mut self) -> io::Result<()> { self.writer.flush() }
 }
-impl<W: BuildOutputWrite> Seek for BuildOutput<W>
+impl Seek for BuildOutput
 {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> { self.writer.seek(pos) }
 }
-impl<W: BuildOutputWrite> BuildOutput<W>
+impl BuildOutput
 {
     pub fn asset_key(&self) -> AssetKey { self.asset_key }
 
@@ -327,9 +338,10 @@ impl<W: BuildOutputWrite> BuildOutput<W>
     {
         self.dependencies.push(dependency);
     }
-    pub fn depends_on_multiple(&mut self, dependencies: &[AssetKey])
+    // TODO: clean up
+    pub fn depends_on_multiple(&mut self, dependencies: impl IntoIterator<Item=AssetKey>)
     {
-        self.dependencies.extend_from_slice(dependencies)
+        self.dependencies.extend(dependencies)
     }
 
     // Serialize some size-prefixed data to the stream using the default serializer, writes all or nothing
@@ -341,19 +353,13 @@ impl<W: BuildOutputWrite> BuildOutput<W>
     }
 
     // Optionally serialize debug metadata to this asset
-    pub fn serialize_debug<A: Asset>(&mut self, value: &A::DebugData) -> Result<(), BuildError>
+    pub fn serialize_debug<A: Asset>(&mut self, value: &A::DebugData) -> io::Result<()>
     {
-        // TODO: clean up error types here
-
-        let mut debug_writer = match self.debug_writer.deref_mut()
-        {
-            Ok(w) => w,
-            Err(e) => return Err(BuildError::OutputDebugIOError(e.kind())),
-        };
+        let mut debug_writer = File::create(&self.debug_data_file_path)?;
 
         let val = bitcode::encode(value);
-        varint::encode_into(val.len() as u64, &mut debug_writer).map_err(BuildError::OutputIOError)?;
-        debug_writer.write_all(val.as_slice()).map_err(|e| BuildError::OutputDebugIOError(e.kind()))
+        varint::encode_into(val.len() as u64, &mut debug_writer)?;
+        debug_writer.write_all(val.as_slice())
     }
 
     // write a size-prefixed span of bytes, all or nothing
@@ -363,11 +369,13 @@ impl<W: BuildOutputWrite> BuildOutput<W>
         self.writer.write_all(buf)
     }
 
-    pub fn finish(mut self) -> Result<AssetKey, BuildError>
+    fn finish(mut self) -> Result<AssetKey, BuildError>
     {
         self.writer.flush().map_err(BuildError::OutputIOError)?;
 
         self.dependencies.dedup();
+
+        // TODO: this can be pulled back into BuildOutputs
 
         // write metadata
         let asset_meta = AssetMetadata
@@ -385,14 +393,13 @@ impl<W: BuildOutputWrite> BuildOutput<W>
         let out_string = toml::ser::to_string(&asset_meta).unwrap();//.map_err(BuildError::OutputMetaSerializeError)?;
         self.meta_writer.write_all(out_string.as_bytes()).map_err(BuildError::OutputMetaIOError)?;
 
-        // todo: signal back to BuildOutputs on failure automatically?
-
         Ok(self.asset_key)
     }
 }
 
 pub struct BuildOutputs<'b>
 {
+    build_rule: BuildRule,
     source_id: AssetKeySourceId,
     timestamp: chrono::DateTime<chrono::Utc>,
 
@@ -413,9 +420,14 @@ impl<'b> BuildOutputs<'b>
     #[inline] #[must_use]
     pub fn source_path(&self) -> &Path { self.rel_source_path }
 
+
     // Produce an output from this build. Assets of the same type have sequential derived IDs
     #[inline]
-    pub fn add_output(&mut self, asset_type: AssetTypeId) -> Result<BuildOutput<impl BuildOutputWrite + use<'b>>, BuildError>
+    pub fn add_output(
+        &mut self,
+        asset_type: AssetTypeId,
+        builder_fn: impl FnOnce(&mut BuildOutput) -> Result<(), Box<dyn Error>>)
+        -> Result<AssetKey, BuildError>
     {
         let derived_id: AssetKeyDerivedId =
         {
@@ -424,52 +436,67 @@ impl<'b> BuildOutputs<'b>
         };
 
         let asset_key = AssetKey::unique(asset_type, derived_id, self.source_id);
-        self.add_asset(asset_key)
+        self.add_asset(asset_key, builder_fn)
     }
 
     // Produce an output from ths build that is referenced by a calculable hash. By default, will only return an output if the hash doesn't already exist
     #[inline]
-    pub fn add_synthetic(&mut self, asset_type: AssetTypeId, asset_hash: AssetKeySynthHash, force_build: bool) -> Result<Option<BuildOutput<impl BuildOutputWrite + use<'b>>>, BuildError>
+    pub fn add_synthetic(
+        &mut self,
+        asset_type: AssetTypeId,
+        asset_hash: AssetKeySynthHash,
+        builder_fn: impl FnOnce(&mut BuildOutput) -> Result<(), Box<dyn Error>>)
+        -> Result<AssetKey, BuildError>
     {
         let asset_key = AssetKey::synthetic(asset_type, asset_hash);
-        
-        let output_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::Asset)); // todo: shared method w/ below
-        if !force_build && output_path.exists()
-        {
-            self.results.push(asset_key); // TODO: only do if successful?
-            return Ok(None);
-        }
-
-        self.add_asset(asset_key).map(|a| Some(a))
+        self.add_asset(asset_key, builder_fn)
     }
 
-    fn add_asset(&mut self, asset_key: AssetKey) -> Result<BuildOutput<impl BuildOutputWrite + use<'b>>, BuildError>
+    // build an asset (if rules allow) and add an output to the asset build
+    fn add_asset(
+        &mut self, asset_key: AssetKey, builder_fn: impl FnOnce(&mut BuildOutput) -> Result<(), Box<dyn Error>>)
+        -> Result<AssetKey, BuildError>
     {
         let output_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::Asset));
-        let output_writer = File::create(&output_path).map_err(BuildError::OutputIOError)?;
 
-        let output_meta_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::MetaData));
-        let output_meta_writer = File::create(&output_meta_path).map_err(BuildError::OutputIOError)?;
-
-        let output_debug_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::DebugData));
-        let output_debug_writer = move || File::create(output_debug_path);
-
-        let output = BuildOutput
+        let should_build = match self.build_rule
         {
-            writer: output_writer,
-            meta_writer: output_meta_writer,
-            debug_writer: Lazy::new(Box::new(output_debug_writer)),
-            builder_hash: self.builder_hash,
-            format_hash: self.format_hash,
-            asset_key,
-            name: None,
-            source_path: self.rel_source_path.to_path_buf(),
-            dependencies: Vec::new(),
+            BuildRule::OnlyIfChanged =>
+            {
+                !output_path.exists() ||
+                !self.results.contains(&asset_key)
+                // TODO: check if actually different
+            },
+            BuildRule::ForceBuildAll => true,
         };
+        if should_build
+        {
+            let output_writer = File::create(&output_path).map_err(BuildError::OutputIOError)?;
 
-        self.results.push(asset_key); // TODO: only do if successful?
+            let output_meta_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::MetaData));
+            let output_meta_writer = File::create(&output_meta_path).map_err(BuildError::OutputIOError)?;
 
-        Ok(output)
+            let output_debug_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::DebugData));
+
+            let mut output = BuildOutput
+            {
+                writer: Box::new(output_writer),
+                meta_writer: Box::new(output_meta_writer),
+                debug_data_file_path: output_debug_path,
+                builder_hash: self.builder_hash,
+                format_hash: self.format_hash,
+                asset_key,
+                name: None,
+                source_path: self.rel_source_path.to_path_buf(),
+                dependencies: Vec::new(),
+            };
+
+            builder_fn(&mut output).map_err(BuildError::BuilderError)?;
+            output.finish()?;
+        }
+
+        self.results.insert(asset_key);
+        Ok(asset_key)
     }
 }
 
