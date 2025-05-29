@@ -85,7 +85,7 @@ fn main() -> ExitReason
             .add_lifecycler(ShaderLifecycler::new(renderer.clone()))
             .add_lifecycler(MaterialLifecycler::new(renderer.clone()))
             .add_lifecycler(GeometryLifecycler::new(renderer.clone()))
-            .add_lifecycler(SkeletonLifecycler)
+            .add_lifecycler(SkeletonLifecycler::default())
             .add_lifecycler(SkeletalAnimationLifecycler)
         , assets_config);
 
@@ -337,22 +337,21 @@ fn main() -> ExitReason
                                 {
                                     let skel = skel_handle.payload().unwrap();
 
-                                    // let mut poser = SkeletonPoser::new(&skel);
+                                    let mut poser = SkeletonPoser::new(&skel);
 
-                                    // if let AssetPayload::Available(anim) = test_anim.payload()
-                                    // {
-                                    //     let runtime = frame_time.total_runtime.as_millis() as u64;
-                                    //     let mut frame = anim.sample_rate.to_ratio_u64().scale(runtime);
-                                    //     frame %= anim.frame_count.0 as u64;
-                                    //     // let frame= 20;
-                                    //     poser.blend(&anim, AnimFrameNumber(frame as u32));
-                                    // }
+                                    if let AssetPayload::Available(anim) = test_anim.payload()
+                                    {
+                                        let runtime = frame_time.total_runtime.as_millis() as u64;
+                                        let mut frame = anim.sample_rate.to_ratio_u64().scale(runtime);
+                                        frame %= anim.frame_count.0 as u64;
+                                        //frame = 20;
+                                        poser.blend(&anim, AnimFrameNumber(frame as u32));
+                                    }
 
-                                    // let posed = poser.build();
+                                    let posed_skel = poser.build_world_space();
+                                    let posed = poser.build();
 
                                     let maybe_names = skel_handle.debug_data();
-                                    
-                                    let posed = &skel.bind_poses;
 
                                     for i in 0..posed.len()
                                     {
@@ -360,26 +359,27 @@ fn main() -> ExitReason
                                         if parent >= 0
                                         {
                                             debug_draw.draw_polyline(&[
-                                                obj_world.transform_point3(posed[i].translation()),
-                                                obj_world.transform_point3(posed[parent as usize].translation()),
+                                                obj_world.transform_point3(posed_skel[i].translation()),
+                                                obj_world.transform_point3(posed_skel[parent as usize].translation()),
                                             ], false, colors::TOMATO);
                                         }
-                                        debug_draw.draw_cross3(obj_world * Mat4::from(posed[i]), colors::CHARTREUSE);
+                                        debug_draw.draw_cross3(obj_world * Mat4::from(posed_skel[i]), colors::CHARTREUSE);
+                                        // TODO: SkeletonLifecycler.display_bone_names()
                                         match &maybe_names
                                         {
                                             None =>
                                             {
-                                                debug_draw.draw_text(&format!("{i}:{:?}", skel.bone_ids[i]), obj_world.transform_point3(posed[i].translation()), colors::WHITE);
+                                                debug_draw.draw_text(&format!("{i}:{:?}", skel.bone_ids[i]), obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
                                             }
                                             Some(names) =>
                                             {
-                                                debug_draw.draw_text(&names.bone_names[i], obj_world.transform_point3(posed[i].translation()), colors::WHITE);
+                                                debug_draw.draw_text(&names.bone_names[i], obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
                                             }
                                         }
                                     }
 
                                      //view.draw_model_static(model, obj_world);
-                                    //view.draw_model_skinned(model, obj_world, &posed);
+                                    view.draw_model_skinned(model, obj_world, &posed);
                                 }
                             }
                         }

@@ -40,7 +40,15 @@ pub struct SkeletonDebugData
     pub bone_names: Box<[String]>,
 }
 
-pub struct SkeletonLifecycler;
+#[derive(Default)]
+pub struct SkeletonLifecycler
+{
+    display_bone_names: bool,
+}
+impl SkeletonLifecycler
+{
+    pub fn display_bone_names(&self) -> bool { self.display_bone_names }
+}
 impl TrivialAssetLifecycler for SkeletonLifecycler { type Asset = Skeleton; }
 impl DebugGui for SkeletonLifecycler
 {

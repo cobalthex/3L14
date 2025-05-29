@@ -24,7 +24,7 @@ impl<'s> SkeletonPoser<'s>
         let num_poses = skeleton.bind_poses.len().min(MAX_SKINNED_BONES);
         let mut poses = ArrayVec::new();
         unsafe { poses.set_len(num_poses); } // better way?
-        poses[..num_poses].copy_from_slice(&skeleton.bind_poses[..num_poses]);
+        poses[..num_poses].copy_from_slice(&skeleton.bind_poses[..num_poses]); // call explicitly? (set_bind_pose)
 
         Self
         {
@@ -33,9 +33,26 @@ impl<'s> SkeletonPoser<'s>
         }
     }
 
+    // TODO: better name
+    pub fn build_world_space(&mut self) -> PoseSet
+    {
+        let mut copy = self.poses.clone();
+        // local to bone space
+        for i in 0..copy.len()
+        {
+            let parent = self.skeleton.parent_indices[i];
+            if parent >= 0
+            {
+                copy[i] = copy[parent as usize] * copy[i];
+            }
+        }
+        copy
+    }
+
     pub fn build(mut self) -> PoseSet
     {
-        // apply hierarchy
+        // TODO: split these steps so that debug drawing can take ^
+        // local to bone space
         for i in 0..self.poses.len()
         {
             let parent = self.skeleton.parent_indices[i];
@@ -45,10 +62,10 @@ impl<'s> SkeletonPoser<'s>
             }
         }
 
-        // apply inv bind poses
+        // bone to model space
         for i in 0..self.poses.len()
         {
-            self.poses[i] = self.skeleton.inv_bind_poses[i] * self.poses[i];
+            self.poses[i] = self.poses[i] * self.skeleton.inv_bind_poses[i];
         }
 
         self.poses

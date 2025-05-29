@@ -463,13 +463,12 @@ impl<'b> BuildOutputs<'b>
         {
             BuildRule::OnlyIfChanged =>
             {
-                !output_path.exists() ||
-                !self.results.contains(&asset_key)
-                // TODO: check if actually different
+                !output_path.exists()
+                // TODO: check if actually different (only for synthetic assets)
             },
             BuildRule::ForceBuildAll => true,
         };
-        if should_build
+        if should_build && !self.results.contains(&asset_key)
         {
             let output_writer = File::create(&output_path).map_err(BuildError::OutputIOError)?;
 
@@ -491,6 +490,7 @@ impl<'b> BuildOutputs<'b>
                 dependencies: Vec::new(),
             };
 
+            log::debug!("Building asset {}", asset_key);
             builder_fn(&mut output).map_err(BuildError::BuilderError)?;
             output.finish()?;
         }

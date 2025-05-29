@@ -50,8 +50,10 @@ pub enum ModelImportError
     NoNormalData,
     NoIndexData,
     MismatchedVertexCount,
+    DuplicateBoneIndices,
     DuplicateBoneParents,
     TooManyBones,
+    UnnamedBones, // bone names are required
     AnimationTimesOutOfOrder,
 }
 impl Display for ModelImportError
@@ -156,6 +158,8 @@ impl ModelBuilder
         // pass in node?
         let Some(in_mesh) = in_node.mesh() else { return Ok(()); };
         let in_skin = in_node.skin();
+
+        log::debug!("Parsing gLTF mesh {} '{}'", in_mesh.index(), in_mesh.name().unwrap_or(""));
 
         let mut meshes = Vec::new();
         let mut surfaces = Vec::new();
@@ -515,44 +519,46 @@ impl ModelBuilder
         outputs: &mut BuildOutputs)
     -> Result<SkelInfo, Box<dyn Error>>
     {
+        log::debug!("Parsing gLTF skin {} '{}'", in_skin.index(), in_skin.name().unwrap_or(""));
+
         // todo: enumerate nodes to determine hierarchy
-        let mut bone_parents = HashMap::new();
+        let mut bone_child_to_parent = HashMap::new(); // gltf index -> skel index
         let mut bone_names = alloc_slice_default(in_skin.joints().len());
         let mut skel_bind_poses = alloc_slice_default(in_skin.joints().len());
         for (i, joint) in in_skin.joints().enumerate()
         {
-            if joint.index() > i16::MAX as usize
+            if i > i16::MAX as usize
             {
                 return Err(Box::new(ModelImportError::TooManyBones));
             }
 
             for child in joint.children()
             {
-                let None = bone_parents.insert(child.index(), joint.index() as i16)
-                else { return Err(Box::new(ModelImportError::DuplicateBoneParents)); };
+                let None = bone_child_to_parent.insert(child.index(), i as i16)
+                    else { return Err(ModelImportError::DuplicateBoneParents.into()) };
             }
+            let _parent = *bone_child_to_parent.entry(joint.index()).or_insert_with(|| -1);
 
-            bone_parents.entry(joint.index()).or_insert_with(|| -1);
-            bone_names[i] = joint.name().map(|n| n.to_string()).unwrap_or_else(|| format!("{}", joint.index()));
-            skel_bind_poses[i] =
-            {
-                let (trans, rot, _scale) = joint.transform().decomposed();
-                DualQuat::from_rot_trans(Quat::from_array(rot), Vec3::from_array(trans))
-            };
+            bone_names[i] = joint.name().ok_or(ModelImportError::UnnamedBones)?.to_string();
+
+            let (trans, rot, _scale) = joint.transform().decomposed();
+            skel_bind_poses[i] = DualQuat::from_rot_trans(Quat::from_array(rot), Vec3::from_array(trans));
         }
 
         #[derive(Hash)]
         struct BoneRelation { id: BoneId, parent_index: i16 };
         let bone_relations: Box<_> = in_skin.joints().enumerate().map(|(i, joint)|
         {
-            let Some(parent_index) = bone_parents.get(&joint.index()).cloned()
-                else { panic!("joint {} (#{i}) does not have a parent?", joint.index()) }; // TODO: better fallback name
+            let Some(parent_index) = bone_child_to_parent.get(&joint.index()).cloned()
+                else { panic!("joint {} (#{i}) does not have a parent?", joint.index()) };
             BoneRelation
             {
                 id: BoneId::from_name(&bone_names[i]),
                 parent_index,
             }
         }).collect();
+
+        // TODO: apply global transform
 
         let mut skel_inv_bind_pose = alloc_slice_default(bone_relations.len());
         let reader = in_skin.reader(|b| Some(&buffers[b.index()]));
@@ -593,6 +599,8 @@ impl ModelBuilder
         outputs: &mut BuildOutputs)
     -> Result<(), Box<dyn Error>>
     {
+        log::debug!("Parsing gLTF animation {} '{}'", in_anim.index(), in_anim.name().unwrap_or(""));
+
         let mut anim_name_buf = String::new();
         let anim_name = in_anim.name().unwrap_or_else(||
         {
@@ -697,17 +705,9 @@ impl ModelBuilder
         let mut bone_ids = alloc_slice_default(bone_keyframes.len());
         let mut poses = alloc_slice_default(bone_ids.len() * frame_count);
 
-        let mut temp_str = String::new();
         for (bone, (gltf_index, bone_data)) in bone_keyframes.iter().enumerate()
         {
-            // ugly
-            let id = BoneId::from_name(bone_data.name.unwrap_or_else(||
-            {
-                // todo: make sure this is unified w/ above
-                temp_str.clear();
-                std::fmt::Write::write_fmt(&mut temp_str, format_args!("{}", gltf_index)).unwrap(); // TODO: better fallback name
-                &temp_str
-            }));
+            let id = BoneId::from_name(bone_data.name.ok_or(ModelImportError::UnnamedBones)?);
             bone_ids[bone] = id;
 
             for fr in 0..frame_count
