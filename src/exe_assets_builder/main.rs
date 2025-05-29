@@ -14,10 +14,10 @@ pub enum CliCommands
     #[clap(about = "Build sources into assets")]
     Build
     {
-        #[arg(long, exclusive = true)]
+        #[arg(long, group = "build_what")]
         all: bool,
         // extension/type
-        #[arg(long, exclusive = true, value_delimiter = ',', num_args = 1..)]
+        #[arg(long, group = "build_what", value_delimiter = ',', num_args = 1..)]
         source: Vec<String>,
 
         #[arg(long)]

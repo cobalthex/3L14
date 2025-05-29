@@ -436,7 +436,7 @@ impl<'b> BuildOutputs<'b>
         };
 
         let asset_key = AssetKey::unique(asset_type, derived_id, self.source_id);
-        self.add_asset(asset_key, builder_fn)
+        self.add_asset(asset_key, BuildRule::ForceBuildAll, builder_fn)
     }
 
     // Produce an output from ths build that is referenced by a calculable hash. By default, will only return an output if the hash doesn't already exist
@@ -449,17 +449,20 @@ impl<'b> BuildOutputs<'b>
         -> Result<AssetKey, BuildError>
     {
         let asset_key = AssetKey::synthetic(asset_type, asset_hash);
-        self.add_asset(asset_key, builder_fn)
+        self.add_asset(asset_key, self.build_rule, builder_fn)
     }
 
     // build an asset (if rules allow) and add an output to the asset build
     fn add_asset(
-        &mut self, asset_key: AssetKey, builder_fn: impl FnOnce(&mut BuildOutput) -> Result<(), Box<dyn Error>>)
+        &mut self,
+        asset_key: AssetKey,
+        build_rule: BuildRule,
+        builder_fn: impl FnOnce(&mut BuildOutput) -> Result<(), Box<dyn Error>>)
         -> Result<AssetKey, BuildError>
     {
         let output_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::Asset));
 
-        let should_build = match self.build_rule
+        let should_build = match build_rule
         {
             BuildRule::OnlyIfChanged =>
             {
@@ -490,7 +493,7 @@ impl<'b> BuildOutputs<'b>
                 dependencies: Vec::new(),
             };
 
-            log::debug!("Building asset {}", asset_key);
+            log::debug!("Building {:#?}", asset_key);
             builder_fn(&mut output).map_err(BuildError::BuilderError)?;
             output.finish()?;
         }

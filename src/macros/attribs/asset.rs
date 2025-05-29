@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{format_ident, quote, ToTokens};
 use syn::parse::{Parse, ParseStream};
-use syn::{parse_macro_input, DataStruct, ExprStruct, Fields, ItemStruct, Meta, Token, Type};
+use syn::{parse_macro_input, Fields, ItemStruct, Meta, Token, Type};
 
 fn type_path_has_ident(ty: &Type, ident: &Ident) -> bool
 {

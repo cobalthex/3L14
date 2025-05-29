@@ -9,10 +9,10 @@ cbuffer PerMesh_Pbr
     float roughness;
 };
 
-// [[vk::binding(1, 3)]]
-// SamplerState Sampler;
-// [[vk::binding(2, 3)]]
-// Texture2D<float4> Tex;
+[[vk::binding(1, 3)]]
+SamplerState Sampler;
+[[vk::binding(2, 3)]]
+Texture2D<float4> Tex;
 
 struct PixelInput
 {
@@ -51,8 +51,8 @@ float4 ps_main(PixelInput in_pixel) : SV_Target
 
     float3 Lo = 0.1;
     Lo += (kD * albedo / PI + specular) * radiance * n_dot_l;
-    return float4(Lo, 1) + float4(ambient * albedo * ao, 0);
-//
-//     float4 tex_col = Tex.Sample(Sampler, in_pixel.tex_coord);
-//     return tex_col * float4(Lo, 1) + float4(ambient * albedo * ao, 0);
+//     return float4(Lo, 1) + float4(ambient * albedo * ao, 0);
+
+    float4 tex_col = Tex.Sample(Sampler, in_pixel.tex_coord);
+    return tex_col * float4(Lo, 1) + float4(ambient * albedo * ao, 0);
 }
