@@ -578,7 +578,7 @@ impl ModelBuilder
                 bone_ids: bone_relations.as_ref().iter().map(|b| b.id).collect(),
                 parent_indices: bone_relations.as_ref().iter().map(|b| b.parent_index).collect(),
                 bind_poses: skel_bind_poses,
-                inv_bind_poses: skel_inv_bind_pose,
+                inverse_bind_poses: skel_inv_bind_pose,
             })?;
             skel_output.serialize_debug::<Skeleton>(&SkeletonDebugData { bone_names, })?;
 
@@ -662,8 +662,8 @@ impl ModelBuilder
                         .or_insert_with(|| BoneData { name: target_node.name(), .. Default::default() })
                         .translations;
 
-                    let mut outputs = inputs.zip(read_translations);
-                    let mut cur = (0.0, [0.0, 0.0, 0.0]);
+                    let mut outputs = inputs.zip(read_translations).peekable();
+                    let mut cur = outputs.peek().cloned().unwrap_or_default();
                     while let Some(next) = outputs.next()
                     {
                         let a = Vec3::from_array(cur.1);
@@ -682,8 +682,8 @@ impl ModelBuilder
                         .or_insert_with(|| BoneData { name: target_node.name(), .. Default::default() })
                         .rotations;
 
-                    let mut outputs = inputs.zip(read_rotations.into_f32());
-                    let mut cur = (0.0, [0.0, 0.0, 0.0, 0.0]);
+                    let mut outputs = inputs.zip(read_rotations.into_f32()).peekable();
+                    let mut cur = outputs.peek().cloned().unwrap_or_default();
                     while let Some(next) = outputs.next()
                     {
                         let a = Quat::from_array(cur.1);
@@ -696,7 +696,7 @@ impl ModelBuilder
                     rotations.push(Quat::from_array(cur.1));
                     frame_count = frame_count.max(rotations.len());
                 },
-                ReadOutputs::Scales(_) => {} // unsupported (currently)
+                ReadOutputs::Scales(_) => { log::warn!("Animating scale is not supported"); } // unsupported (currently)
                 ReadOutputs::MorphTargetWeights(_) => {} // unsupported
             }
         }

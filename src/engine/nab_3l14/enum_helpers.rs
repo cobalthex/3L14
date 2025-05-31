@@ -21,6 +21,7 @@ impl<TEnum: FlagsEnum<TEnum> + Copy> Iterator for FlagsEnumIter<TEnum>
     type Item = TEnum;
     fn next(&mut self) -> Option<Self::Item>
     {
+        // TODO: this might iterate through holes (use count leading zeros?)
         let bits_used = TEnum::bits_used_trait();
         while self.next_bit < bits_used
         {

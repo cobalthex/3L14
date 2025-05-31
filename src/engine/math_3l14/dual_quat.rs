@@ -30,8 +30,8 @@ impl DualQuat
         // normalize?
     }
 
-    #[inline] #[must_use] pub fn rotation(&self) -> Quat { self.real }
-    #[inline] #[must_use] pub fn translation(&self) -> Vec3 { 2.0 * (self.dual * self.real.conjugate()).xyz() }
+    #[inline] #[must_use] pub fn rotation(self) -> Quat { self.real }
+    #[inline] #[must_use] pub fn translation(self) -> Vec3 { 2.0 * (self.dual * self.real.conjugate()).xyz() }
 
     #[inline]
     pub fn translate(&mut self, translation: Vec3)
@@ -40,11 +40,10 @@ impl DualQuat
         self.dual = self.dual + (t_quat * 0.5) * self.real;
     }
     #[inline] #[must_use]
-    pub fn translated(&self, translation: Vec3) -> Self
+    pub fn translated(mut self, translation: Vec3) -> Self
     {
-        let mut dq = *self;
-        dq.translate(translation);
-        dq
+        self.translate(translation);
+        self
     }
 
     // fast rotate 90deg (fast conj calc), fast rotate 180deg (r * d,q * r)
@@ -57,30 +56,75 @@ impl DualQuat
         self.dual = normalized_rotation * self.dual * conj;
     }
     #[inline] #[must_use]
-    pub fn rotated(&self, normalized_rotation: Quat) -> Self
+    pub fn rotated(mut self, normalized_rotation: Quat) -> Self
     {
-        let mut dq = *self;
-        dq.rotate(normalized_rotation);
-        dq
+        self.rotate(normalized_rotation);
+        self
     }
 
     // linearly lerp two dual-quaternions, and (simplified) normalize after
     // note: t is not clamped internally
     #[must_use]
-    pub fn nlerp(&self, rhs: DualQuat, t: f32) -> Self
+    pub fn nlerp(self, mut rhs: Self, t: f32) -> Self
     {
-        // let t = t.clamp(0.0, 1.0); // necessary?
-        let t_inv = 1.0 - t;
+        // take the shortest path
+        let dot = self.real.dot(rhs.real);
+        if dot < 0.0 { rhs = -rhs; }
+
         Self
         {
-            real: (self.real * t_inv) + (rhs.real * t),
-            dual: (self.dual * t_inv) + (rhs.dual * t),
+            real: self.real + (rhs.real - self.real) * t,
+            dual: self.dual + (rhs.dual - self.dual) * t,
         }.simple_normalized()
+        
+        // let t_inv = 1.0 - t;
+        // Self
+        // {
+        //     real: (self.real * t_inv) + (rhs.real * t),
+        //     dual: (self.dual * t_inv) + (rhs.dual * t),
+        // }.simple_normalized()
+    }
+
+    // Calculate the screw linear interpolation between two dual quaternions
+    #[must_use]
+    pub fn sclerp(self, mut rhs: Self, t: f32) -> Self
+    {
+        // https://borodust.github.io/public/shared/paper_dual-quats.pdf
+
+        // TODO: this seems broken, article above has some tests
+
+        // take the shortest path
+        let dot = self.real.dot(rhs.real);
+        if dot < 0.0 { rhs = -rhs; }
+
+        let diff = self.conjugate() * rhs;
+        let vr = diff.real.xyz();
+        let vd = diff.dual.xyz();
+        let invr = 1.0 / vr.length();
+
+        // screw params
+        let mut angle = 2.0 * diff.real.w.acos();
+        let mut pitch = -2.0 * diff.dual.w * invr;
+        let direction = vr * invr;
+        let moment = (vd - direction * pitch * diff.real.w * 0.5) * invr;
+
+        // exp power
+        angle *= t;
+        pitch *= t;
+
+        // convert back to dual quats
+        let sin = (angle * 0.5).sin();
+        let cos = (angle * 0.5).cos();
+
+        let real = Quat::from_axis_angle(direction * sin, cos);
+        let dual = Quat::from_axis_angle((sin * moment) + (pitch * 0.5 * cos * direction), -pitch * 0.5 * sin);
+
+        self * Self::from_raw(real, dual)
     }
 
     // spherically lerp two dual-quaternions, and (true) normalize after
     #[must_use]
-    pub fn slerp(&self, rhs: DualQuat, t: f32) -> Self
+    pub fn slerp(self, rhs: Self, t: f32) -> Self
     {
         let translation = Vec3::lerp(self.translation(), rhs.translation(), t);
         let rotation = Quat::slerp(self.rotation(), rhs.rotation(), t);
@@ -95,33 +139,33 @@ impl DualQuat
     #[inline] #[must_use] pub fn simple_length(&self) -> f32 { self.real.length() }
     #[inline] #[must_use] pub fn simple_length_squared(&self) -> f32 { self.real.length_squared() }
     #[inline] #[must_use]
-    pub fn true_length(&self) -> f32
+    pub fn true_length(self) -> f32
     {
         let len = self.real.length();
-        len + (self.real.dot(self.dual) / len)
+        len + (self.real.dot(self.dual) * (1.0 / len))
     }
 
     #[inline] #[must_use]
-    pub fn simple_normalized(&self) -> Self
+    pub fn simple_normalized(self) -> Self
     {
-        let len = self.simple_length();
-        Self { real: self.real / len, dual: self.dual / len }
+        let len_recip = 1.0 / self.simple_length();
+        Self { real: self.real * len_recip, dual: self.dual * len_recip }
     }
     #[inline] #[must_use]
-    pub fn true_normalized(&self) -> Self
+    pub fn true_normalized(self) -> Self
     {
-        let real_len = self.real.length();
-        let real_norm = self.real / real_len;
+        let real_len_recip = 1.0 / self.real.length();
+        let real_norm = self.real * real_len_recip;
         Self
         {
             real: real_norm,
-            dual: (self.dual / real_len) - real_norm * (self.real.dot(self.dual) / (real_len * real_len)),
+            dual: (self.dual * real_len_recip) - real_norm * (self.real.dot(self.dual) * (real_len_recip * real_len_recip)),
         }
     }
     // true normalization?
 
     #[inline] #[must_use]
-    pub fn conjugate(&self) -> Self
+    pub fn conjugate(self) -> Self
     {
         Self
         {
@@ -130,7 +174,7 @@ impl DualQuat
         }
     }
     #[inline] #[must_use]
-    pub fn dual_number_conjugate(&self) -> Self
+    pub fn dual_number_conjugate(self) -> Self
     {
         Self
         {
@@ -139,7 +183,7 @@ impl DualQuat
         }
     }
     #[inline] #[must_use]
-    pub fn combined_conjugate(&self) -> Self
+    pub fn combined_conjugate(self) -> Self
     {
         Self
         {
@@ -149,7 +193,7 @@ impl DualQuat
     }
 
     #[inline] #[must_use]
-    pub fn inverse(&self) -> Self
+    pub fn inverse(self) -> Self
     {
         let real_inv = self.real.conjugate() / self.real.length_squared();
         Self
@@ -160,7 +204,7 @@ impl DualQuat
     }
 
     #[inline] #[must_use]
-    pub fn dot(&self, other: &Self) -> f32
+    pub fn dot(self, other: Self) -> f32
     {
         self.real.dot(other.real) + self.real.dot(other.dual) + self.dual.dot(other.real)
     }
@@ -251,7 +295,18 @@ impl Add<DualQuat> for DualQuat
         }
     }
 }
-// Neg (-real, -dual) does exist, but represents the same transform, so pointless
+impl Neg for DualQuat
+{
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Self::Output
+        {
+            real: -self.real,
+            dual: -self.dual,
+        }
+    }
+}
 
 impl AbsDiffEq for DualQuat
 {

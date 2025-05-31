@@ -37,6 +37,7 @@ pub struct DebugDraw
     pub is_enabled: AtomicBool,
 
     gui_painter: Option<Painter>,
+    num_strings: u32,
 
     camera_forward: Vec3,
     camera_clip_mtx: Mat4,
@@ -153,6 +154,7 @@ impl DebugDraw
         {
             is_enabled: AtomicBool::new(true),
             gui_painter: None,
+            num_strings: 0,
             camera_clip_mtx: Mat4::IDENTITY,
             camera_forward: Vec3::Z,
             camera_aspect_ratio: 1.0,
@@ -166,6 +168,7 @@ impl DebugDraw
     pub fn begin(&mut self, camera: &Camera, egui_ctx: &egui::Context)
     {
         self.gui_painter = Some(egui_ctx.layer_painter(egui::LayerId::background()));
+        self.num_strings = 0;
         self.camera_clip_mtx = camera.matrix();
         self.camera_forward = camera.transform().forward();
         self.camera_aspect_ratio = camera.projection().aspect_ratio();
@@ -191,6 +194,8 @@ impl DebugDraw
             text,
             FontId::proportional(20.0), // todo
             Color32::from_rgba_unmultiplied(color.red, color.green, color.blue, color.alpha));
+
+        self.num_strings += 1;
     }
 
     pub fn draw_frustum(&mut self, camera: &Camera, color: Rgba)
@@ -643,5 +648,6 @@ impl DebugGui for DebugDraw
 
         ui.label(format!("Line vertex count: {}", self.lines.vertices.len()));
         ui.label(format!("Solids vertex count: {}", self.solids.vertices.len()));
+        ui.label(format!("Strings count: {}", self.num_strings));
     }
 }

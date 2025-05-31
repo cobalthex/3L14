@@ -7,6 +7,7 @@ use metrohash::MetroHash64;
 use nab_3l14::hashing::hash64_to_32;
 use proc_macros_3l14::asset;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub const MAX_SKINNED_BONES: usize = 128; // TODO: share with HLSL
 
@@ -31,7 +32,7 @@ pub struct Skeleton
     pub bone_ids: Box<[BoneId]>,
     pub parent_indices: Box<[i16]>, // bones are ordered with parents first (with the root at the front), negative indicates no parent
     pub bind_poses: Box<[DualQuat]>, // necessary?
-    pub inv_bind_poses: Box<[DualQuat]>,
+    pub inverse_bind_poses: Box<[DualQuat]>,
 }
 
 #[derive(Encode, Decode)]
@@ -43,11 +44,11 @@ pub struct SkeletonDebugData
 #[derive(Default)]
 pub struct SkeletonLifecycler
 {
-    display_bone_names: bool,
+    display_bones: AtomicBool,
 }
 impl SkeletonLifecycler
 {
-    pub fn display_bone_names(&self) -> bool { self.display_bone_names }
+    pub fn display_bones(&self) -> bool { self.display_bones.load(Ordering::Relaxed) }
 }
 impl TrivialAssetLifecycler for SkeletonLifecycler { type Asset = Skeleton; }
 impl DebugGui for SkeletonLifecycler
@@ -56,6 +57,8 @@ impl DebugGui for SkeletonLifecycler
 
     fn debug_gui(&self, ui: &mut Ui)
     {
-        // TODO
+        let mut display_bones = self.display_bones.load(Ordering::Acquire);
+        ui.checkbox(&mut display_bones, "Display bones");
+        self.display_bones.store(display_bones, Ordering::Release);
     }
 }

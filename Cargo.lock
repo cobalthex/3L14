@@ -205,8 +205,8 @@ dependencies = [
  "notify-debouncer-full",
  "parking_lot",
  "proc_macros_3l14",
- "puffin 0.19.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand 0.9.0",
+ "puffin 0.19.1 (git+https://github.com/tedsteen/puffin?branch=upgrade-egui)",
+ "rand 0.9.1",
  "serde",
  "unicase",
 ]
@@ -418,9 +418,9 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chrono"
-version = "0.4.40"
+version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a7964611d71df112cb1730f2ee67324fcf4d0fc6606acbbe9bfe06df124637c"
+checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
@@ -660,7 +660,7 @@ dependencies = [
  "nab_3l14",
  "puffin_egui",
  "serde",
- "toml 0.8.20",
+ "toml 0.8.22",
 ]
 
 [[package]]
@@ -751,9 +751,9 @@ dependencies = [
 
 [[package]]
 name = "egui_extras"
-version = "0.31.0"
+version = "0.31.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5b5cf69510eb3d19211fc0c062fb90524f43fe8e2c012967dcf0e2d81cb040f"
+checksum = "624659a2e972a46f4d5f646557906c55f1cd5a0836eddbe610fdf1afba1b4226"
 dependencies = [
  "ahash",
  "egui",
@@ -1070,6 +1070,7 @@ dependencies = [
  "clap",
  "containers_3l14",
  "debug_3l14",
+ "egui",
  "glam",
  "gltf",
  "graphics_3l14",
@@ -1082,12 +1083,12 @@ dependencies = [
  "nab_3l14",
  "parking_lot",
  "proc_macros_3l14",
- "puffin 0.19.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "puffin 0.19.1 (git+https://github.com/tedsteen/puffin?branch=upgrade-egui)",
  "puffin_http",
  "sdl2",
  "serde",
  "symlink",
- "toml 0.8.20",
+ "toml 0.8.22",
  "unicase",
  "walkdir",
  "wgpu",
@@ -1141,9 +1142,9 @@ dependencies = [
 
 [[package]]
 name = "glam"
-version = "0.30.2"
+version = "0.30.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0e9b6647e9b41d3a5ef02964c6be01311a7f2472fea40595c635c6d046c259e"
+checksum = "6b46b9ca4690308844c644e7c634d68792467260e051c8543e0c7871662b3ba7"
 dependencies = [
  "approx",
  "serde",
@@ -1281,7 +1282,7 @@ dependencies = [
  "nab_3l14",
  "parking_lot",
  "proc_macros_3l14",
- "puffin 0.19.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "puffin 0.19.1 (git+https://github.com/tedsteen/puffin?branch=upgrade-egui)",
  "sdl2",
  "serde",
  "wgpu",
@@ -1453,7 +1454,7 @@ dependencies = [
  "glam",
  "log",
  "nab_3l14",
- "puffin 0.19.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "puffin 0.19.1 (git+https://github.com/tedsteen/puffin?branch=upgrade-egui)",
  "sdl2",
 ]
 
@@ -1633,9 +1634,9 @@ checksum = "b4ce301924b7887e9d637144fdade93f9dfff9b60981d4ac161db09720d39aa5"
 
 [[package]]
 name = "lock_api"
-version = "0.4.12"
+version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07af8b9cdd281b7915f413fa73f29ebd5d55d0d3f0155584dade1ff18cea1b17"
+checksum = "96936507f153605bddfcda068dd804796c84324ed2510809e5b2a624c81da765"
 dependencies = [
  "autocfg",
  "scopeguard",
@@ -1976,9 +1977,9 @@ dependencies = [
 
 [[package]]
 name = "parking_lot"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1bf18183cf54e8d6059647fc3063646a1801cf30896933ec2311622cc4b9a27"
+checksum = "70d58bf43669b5795d1576d0641cfb6fbb2057bf629506267a92807158584a13"
 dependencies = [
  "lock_api",
  "parking_lot_core",
@@ -1986,9 +1987,9 @@ dependencies = [
 
 [[package]]
 name = "parking_lot_core"
-version = "0.9.10"
+version = "0.9.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e401f977ab385c9e4e3ab30627d6f26d00e2c73eef317493c4ec6d468726cf8"
+checksum = "bc838d2a56b5b1a6c25f55575dfc605fabb63bb2365f6c2353ef9159aa69e4a5"
 dependencies = [
  "cfg-if",
  "libc",
@@ -2204,13 +2205,12 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3779b94aeb87e8bd4e834cee3650289ee9e0d5677f976ecdb6d219e5f4f6cd94"
+checksum = "9fbfd9d094a40bf3ae768db9361049ace4c0e04a4fd6b359518bd7b73a73dd97"
 dependencies = [
  "rand_chacha 0.9.0",
  "rand_core 0.9.0",
- "zerocopy 0.8.14",
 ]
 
 [[package]]
@@ -2630,7 +2630,7 @@ dependencies = [
  "cfg-expr",
  "heck",
  "pkg-config",
- "toml 0.8.20",
+ "toml 0.8.22",
  "version-compare 0.2.0",
 ]
 
@@ -2742,9 +2742,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.8.20"
+version = "0.8.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd87a5cdd6ffab733b2f74bc4fd7ee5fff6634124999ac278c35fc78c6120148"
+checksum = "05ae329d1f08c4d17a59bed7ff5b5a769d062e64a62d34a3261b219e62cd5aae"
 dependencies = [
  "serde",
  "serde_spanned",
@@ -2754,25 +2754,32 @@ dependencies = [
 
 [[package]]
 name = "toml_datetime"
-version = "0.6.8"
+version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0dd7358ecb8fc2f8d014bf86f6f638ce72ba252a2c3a2572f2a795f1d23efb41"
+checksum = "3da5db5a963e24bc68be8b17b6fa82814bb22ee8660f192bb182771d498f09a3"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "toml_edit"
-version = "0.22.24"
+version = "0.22.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17b4795ff5edd201c7cd6dca065ae59972ce77d1b80fa0a84d94950ece7d1474"
+checksum = "310068873db2c5b3e7659d2cc35d21855dbafa50d1ce336397c666e3cb08137e"
 dependencies = [
  "indexmap",
  "serde",
  "serde_spanned",
  "toml_datetime",
+ "toml_write",
  "winnow",
 ]
+
+[[package]]
+name = "toml_write"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfb942dfe1d8e29a7ee7fcbde5bd2b9a25fb89aa70caea2eba3bee836ff41076"
 
 [[package]]
 name = "ttf-parser"

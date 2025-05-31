@@ -1,6 +1,6 @@
 use arrayvec::ArrayVec;
-use math_3l14::{Affine3, DualQuat};
-use nab_3l14::debug_panic;
+use math_3l14::{Affine3, DualQuat, Ratio};
+use nab_3l14::{debug_panic, TickCount};
 use nab_3l14::timing::FSeconds;
 use crate::assets::{AnimFrameNumber, SkeletalAnimation, Skeleton, MAX_SKINNED_BONES};
 
@@ -14,11 +14,12 @@ pub struct SkeletonPoser<'s>
 }
 impl<'s> SkeletonPoser<'s>
 {
+    #[must_use]
     pub fn new(skeleton: &'s Skeleton) -> Self
     {
         // todo: check on asset load
-        debug_assert_eq!(skeleton.bone_ids.len(), skeleton.inv_bind_poses.len());
-        debug_assert_eq!(skeleton.bone_ids.len(), skeleton.inv_bind_poses.len());
+        debug_assert_eq!(skeleton.bone_ids.len(), skeleton.inverse_bind_poses.len());
+        debug_assert_eq!(skeleton.bone_ids.len(), skeleton.inverse_bind_poses.len());
         debug_assert_eq!(skeleton.bone_ids.len(), skeleton.parent_indices.len());
 
         let num_poses = skeleton.bind_poses.len().min(MAX_SKINNED_BONES);
@@ -33,25 +34,53 @@ impl<'s> SkeletonPoser<'s>
         }
     }
 
-    // TODO: better name
-    pub fn build_world_space(&mut self) -> PoseSet
+    // TODO: blend_no_lerp() ?
+
+    // Apply an animation to the pose.
+    pub fn blend(&mut self, animation: &SkeletalAnimation, time: TickCount, should_loop: bool)
     {
-        let mut copy = self.poses.clone();
-        // local to bone space
-        for i in 0..copy.len()
+        // TODO: blend mode (additive, replace, exlusive(?))
+
+        let sample_rate = Ratio
         {
-            let parent = self.skeleton.parent_indices[i];
-            if parent >= 0
-            {
-                copy[i] = copy[parent as usize] * copy[i];
-            }
+            numerator: animation.sample_rate.numerator as u64,
+            denominator: animation.sample_rate.denominator as u64 * 1_000_000, // shouldn't this be 1e9?
+        };
+
+        let unclamped = (sample_rate.scale(time.0)) as u32;
+        let (curr_frame, next_frame) = if should_loop
+        {
+            (unclamped % animation.frame_count.0, (unclamped + 1) % animation.frame_count.0)
         }
-        copy
+        else
+        {
+            (unclamped.min(animation.frame_count.0), (unclamped + 1).min(animation.frame_count.0))
+        };
+
+        let fraction =
+        {
+            let delta = time.0 - sample_rate.inverse_scale(unclamped as u64);
+            (delta as f32) * sample_rate.to_f32()
+        };
+
+        let from = animation.get_pose_for_frame(AnimFrameNumber(curr_frame)).iter();
+        let to = animation.get_pose_for_frame(AnimFrameNumber(next_frame)).iter();
+
+        for (i, (fp, tp)) in from.zip(to).enumerate()
+        {
+            let bone_id = animation.bones[i];
+            // TODO: animation should store bone indices
+            let Some(bone_idx) = self.skeleton.bone_ids.iter().position(|b| *b == animation.bones[i])
+                // else { panic!("Did not find matching bone for {:?} (#{i}) in skel:{:?}", anim.bones[i], skel.hierarchy); };
+                else { continue; }; // skip; TODO this is likely happening when skin.skeleton node is animated
+
+            self.poses[bone_idx] = DualQuat::nlerp(*fp, *tp, fraction);
+        }
     }
 
-    pub fn build(mut self) -> PoseSet
+    // Compute (and optionally returns) the 'global' (to skeleton) poses
+    pub fn build_poses(&mut self) -> &[DualQuat]
     {
-        // TODO: split these steps so that debug drawing can take ^
         // local to bone space
         for i in 0..self.poses.len()
         {
@@ -62,33 +91,21 @@ impl<'s> SkeletonPoser<'s>
             }
         }
 
+        &self.poses
+    }
+
+    // Transform the poses into model space and return the final poses
+    // build_world_space() must be called first
+    #[must_use]
+    pub fn finalize(mut self) -> PoseSet
+    {
         // bone to model space
         for i in 0..self.poses.len()
         {
-            self.poses[i] = self.poses[i] * self.skeleton.inv_bind_poses[i];
+            self.poses[i] = self.poses[i] * self.skeleton.inverse_bind_poses[i];
         }
 
         self.poses
-    }
-
-    pub fn blend(&mut self, animation: &SkeletalAnimation, frame: AnimFrameNumber)
-    {
-        // TODO: inter-frame blending
-
-        // TODO: blend mode (additive, replace, exlusive(?))
-        if frame > animation.frame_count
-        {
-            debug_panic!("Frame {} is out of bounds of animation with length {}", frame.0, animation.frame_count.0);
-            return;
-        }
-
-        for (i, pose) in animation.get_pose_for_frame(AnimFrameNumber(frame.0 as u32)).into_iter().enumerate()
-        {
-            let Some(bone_idx) = self.skeleton.bone_ids.iter().position(|b| *b == animation.bones[i])
-                // else { panic!("Did not find matching bone for {:?} (#{i}) in skel:{:?}", anim.bones[i], skel.hierarchy); };
-            else { continue; }; // skip; TODO this is likely happening when skin.skeleton node is animated
-            self.poses[bone_idx] = *pose;
-        }
     }
 }
 
@@ -123,7 +140,7 @@ mod tests
                 j1,
                 j2,
             ]),
-            inv_bind_poses: Box::new([
+            inverse_bind_poses: Box::new([
                 j0.inverse(),
                 j1.inverse(),
                 j2.inverse(),
@@ -136,7 +153,7 @@ mod tests
     {
         let skeleton = generate_skeleton();
         let poser = SkeletonPoser::new(&skeleton);
-        let posed = poser.build();
+        let posed = poser.finalize();
         assert_eq!(posed.len(), 3);
 
         println!("posed:");
@@ -144,11 +161,11 @@ mod tests
         println!("\nbind:");
         for p in skeleton.bind_poses.iter() { println!("  {p}") };
         println!("\ninv bind:");
-        for p in skeleton.inv_bind_poses.iter() { println!("  {p}") };
+        for p in skeleton.inverse_bind_poses.iter() { println!("  {p}") };
 
         println!("\npose cancel:");
         (0..3)
-            .map(|i| skeleton.inv_bind_poses[i] * skeleton.bind_poses[i])
+            .map(|i| skeleton.inverse_bind_poses[i] * skeleton.bind_poses[i])
             .for_each(|p| println!("  {} -- {:?}", p, p));
 
         assert_eq!(posed[0], DualQuat::IDENTITY);

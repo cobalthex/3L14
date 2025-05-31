@@ -30,31 +30,15 @@ DualQuat DualQuatBlend4(
     return DualQuatNormalize(result);
 }
 
-float3 DualQuatTransformPoint(DualQuat dq, float3 position)
-{
-    float4 real = dq.real;
-    float4 dual = dq.dual;
-
-    float3 pos = position + (2.0 * cross(real.xyz, cross(real.xyz, position) + (real.w * position)));
-    float3 trans = 2.0 * (real.w * dual.xyz - dual.w * real.xyz + cross(real.xyz, dual.xyz));
-    pos += trans;
-
-    return pos;
-
-    // // translate [ 2 * (d * conjugate(r)).xyz ]
-    // float4 realConj = float4(-real.xyz, real.w);
-    // float4 transQuat = 2.0 * mul(dq.dual, realConj);
-
-    // // rotate
-    // float3 t = 2.0 * cross(real.xyz, position);
-    // float3 rotated = position + real.w * t + cross(real.xyz, t);
-
-    // return rotated + transQuat.xyz;
-}
-
 float3 DualQuatTransformDirection(DualQuat dq, float3 direction)
 {
-    // does quaternion rotation with the real part of the DQ [ q * v * q^-1 ]
-    float3 t = 2.0 * cross(dq.real.xyz, direction);
-    return normalize(direction + dq.real.w * t + cross(dq.real.xyz, t));
+    return direction + 2.0 * cross(dq.real.xyz, cross(dq.real.xyz, direction) + dq.real.w * direction);
+}
+
+float3 DualQuatTransformPoint(DualQuat dq, float3 position)
+{
+    float3 rotation = DualQuatTransformDirection(dq, position);
+    float3 translation = 2.0 * (dq.real.w * dq.dual.xyz - dq.dual.w * dq.real.xyz + cross(dq.real.xyz, dq.dual.xyz));
+
+    return rotation + translation;
 }

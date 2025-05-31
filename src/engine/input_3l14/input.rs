@@ -200,8 +200,8 @@ impl Input
         {
             delta: egui::Vec2
             {
-                x: self.mouse.wheel.x as f32,
-                y: self.mouse.wheel.y as f32
+                x: self.mouse.wheel_delta.x as f32,
+                y: self.mouse.wheel_delta.y as f32
             },
             unit: egui::MouseWheelUnit::Point,
             modifiers: ri.modifiers,

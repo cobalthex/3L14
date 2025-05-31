@@ -4,6 +4,10 @@ description = "Debugging/dev stuff"
 workspace = "../../.."
 edition.workspace = true
 
+[features]
+default = ["frame_profiler"]
+frame_profiler = []
+
 [lib]
 path = "lib.rs"
 

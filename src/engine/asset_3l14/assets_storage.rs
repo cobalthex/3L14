@@ -5,7 +5,7 @@ use notify::event::ModifyKind;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use notify_debouncer_full::{Debouncer, FileIdMap};
 use parking_lot::Mutex;
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::io::Error;
 use std::path::{Path, PathBuf};
@@ -99,11 +99,10 @@ impl AssetsStorage
         }
     }
 
-    #[inline]
-    #[must_use]
-    pub fn get_lifecycler<A: Asset>(&self) -> Option<&dyn UntypedAssetLifecycler>
+    #[inline] #[must_use]
+    pub fn get_lifecycler<A: Asset>(&self) -> Option<&RegisteredAssetLifecycler>
     {
-        self.lifecyclers.get(&A::asset_type()).map(|l| l.lifecycler.as_ref())
+        self.lifecyclers.get(&A::asset_type())
     }
 
     #[must_use]
@@ -329,6 +328,7 @@ pub struct Assets
 }
 impl Assets
 {
+    #[must_use]
     pub fn new(asset_lifecyclers: AssetLifecyclers, config: AssetsConfig) -> Self
     {
         #[cfg(debug_assertions)]
@@ -468,10 +468,25 @@ impl Assets
         handle.1
     }
 
+    #[must_use]
     pub fn num_active_assets(&self) -> usize
     {
         let handles = self.storage.handles.lock();
         handles.len()
+    }
+
+    #[inline] #[must_use]
+    // Get an asset lifecycler
+    // NOTE: This will verify that the type IDs match in debug, but otherwise makes no guarantees about correct types
+    pub fn get_lifecycler<L: AssetLifecycler + 'static>(&self) -> Option<&L>
+    {
+        // TODO: in debug, check type IDs?
+        let maybe = self.storage.get_lifecycler::<L::Asset>();
+        maybe.map(|l|
+        unsafe {
+            debug_assert_eq!(TypeId::of::<L>(), l.type_id);
+            &*(l.lifecycler.as_ref() as *const dyn UntypedAssetLifecycler as *const L)
+        })
     }
 
     // prevent any new asset from being loaded
@@ -595,6 +610,7 @@ mod tests
     }
     impl Asset for NestedAsset
     {
+        type DebugData = ();
         fn asset_type() -> AssetTypeId { AssetTypeId::Test2 }
     }
 
@@ -614,6 +630,7 @@ mod tests
     }
     impl Asset for TestAsset
     {
+        type DebugData = ();
         fn asset_type() -> AssetTypeId { AssetTypeId::Test1 }
     }
 

@@ -23,7 +23,7 @@ impl<T> Ratio<T>
     }
 
     #[inline] #[must_use]
-    pub fn scale<U>(&self, value: U) -> U
+    pub fn scale<U>(self, value: U) -> U
         where
             T: Copy,
             U: Copy + Mul<T, Output = U> + Div<T, Output = U>
@@ -33,7 +33,7 @@ impl<T> Ratio<T>
 
     // reciprocal scale?
     #[inline] #[must_use]
-    pub fn inverse_scale<U>(&self, value: U) -> U
+    pub fn inverse_scale<U>(self, value: U) -> U
     where
         T: Copy,
         U: Copy + Mul<T, Output = U> + Div<T, Output = U>
@@ -57,10 +57,7 @@ impl Ratio<i32>
 impl Ratio<u32>
 {
     #[inline] #[must_use]
-    pub fn to_f32(self) -> f32
-    {
-        self.numerator as f32 / self.denominator as f32
-    }
+    pub fn to_f32(self) -> f32 { self.numerator as f32 / self.denominator as f32 }
     #[inline] #[must_use]
     pub fn to_f32_recip(self) -> f32
     {
@@ -71,6 +68,13 @@ impl Ratio<u32>
     {
         Ratio::new(self.numerator as u64, self.denominator as u64)
     }
+}
+impl Ratio<u64>
+{
+    #[inline] #[must_use]
+    pub fn to_f32(self) -> f32 { self.numerator as f32 / self.denominator as f32 }
+    #[inline] #[must_use]
+    pub fn to_f32_recip(self) -> f32 { self.denominator as f32 / self.numerator as f32 }
 }
 
 #[cfg(test)]

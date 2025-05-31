@@ -129,7 +129,6 @@ impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler fo
 
         #[cfg(feature = "asset_debug_data")]
         retyped.inner().store_debug_data::<A>(None);
-        // barrier?
 
         match self.load(AssetLoadRequest { asset_key: retyped.key(), input, storage })
         {
@@ -156,7 +155,6 @@ impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler fo
                     return;
                 },
             };
-            println!("LOADED DEBUG DATA FOR {:?}", retyped);
             retyped.inner().store_debug_data::<A>(Some(Arc::new(hydrated)));
         }
     }
@@ -166,7 +164,10 @@ impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler fo
     fn error_untyped(&self, untyped_handle: UntypedAssetHandle, error: AssetLoadError)
     {
         let retyped = unsafe { Ash::<A>::attach_from(untyped_handle) };
+
+        #[cfg(feature = "asset_debug_data")]
         retyped.inner().store_debug_data::<A>(None);
+
         retyped.store_payload(AssetPayload::Unavailable(error));
     }
 }
@@ -175,12 +176,15 @@ impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler fo
 #[repr(u8)]
 pub(super) enum AssetLifecyclerFeatures
 {
-    DebugGui = 0b0000_0001,
+    TODO = 0b0000_0001,
+    // todo: likely requires specialization
 }
 
 pub(super) struct RegisteredAssetLifecycler
 {
     pub lifecycler: Box<dyn UntypedAssetLifecycler>,
+    #[cfg(debug_assertions)]
+    pub type_id: TypeId,
     pub features: AssetLifecyclerFeatures,
 }
 
@@ -206,6 +210,8 @@ impl AssetLifecyclers
         self.lifecyclers.insert(A::asset_type(), RegisteredAssetLifecycler
         {
             lifecycler: Box::new(lifecycler),
+            #[cfg(debug_assertions)]
+            type_id: TypeId::of::<L>(),
             features: AssetLifecyclerFeatures::none(), // TODO: some day
         });
         self.registered_asset_types.insert(A::asset_type(), RegisteredAssetType

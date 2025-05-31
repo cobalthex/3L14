@@ -32,7 +32,9 @@ impl<T: DebugGui> DebugGuiBase for T
     }
 }
 
+#[cfg(feature = "frame_profiler")]
 pub struct FrameProfiler;
+#[cfg(feature = "frame_profiler")]
 impl DebugGuiBase for FrameProfiler
 {
     fn display_name(&self) -> &str { "Frame Profiler" }

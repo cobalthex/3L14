@@ -13,7 +13,7 @@ use graphics_3l14::view::View;
 use graphics_3l14::windows::Windows;
 use graphics_3l14::{colors, render_passes, renderer, Renderer, Rgba};
 use input_3l14::{Input, KeyCode, KeyMods};
-use nab_3l14::app;
+use nab_3l14::{app, TickCount};
 use nab_3l14::app::{AppFolder, AppRun, ExitReason};
 use nab_3l14::{CompletionState, RenderFrameNumber, ToggleState};
 use math_3l14::{Degrees, DualQuat, Frustum, Plane, Radians, Ratio, Transform};
@@ -51,7 +51,7 @@ fn main() -> ExitReason
         app::set_panic_hook(keep_alive);
     }
 
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "frame_profiler")]
     {
         let server_addr = format!("0.0.0.0:{}", puffin_http::DEFAULT_PORT);
         match puffin_http::Server::new(&server_addr)
@@ -59,7 +59,7 @@ fn main() -> ExitReason
             Ok(_) => log::debug!("Puffin serving on {server_addr}"),
             Err(e) => log::warn!("Failed to start puffin server on {server_addr}: {e}"),
         }
-        puffin::set_scopes_on(true);
+        puffin::set_scopes_on(true); // TODO: only enable when inspecting?
     }
 
     let mut clock = Clock::new();
@@ -139,7 +139,9 @@ fn main() -> ExitReason
 
         let mut clip_camera = None;
 
-        let mut frame_number = RenderFrameNumber(0);
+        let mut test_animation_frame = 0;
+
+        let mut app_frame_number = RenderFrameNumber(0);
         let mut fps_sparkline = Sparkline::<100>::new(); // todo: use
         'main_loop: loop
         {
@@ -147,7 +149,7 @@ fn main() -> ExitReason
 
             puffin::GlobalProfiler::lock().new_frame();
 
-            frame_number.increment();
+            app_frame_number.increment();
             let frame_time = clock.tick();
             fps_sparkline.add(frame_time.fps());
 
@@ -265,6 +267,7 @@ fn main() -> ExitReason
             {
                 if kbd.has_keymod(KeyMods::ALT)
                 {
+                    #[cfg(feature = "frame_profiler")]
                     debug_menu_memory.toggle_state_active(&debug_gui::FrameProfiler);
                 }
                 else
@@ -273,7 +276,7 @@ fn main() -> ExitReason
                 }
             }
 
-            let render_frame = renderer.frame(frame_number, &input);
+            let render_frame = renderer.frame(app_frame_number, &input);
             {
                 puffin::profile_scope!("Render frame");
 
@@ -305,7 +308,7 @@ fn main() -> ExitReason
                             &mut encoder,
                             Some(colors::CORNFLOWER_BLUE));
 
-                        let view = &mut views[frame_number.0 as usize % views.len()];
+                        let view = &mut views[app_frame_number.0 as usize % views.len()];
                         view.begin(frame_time.total_runtime, &camera, clip_camera.as_ref().unwrap_or(&camera), DebugMode::None);
                         //
                         // debug_draw.draw_solid_cube(Mat4::IDENTITY, colors::RED);
@@ -321,6 +324,8 @@ fn main() -> ExitReason
                         {
                             if model.all_dependencies_loaded()
                             {
+                                puffin::profile_scope!("Draw dude");
+
                                 let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(25.0, 0.0, 0.0));
                                 // view.draw_model_static(model.clone(), obj_world);
                                 debug_draw.draw_wire_cube(obj_world, colors::WHITE);
@@ -335,49 +340,69 @@ fn main() -> ExitReason
 
                                 if let Some(skel_handle) = &model.skeleton
                                 {
+                                    puffin::profile_scope!("animation");
+
                                     let skel = skel_handle.payload().unwrap();
 
                                     let mut poser = SkeletonPoser::new(&skel);
 
                                     if let AssetPayload::Available(anim) = test_anim.payload()
                                     {
-                                        let runtime = frame_time.total_runtime.as_millis() as u64;
-                                        let mut frame = anim.sample_rate.to_ratio_u64().scale(runtime);
-                                        frame %= anim.frame_count.0 as u64;
-                                        //frame = 20;
-                                        poser.blend(&anim, AnimFrameNumber(frame as u32));
+                                        // let runtime = frame_time.total_runtime.as_millis() as u64;
+                                        // test_animation_frame = anim.sample_rate.to_ratio_u64().scale(runtime) as u32;
+                                        // test_animation_frame %= anim.frame_count.0;
+                                        // // //frame = 20;
+                                        //
+                                        // egui::Window::new("AnimTest")
+                                        //     .movable(true)
+                                        //     .title_bar(false)
+                                        //     .show(&renderer.debug_gui(), |ui|
+                                        //         {
+                                        //             let num_frames = anim.frame_count.0 as u32 - 1;
+                                        //             ui.add(egui::Slider::new(&mut test_animation_frame, 0..=num_frames));
+                                        //         });
+
+                                        let mut time = frame_time.total_runtime.as_nanos() as u64;
+                                        time = Ratio::new(6, 10).scale(time);
+                                        poser.blend(&anim, TickCount(time), true);
                                     }
 
-                                    let posed_skel = poser.build_world_space();
-                                    let posed = poser.build();
+                                    let posed_skel = poser.build_poses();
 
-                                    let maybe_names = skel_handle.debug_data();
-
-                                    for i in 0..posed.len()
+                                    if let Some(lifecycler) = assets.get_lifecycler::<SkeletonLifecycler>()
                                     {
-                                        let parent = skel.parent_indices[i];
-                                        if parent >= 0
+                                        if lifecycler.display_bones()
                                         {
-                                            debug_draw.draw_polyline(&[
-                                                obj_world.transform_point3(posed_skel[i].translation()),
-                                                obj_world.transform_point3(posed_skel[parent as usize].translation()),
-                                            ], false, colors::TOMATO);
-                                        }
-                                        debug_draw.draw_cross3(obj_world * Mat4::from(posed_skel[i]), colors::CHARTREUSE);
-                                        // TODO: SkeletonLifecycler.display_bone_names()
-                                        match &maybe_names
-                                        {
-                                            None =>
+                                            let maybe_names = skel_handle.debug_data();
+
+                                            for i in 0..posed_skel.len()
                                             {
-                                                debug_draw.draw_text(&format!("{i}:{:?}", skel.bone_ids[i]), obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
-                                            }
-                                            Some(names) =>
-                                            {
-                                                debug_draw.draw_text(&names.bone_names[i], obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
+                                                let parent = skel.parent_indices[i];
+                                                if parent >= 0
+                                                {
+                                                    debug_draw.draw_polyline(&[
+                                                        obj_world.transform_point3(posed_skel[i].translation()),
+                                                        obj_world.transform_point3(posed_skel[parent as usize].translation()),
+                                                    ], false, colors::TOMATO);
+                                                }
+                                                debug_draw.draw_cross3(obj_world * Mat4::from(posed_skel[i]), colors::CHARTREUSE);
+                                                // TODO: SkeletonLifecycler.display_bone_names()
+                                                match &maybe_names
+                                                {
+                                                    None =>
+                                                        {
+                                                            debug_draw.draw_text(&format!("{i}:{:?}", skel.bone_ids[i]), obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
+                                                        }
+                                                    Some(names) =>
+                                                        {
+                                                            debug_draw.draw_text(&names.bone_names[i], obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
+                                                        }
+                                                }
                                             }
                                         }
                                     }
 
+                                    let posed = poser.finalize();
                                      //view.draw_model_static(model, obj_world);
                                     view.draw_model_skinned(model, obj_world, &posed);
                                 }
@@ -403,7 +428,7 @@ fn main() -> ExitReason
                 let app_stats = debug_gui::AppStats
                 {
                     fps: frame_time.fps(),
-                    frame_number,
+                    frame_number: app_frame_number,
                     app_runtime: frame_time.total_runtime.as_secs_f64(),
                     main_window_size: windows.main_window().size(),
                     viewport_size: renderer.display_size().into(),
@@ -412,6 +437,7 @@ fn main() -> ExitReason
                 let mut debug_menu = DebugMenu::new(&mut debug_menu_memory, renderer.debug_gui());
                 debug_menu.add(&app_stats);
                 debug_menu.add(&fps_sparkline);
+                #[cfg(feature = "frame_profiler")]
                 debug_menu.add(&debug_gui::FrameProfiler);
                 debug_menu.add(&input);
                 debug_menu.add(&camera);
