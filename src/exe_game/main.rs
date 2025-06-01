@@ -363,7 +363,7 @@ fn main() -> ExitReason
                                         //         });
 
                                         let mut time = frame_time.total_runtime.as_nanos() as u64;
-                                        time = Ratio::new(6, 10).scale(time);
+                                        time = Ratio::new(3, 10).scale(time);
                                         poser.blend(&anim, TickCount(time), true);
                                     }
 

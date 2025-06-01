@@ -76,7 +76,7 @@ impl DualQuat
             real: self.real + (rhs.real - self.real) * t,
             dual: self.dual + (rhs.dual - self.dual) * t,
         }.simple_normalized()
-        
+
         // let t_inv = 1.0 - t;
         // Self
         // {
@@ -84,6 +84,8 @@ impl DualQuat
         //     dual: (self.dual * t_inv) + (rhs.dual * t),
         // }.simple_normalized()
     }
+
+    // TODO: Dual-quaternion linear blending -- https://arxiv.org/pdf/2303.13395
 
     // Calculate the screw linear interpolation between two dual quaternions
     #[must_use]

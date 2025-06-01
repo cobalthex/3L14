@@ -41,6 +41,9 @@ impl<'s> SkeletonPoser<'s>
     {
         // TODO: blend mode (additive, replace, exlusive(?))
 
+        // would this be faster to convert to float first? (floating point div may be faster)
+        // blend multiple animations at once w/ simd?
+
         let sample_rate = Ratio
         {
             numerator: animation.sample_rate.numerator as u64,
@@ -78,7 +81,7 @@ impl<'s> SkeletonPoser<'s>
         }
     }
 
-    // Compute (and optionally returns) the 'global' (to skeleton) poses
+    // Compute (and optionally returns) the 'global' (to skeleton) poses (useful for drawing the skeleton)
     pub fn build_poses(&mut self) -> &[DualQuat]
     {
         // local to bone space
