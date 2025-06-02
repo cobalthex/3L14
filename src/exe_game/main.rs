@@ -22,10 +22,11 @@ use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
+use egui::Widget;
 use metrohash::MetroHash64;
 use sdl2::messagebox::MessageBoxFlag;
 use wgpu::{BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
-use graphics_3l14::skeleton_poser::SkeletonPoser;
+use graphics_3l14::skeleton_poser::{PoseBlendMode, SkeletonPoser};
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -102,16 +103,13 @@ fn main() -> ExitReason
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        // dude
-        let model_key = AssetKey::from(0x00900000542618f7);
-        let skel_anim_key = AssetKey::from(0x00a00000542618f7);
-
-        // pawn
-        // let model_key = AssetKey::from(0x009000007528b6e9);
-        // let skel_anim_key = AssetKey::from(0x00a000107528b6e9);
+        let model_key = AssetKey::from(0x00900000835b1860);
+        let base_anim_key = AssetKey::from(0x00a00260835b1860);
+        let overlay_anim_key = AssetKey::from(0x00a002d0835b1860);
 
         let test_model = assets.load::<Model>(model_key);
-        let test_anim = assets.load::<SkeletalAnimation>(skel_anim_key);
+        let test_base_anim = assets.load::<SkeletalAnimation>(base_anim_key);
+        let test_overlay_anim = assets.load::<SkeletalAnimation>(overlay_anim_key);
 
         let mut camera = Camera::default();
         camera.update_projection(CameraProjection::Perspective
@@ -139,7 +137,7 @@ fn main() -> ExitReason
 
         let mut clip_camera = None;
 
-        let mut test_animation_frame = 0;
+        let mut test_f32 = 0.0;
 
         let mut app_frame_number = RenderFrameNumber(0);
         let mut fps_sparkline = Sparkline::<100>::new(); // todo: use
@@ -346,25 +344,21 @@ fn main() -> ExitReason
 
                                     let mut poser = SkeletonPoser::new(&skel);
 
-                                    if let AssetPayload::Available(anim) = test_anim.payload()
+                                    let mut time = frame_time.total_runtime.as_nanos() as u64;
+                                    // time = Ratio::new(3, 10).scale(time);
+                                    if let AssetPayload::Available(anim) = test_base_anim.payload()
                                     {
-                                        // let runtime = frame_time.total_runtime.as_millis() as u64;
-                                        // test_animation_frame = anim.sample_rate.to_ratio_u64().scale(runtime) as u32;
-                                        // test_animation_frame %= anim.frame_count.0;
-                                        // // //frame = 20;
-                                        //
-                                        // egui::Window::new("AnimTest")
-                                        //     .movable(true)
-                                        //     .title_bar(false)
-                                        //     .show(&renderer.debug_gui(), |ui|
-                                        //         {
-                                        //             let num_frames = anim.frame_count.0 as u32 - 1;
-                                        //             ui.add(egui::Slider::new(&mut test_animation_frame, 0..=num_frames));
-                                        //         });
-
-                                        let mut time = frame_time.total_runtime.as_nanos() as u64;
-                                        time = Ratio::new(3, 10).scale(time);
-                                        poser.blend(&anim, TickCount(time), true);
+                                        poser.blend(&anim, PoseBlendMode::Replace, TickCount(time), true);
+                                    }
+                                    if let AssetPayload::Available(anim) = test_overlay_anim.payload()
+                                    {
+                                        egui::Window::new("anim")
+                                            .show(renderer.debug_gui(), |ui|
+                                                {
+                                                    egui::Slider::new(&mut test_f32, 0.0..=1.0)
+                                                        .ui(ui);
+                                                });
+                                        poser.blend(&anim, PoseBlendMode::Additive(test_f32), TickCount(time), true);
                                     }
 
                                     let posed_skel = poser.build_poses();
@@ -390,13 +384,13 @@ fn main() -> ExitReason
                                                 match &maybe_names
                                                 {
                                                     None =>
-                                                        {
-                                                            debug_draw.draw_text(&format!("{i}:{:?}", skel.bone_ids[i]), obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
-                                                        }
+                                                    {
+                                                        debug_draw.draw_text(&format!("{i}:{:?}", skel.bone_ids[i]), obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
+                                                    }
                                                     Some(names) =>
-                                                        {
-                                                            debug_draw.draw_text(&names.bone_names[i], obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
-                                                        }
+                                                    {
+                                                        debug_draw.draw_text(&names.bone_names[i], obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
+                                                    }
                                                 }
                                             }
                                         }

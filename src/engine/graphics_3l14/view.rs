@@ -4,7 +4,8 @@ use arrayvec::ArrayVec;
 use glam::{Mat3, Mat4, Vec2, Vec3, Vec4Swizzles};
 use std::sync::Arc;
 use std::time::Duration;
-use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, QueueWriteBufferView, RenderPass};
+use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, Extent3d, QueueWriteBufferView, RenderPass, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView};
+use wgpu::util::{DeviceExt, TextureDataOrder};
 use asset_3l14::{Asset, AssetPayload};
 use math_3l14::{Affine3, CanSee, DualQuat, Frustum, IsOnOrInside, Sphere, StaticGeoUniform};
 use nab_3l14::debug_panic;
@@ -129,6 +130,9 @@ pub struct View<'f>
     sorter: PipelineSorter,
     used_uniforms_pools: Vec<UniformsPoolEntryGuard<'f>>,
     // current_txfms_writer: CurrentUniformsWriter<'f>,
+
+    placeholder_texture: Texture,
+    placeholder_texture_view: TextureView,
 }
 impl<'f> View<'f>
 {
@@ -144,6 +148,19 @@ impl<'f> View<'f>
         //     next_slot: 0,
         // };
 
+        let placeholder_texture = renderer.device().create_texture_with_data(renderer.queue(), &TextureDescriptor
+        {
+            label: Some("Placeholder texture"),
+            size: Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::R8Unorm,
+            usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
+            view_formats: &[TextureFormat::R8Unorm],
+        }, TextureDataOrder::LayerMajor, &[255u8]);
+        let placeholder_texture_view = placeholder_texture.create_view(&Default::default());
+
         Self
         {
             pipeline_cache,
@@ -156,6 +173,8 @@ impl<'f> View<'f>
             used_uniforms_pools: used_uniforms,
             // current_txfms_writer,
             renderer,
+            placeholder_texture,
+            placeholder_texture_view,
         }
     }
 
@@ -209,22 +228,30 @@ impl<'f> View<'f>
                     binding: bge.len() as u32,
                     resource: draw.material.props.as_entire_binding(),
                 });
-                if !draw.material.textures.is_empty()
+                bge.push(BindGroupEntry
+                {
+                    binding: bge.len() as u32,
+                    resource: BindingResource::Sampler(self.pipeline_cache.default_sampler())
+                });
+                for tex in &draw.textures
                 {
                     bge.push(BindGroupEntry
                     {
                         binding: bge.len() as u32,
-                        resource: BindingResource::Sampler(self.pipeline_cache.default_sampler())
-                    });
-                    for tex in &draw.textures
-                    {
-                        bge.push(BindGroupEntry
-                        {
-                            binding: bge.len() as u32,
-                            resource: BindingResource::TextureView(&tex.gpu_view),
-                        })
-                    }
+                        resource: BindingResource::TextureView(&tex.gpu_view),
+                    })
                 }
+                // TODO: TEMP HACK
+                if draw.material.textures.is_empty()
+                {
+                    bge.push(BindGroupEntry
+                    {
+                        binding: bge.len() as u32,
+                        resource: BindingResource::TextureView(&self.placeholder_texture_view),
+                    })
+                }
+
+
                 let mtl_bind_group = self.renderer.device().create_bind_group(&BindGroupDescriptor
                 {
                     label: debug_label!("TODO mtl bind group"),

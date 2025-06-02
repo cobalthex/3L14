@@ -40,7 +40,7 @@ float4 ps_main(PixelInput in_pixel) : SV_Target
     float roughness = 0.2;
     float ao = 0.5;
 
-    float light_dist_sq = dot(light.position, in_pixel.world_position.xyz);
+    float light_dist_sq = max(0, dot(light.position, in_pixel.world_position.xyz));
     float attenuation = 1 / light_dist_sq; // rcp?
     float3 radiance = light.color_rgb * attenuation;
 

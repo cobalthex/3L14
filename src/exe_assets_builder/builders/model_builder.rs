@@ -719,7 +719,7 @@ impl ModelBuilder
                 poses[fr * bone_ids.len() + bone] = DualQuat::from_rot_trans(rotation, translation);
             }
         }
-
+        
         outputs.add_output(AssetTypeId::SkeletalAnimation, |anim_output|
         {
             in_anim.name().map(|n| anim_output.set_name(n));

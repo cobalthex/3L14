@@ -1,7 +1,11 @@
-use std::cell::{LazyCell, UnsafeCell};
 use super::*;
+use asset_3l14::{Asset, AssetFileType, AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetMetadata, AssetTypeId, BuilderHash, SourceMetadata, TomlRead, TomlWrite};
 use bitcode::Encode;
+use clap::ValueEnum;
 use metrohash::MetroHash64;
+use nab_3l14::utils::inline_hash::InlineWriteHash;
+use nab_3l14::utils::{varint, ShortTypeName};
+use std::cell::{LazyCell, UnsafeCell};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::ffi::OsStr;
@@ -13,11 +17,7 @@ use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
-use clap::ValueEnum;
 use unicase::UniCase;
-use asset_3l14::{Asset, AssetFileType, AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetTypeId};
-use nab_3l14::utils::inline_hash::InlineWriteHash;
-use nab_3l14::utils::{varint, ShortTypeName};
 use walkdir::WalkDir;
 // TODO: split this file out some?
 
@@ -160,12 +160,7 @@ impl AssetsBuilder
 
         let source_meta = match File::open(&source_meta_file_path)
         {
-            Ok(mut fin) =>
-            {
-                let mut meta_contents = String::new();
-                fin.read_to_string(&mut meta_contents).map_err(BuildError::SourceMetaIOError)?;
-                toml::from_str(&meta_contents).map_err(BuildError::SourceMetaParseError)?
-            },
+            Ok(mut fin) => SourceMetadata::load(&mut fin).map_err(BuildError::SourceMetaError)?,
             Err(err) if err.kind() == ErrorKind::NotFound =>
             {
                 // TODO: assert that thread_rng impls CryptoRng
@@ -178,15 +173,17 @@ impl AssetsBuilder
                     build_config: builder.builder.default_config(),
                 };
 
-                let meta_string = toml::ser::to_string_pretty(&new_meta).map_err(BuildError::SourceMetaSerializeError)?;
-                std::fs::write(&source_meta_file_path, &meta_string).map_err(BuildError::SourceMetaIOError)?;
+                {
+                    let mut meta_writer = File::create(&source_meta_file_path).map_err(|e| BuildError::SourceMetaError(Box::new(e)))?;
+                    new_meta.save(true, &mut meta_writer).map_err(|e| BuildError::SourceMetaError(e))?;
+                }
 
                 new_meta
             },
             Err(err) =>
             {
                 log::warn!("Failed to open source asset meta-file for reading: {err}");
-                return Err(BuildError::SourceMetaIOError(err));
+                return Err(BuildError::SourceMetaError(Box::new(err)));
             }
         };
 
@@ -239,15 +236,12 @@ pub enum BuildError
     InvalidSyntheticAssetKey, // asset key was not synthetic
     NoBuilderForSource(String),
     SourceIOError(io::Error),
-    SourceMetaIOError(io::Error),
-    SourceMetaParseError(toml::de::Error),
-    SourceMetaSerializeError(toml::ser::Error),
+    SourceMetaError(Box<dyn Error>),
     TooManyDerivedIDs,
     BuilderError(Box<dyn Error>),
+    OutputMetaError(Box<dyn Error>),
     OutputIOError(io::Error),
-    OutputMetaIOError(io::Error),
     OutputDebugIOError(io::ErrorKind), // error kind b/c error is not cloneable and lazy makes this stupid
-    OutputMetaSerializeError(toml::ser::Error),
 }
 impl Display for BuildError
 {
@@ -390,8 +384,7 @@ impl BuildOutput
         };
         // TODO: read old file and compare asset key
 
-        let out_string = toml::ser::to_string(&asset_meta).unwrap();//.map_err(BuildError::OutputMetaSerializeError)?;
-        self.meta_writer.write_all(out_string.as_bytes()).map_err(BuildError::OutputMetaIOError)?;
+        asset_meta.save(false, &mut self.meta_writer).map_err(BuildError::OutputMetaError)?;
 
         Ok(self.asset_key)
     }

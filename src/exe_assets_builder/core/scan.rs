@@ -1,16 +1,17 @@
+use asset_3l14::{AssetFileType, AssetKeySourceId, AssetMetadata, SourceMetadataStub, TomlRead};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
+use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
 use unicase::UniCase;
-use asset_3l14::{AssetFileType, AssetKeySourceId};
-use super::{AssetMetadata, AssetsBuilderConfig, SourceMetadataSlim};
+use crate::core::AssetsBuilderConfig;
 
 #[derive(Debug)]
 pub enum ScanError
 {
     IOError(io::Error),
-    MetaParseError(toml::de::Error),
+    MetaParseError(Box<dyn Error>),
     NoSourceFile
     {
         source_path: PathBuf,
@@ -34,10 +35,10 @@ pub struct ScanSources
 }
 impl ScanSources
 {
-    fn read_source_meta(file: impl AsRef<Path>) -> Result<SourceMetadataSlim, ScanError>
+    fn read_source_meta(file: impl AsRef<Path>) -> Result<SourceMetadataStub, ScanError>
     {
-        let meta_text = std::fs::read_to_string(file).map_err(ScanError::IOError)?;
-        toml::from_str(&meta_text).map_err(ScanError::MetaParseError)
+        let mut fin = File::open(file).map_err(ScanError::IOError)?;
+        SourceMetadataStub::load(&mut fin).map_err(|e| ScanError::MetaParseError(e))
     }
 }
 impl Iterator for ScanSources
@@ -96,8 +97,8 @@ impl ScanAssets
 {
     fn read_asset_meta(file: impl AsRef<Path>) -> Result<AssetMetadata, ScanError>
     {
-        let meta_text = std::fs::read_to_string(file).map_err(ScanError::IOError)?;
-        toml::from_str(&meta_text).map_err(ScanError::MetaParseError)
+        let mut fin = File::open(file).map_err(ScanError::IOError)?;
+        AssetMetadata::load(&mut fin).map_err(ScanError::MetaParseError)
     }
 }
 impl Iterator for ScanAssets

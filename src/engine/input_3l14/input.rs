@@ -183,6 +183,8 @@ impl Input
 
     pub fn into_egui(&self, zoom_scale_factor: f32) -> egui::RawInput
     {
+        const EGUI_SCROLL_WHEEL_SCALE: f32 = 20.0;
+
         let mut ri = egui::RawInput::default();
         ri.modifiers.ctrl = self.keyboard.has_keymod(KeyMods::CTRL);
         ri.modifiers.shift = self.keyboard.has_keymod(KeyMods::SHIFT);
@@ -200,8 +202,8 @@ impl Input
         {
             delta: egui::Vec2
             {
-                x: self.mouse.wheel_delta.x as f32,
-                y: self.mouse.wheel_delta.y as f32
+                x: self.mouse.wheel_delta.x as f32 * EGUI_SCROLL_WHEEL_SCALE,
+                y: self.mouse.wheel_delta.y as f32 * EGUI_SCROLL_WHEEL_SCALE
             },
             unit: egui::MouseWheelUnit::Point,
             modifiers: ri.modifiers,

@@ -10,9 +10,15 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+### TODO: put exes into their own crates
+
 [[bin]]
 name = "assets_builder"
 path = "src/exe_assets_builder/main.rs"
+
+[[bin]]
+name = "assets_browser"
+path = "src/exe_assets_browser/main.rs"
 
 [[bin]]
 name = "3L14"

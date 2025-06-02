@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Formatter, LowerHex};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use bitcode::{Decode, Encode};
@@ -266,14 +266,25 @@ impl Debug for AssetKey
         match f.alternate()
         {
             true =>
-                f.write_fmt(format_args!("⟨{:?}|{:0key_width$x}⟩",
+                f.write_fmt(format_args!("[{:?}|{:0key_width$x}]",
                                          self.asset_type(),
                                          self.0,
                                          key_width = format_width_hex_bytes(AssetKey::TOTAL_BITS))),
             false =>
-                f.write_fmt(format_args!("⟨{:0key_width$x}⟩",
+                f.write_fmt(format_args!("[{:0key_width$x}]",
                                          self.0,
                                          key_width = format_width_hex_bytes(AssetKey::TOTAL_BITS))),
+        }
+    }
+}
+impl LowerHex for AssetKey
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    {
+        match f.alternate()
+        {
+            true => write!(f, "0x{:0key_width$x}", self.0, key_width = format_width_hex_bytes(AssetKey::TOTAL_BITS)),
+            false => write!(f, "{:0key_width$x}", self.0, key_width = format_width_hex_bytes(AssetKey::TOTAL_BITS)),
         }
     }
 }

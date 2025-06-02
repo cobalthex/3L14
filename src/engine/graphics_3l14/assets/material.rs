@@ -112,33 +112,27 @@ impl AssetLifecycler for MaterialLifecycler
             }
         }
 
-        if !textures.is_empty()
+        layout_entries.push(BindGroupLayoutEntry
         {
-            layout_entries.push(BindGroupLayoutEntry
-            {
-                binding: layout_entries.len() as u32,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                count: None,
-            });
+            binding: layout_entries.len() as u32,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Sampler(SamplerBindingType::Filtering),
+            count: None,
+        });
 
-            for texture in &textures
+        layout_entries.push(BindGroupLayoutEntry
+        {
+            binding: layout_entries.len() as u32,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture
             {
-                layout_entries.push(BindGroupLayoutEntry
-                {
-                    binding: layout_entries.len() as u32,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture
-                    {
-                        // TODO, this needs to come from the material class or the textures directly
-                        sample_type: TextureSampleType::Float { filterable: true },
-                        view_dimension: TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None, // TODO: this is probably easier
-                });
-            }
-        }
+                // TODO, this needs to come from the material class or the textures directly
+                sample_type: TextureSampleType::Float { filterable: true },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None, // TODO: this is probably easier
+        });
 
         let bind_layout = self.renderer.device().create_bind_group_layout(&BindGroupLayoutDescriptor
         {

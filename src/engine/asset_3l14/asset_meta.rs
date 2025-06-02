@@ -1,25 +1,56 @@
-use base64::Engine;
-use serde::de::Error;
+use serde::de::{DeserializeOwned, Error};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Debug, Formatter};
+use std::io::{Read, Write};
 use std::path::PathBuf;
-use asset_3l14::{AssetKey, AssetKeySourceId};
+use base64::Engine;
+use crate::{AssetKey, AssetKeySourceId};
+
+// TODO: is this really better than just fs_read_to_string() and toml parse?
+pub trait TomlRead: DeserializeOwned
+{
+    fn load(reader: &mut impl Read) -> Result<Self, Box<dyn std::error::Error>>
+    {
+        let mut buf = String::new();
+        reader.read_to_string(&mut buf)?;
+        Ok(toml::from_str(&buf)?)
+    }
+}
+pub trait TomlWrite: Serialize
+{
+    fn save(&self, prettify: bool, writer: &mut impl Write) -> Result<(), Box<dyn std::error::Error>>
+    {
+        let toml = if prettify
+        {
+            toml::ser::to_string_pretty(self).expect("Failed to (pretty) serialize TOML")
+        }
+        else
+        {
+            toml::ser::to_string(self).expect("Failed to serialize TOML")
+        };
+        writer.write_all(toml.as_bytes())?;
+        Ok(())
+    }
+}
 
 // used only for scanning, field names (and ideally order) must match SourceMetadata
 // not guaranteed to work with all serialization formats (TOML supported)
 #[derive(Deserialize)]
-pub(super) struct SourceMetadataSlim
+pub struct SourceMetadataStub
 {
     pub source_id: AssetKeySourceId,
 }
+impl TomlRead for SourceMetadataStub { }
 
 #[derive(Serialize, Deserialize)]
 pub struct SourceMetadata
 {
     pub source_id: AssetKeySourceId,
     // is_dependent? (don't self build, omit source_id)
-    pub(super) build_config: toml::Value,
+    pub build_config: toml::Value,
 }
+impl TomlRead for SourceMetadata { }
+impl TomlWrite for SourceMetadata { }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct BuilderHash(pub u64);
@@ -50,6 +81,8 @@ impl<'de> Deserialize<'de> for BuilderHash
     }
 }
 
+// TODO: move ^ into asset builder and make v parseable w/out?
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AssetMetadata
 {
@@ -61,3 +94,5 @@ pub struct AssetMetadata
     pub format_hash: BuilderHash,
     pub dependencies: Box<[AssetKey]>,
 }
+impl TomlRead for AssetMetadata { }
+impl TomlWrite for AssetMetadata { }

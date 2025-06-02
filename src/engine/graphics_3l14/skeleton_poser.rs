@@ -6,6 +6,16 @@ use crate::assets::{AnimFrameNumber, SkeletalAnimation, Skeleton, MAX_SKINNED_BO
 
 type PoseSet = ArrayVec<DualQuat, MAX_SKINNED_BONES>;
 
+pub enum PoseBlendMode
+{
+    Replace,
+    Additive(f32),
+    Exclusive,
+}
+
+// TODO: https://rodolphe-vaillant.fr/entry/72/bulge-free-dual-quaternion-skinning-trick
+// TODO: https://rodolphe-vaillant.fr/entry/78/dual-quaternion-skinning-with-scale
+
 // rigger?
 pub struct SkeletonPoser<'s>
 {
@@ -37,7 +47,7 @@ impl<'s> SkeletonPoser<'s>
     // TODO: blend_no_lerp() ?
 
     // Apply an animation to the pose.
-    pub fn blend(&mut self, animation: &SkeletalAnimation, time: TickCount, should_loop: bool)
+    pub fn blend(&mut self, animation: &SkeletalAnimation, mode: PoseBlendMode, time: TickCount, should_loop: bool)
     {
         // TODO: blend mode (additive, replace, exlusive(?))
 
@@ -77,11 +87,18 @@ impl<'s> SkeletonPoser<'s>
                 // else { panic!("Did not find matching bone for {:?} (#{i}) in skel:{:?}", anim.bones[i], skel.hierarchy); };
                 else { continue; }; // skip; TODO this is likely happening when skin.skeleton node is animated
 
-            self.poses[bone_idx] = DualQuat::nlerp(*fp, *tp, fraction);
+            let lerped = DualQuat::nlerp(*fp, *tp, fraction);
+            // TODO: move the branch out of the loop
+            self.poses[bone_idx] = match mode
+            {
+                PoseBlendMode::Replace => lerped,
+                PoseBlendMode::Additive(frac) => self.poses[bone_idx].nlerp(lerped, frac), // is this correct?
+                PoseBlendMode::Exclusive => todo!("Exclusive skeletal animation blending"),
+            }
         }
     }
 
-    // Compute (and optionally returns) the 'global' (to skeleton) poses (useful for drawing the skeleton)
+    // Compute (and optionally returns) the skin/skeleton space poses (useful for drawing the skeleton)
     pub fn build_poses(&mut self) -> &[DualQuat]
     {
         // local to bone space
@@ -120,6 +137,7 @@ mod tests
     use crate::assets::BoneId;
     use super::*;
 
+    // TODO: fix
     fn generate_skeleton() -> Skeleton
     {
         let j0 = DualQuat::IDENTITY;

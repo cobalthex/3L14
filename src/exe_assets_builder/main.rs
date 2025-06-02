@@ -2,7 +2,7 @@ mod core;
 mod builders;
 mod helpers;
 
-use crate::core::{AssetMetadata, AssetsBuilder, AssetsBuilderConfig, BuildRule, ScanError};
+use crate::core::{AssetsBuilder, AssetsBuilderConfig, BuildRule, ScanError};
 use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use log::log;

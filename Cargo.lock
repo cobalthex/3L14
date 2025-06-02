@@ -193,7 +193,9 @@ name = "asset_3l14"
 version = "0.0.0"
 dependencies = [
  "array-init",
+ "base64 0.22.1",
  "bitcode",
+ "chrono",
  "crossbeam",
  "debug_3l14",
  "egui",
@@ -208,6 +210,7 @@ dependencies = [
  "puffin 0.19.1 (git+https://github.com/tedsteen/puffin?branch=upgrade-egui)",
  "rand 0.9.1",
  "serde",
+ "toml 0.8.22",
  "unicase",
 ]
 
