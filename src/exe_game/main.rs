@@ -105,7 +105,7 @@ fn main() -> ExitReason
 
         let model_key = AssetKey::from(0x00900000835b1860);
         let base_anim_key = AssetKey::from(0x00a00260835b1860);
-        let overlay_anim_key = AssetKey::from(0x00a002d0835b1860);
+        let overlay_anim_key = AssetKey::from(0x00a00030835b1860);
 
         let test_model = assets.load::<Model>(model_key);
         let test_base_anim = assets.load::<SkeletalAnimation>(base_anim_key);

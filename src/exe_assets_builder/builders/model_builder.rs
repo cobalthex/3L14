@@ -318,14 +318,14 @@ impl ModelBuilder
                         match tex_data.format
                         {
                             Format::R8G8B8 =>
+                            {
+                                // todo: check length
+                                for i in 0..(tex_data.width * tex_data.height) as usize
                                 {
-                                    // todo: check length
-                                    for i in 0..(tex_data.width * tex_data.height) as usize
-                                    {
-                                        tex_output.write_all(&tex_data.pixels[(i * 3)..((i + 1) * 3)])?;
-                                        tex_output.write_all(&[u8::MAX])?;
-                                    }
+                                    tex_output.write_all(&tex_data.pixels[(i * 3)..((i + 1) * 3)])?;
+                                    tex_output.write_all(&[u8::MAX])?;
                                 }
+                            }
                             _ => todo!("Other texture format conversions"),
                         }
                     } else {
@@ -361,7 +361,7 @@ impl ModelBuilder
                 Ok(())
             })?;
 
-            let shader_compile_flags = ShaderCompileFlags::Debug;
+            let shader_compile_flags = ShaderCompileFlags::none(); // Debug
 
             // todo: better asset key
             let vertex_shader_key = AssetKeySynthHash::generate(ShaderHash

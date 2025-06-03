@@ -553,6 +553,7 @@ name = "containers_3l14"
 version = "0.0.0"
 dependencies = [
  "crossbeam",
+ "math_3l14",
 ]
 
 [[package]]
@@ -1682,6 +1683,7 @@ dependencies = [
  "approx",
  "bitcode",
  "glam",
+ "half",
  "nab_3l14",
 ]
 

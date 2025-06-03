@@ -78,6 +78,8 @@ fn main() -> ExitReason
     {
         let mut completion = CompletionState::InProgress;
 
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
         {
             let time_now = Instant::now();
             app_frame_number.increment();

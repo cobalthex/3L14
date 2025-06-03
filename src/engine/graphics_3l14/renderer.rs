@@ -136,6 +136,7 @@ impl Renderer
         let mut surface_config = surface
             .get_default_config(&adapter, window_size.0, window_size.1)
             .unwrap();
+        surface_config.present_mode = PresentMode::AutoVsync;
         // surface_config.format = TextureFormat::Rgba8UnormSrgb;
         surface.configure(&device, &surface_config);
 

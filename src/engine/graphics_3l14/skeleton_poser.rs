@@ -35,7 +35,8 @@ impl<'s> SkeletonPoser<'s>
         let num_poses = skeleton.bind_poses.len().min(MAX_SKINNED_BONES);
         let mut poses = ArrayVec::new();
         unsafe { poses.set_len(num_poses); } // better way?
-        poses[..num_poses].copy_from_slice(&skeleton.bind_poses[..num_poses]); // call explicitly? (set_bind_pose)
+        // TODO: this should either be explicit or fill in gaps left by animation
+        poses[..num_poses].copy_from_slice(&skeleton.bind_poses[..num_poses]);
 
         Self
         {

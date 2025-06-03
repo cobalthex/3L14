@@ -30,3 +30,6 @@ pub use ratio::*;
 
 mod lerp;
 pub use lerp::*;
+
+mod nquat48;
+pub use nquat48::*;
