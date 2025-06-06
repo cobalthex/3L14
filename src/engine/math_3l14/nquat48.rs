@@ -1,19 +1,22 @@
 use std::fmt::{Binary, Debug, Formatter};
 use std::mem::MaybeUninit;
+use bitcode::{Decode, Encode};
 use glam::Quat;
 
 const MAX_PRECISION: f32 = (1 << 14) as f32;
+const MAX_FRAC: f32 = 1.0 - (1.0 /  MAX_PRECISION);
 
 #[inline] #[must_use]
 fn to_fixed15(f: f32) -> u16
 {
-    let as_int = (f.clamp(-1.0, 0.99993896) * MAX_PRECISION).round() as i16;
-    unsafe { std::mem::transmute(as_int >> 1) } // & 0x7fff ?
+    // -1 is not a fraction due to extra value when negative
+    let as_int = (f.clamp(-1.0, MAX_FRAC) * MAX_PRECISION).round_ties_even() as i16;
+    (as_int as u16) >> 1
 }
 
 fn from_fixed15(i: u16) -> f32
 {
-    let i: i16 = unsafe { std::mem::transmute(i << 1) };
+    let i = (i << 1) as i16;
     i as f32 / MAX_PRECISION
 }
 
@@ -23,7 +26,7 @@ fn from_fixed15(i: u16) -> f32
 // bits 45,46 are which component is missing
 // bit 47 is the sign of the omitted value
 // todo: use bit 47 to increase precision of one value?
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Encode, Decode)]
 struct NQuat48([u8; 6]);
 impl NQuat48
 {
@@ -45,7 +48,7 @@ impl From<Quat> for NQuat48
         }
 
         let mut bits = vals[max].is_sign_negative() as u64;
-        bits |= (bits << 1) | (max & 0b11) as u64;
+        bits = (bits << 2) | (max & 0b11) as u64;
         for i in 0..vals.len()
         {
             let n = (3 - i);
@@ -137,90 +140,64 @@ impl Binary for NQuat48
 #[cfg(test)]
 mod tests
 {
-    use approx::assert_relative_eq;
     use super::*;
+    use approx::assert_relative_eq;
 
     #[test]
-    fn to_from_1()
+    fn preconditions()
     {
+        // maybe not necessary, but encode/decode endianness at least need to match?
         debug_assert!(cfg!(target_endian = "little"));
-
-        let q = Quat::from_rotation_x(std::f32::consts::FRAC_PI_4).normalize();
-
-        let nq48 =  NQuat48::from(q);
-        println!("{:?}\n{:b}", nq48, nq48);
-        let q2 = Quat::from(nq48);
-        println!("< {q}\n> {q2}");
-        assert_relative_eq!(q, q2, epsilon = 1e-5);
     }
 
     #[test]
-    fn to_from_2()
+    #[should_panic]
+    fn not_normalized()
     {
-        debug_assert!(cfg!(target_endian = "little"));
-
-        let q = Quat::from_rotation_y(std::f32::consts::FRAC_PI_4).normalize();
-
-        let nq48 =  NQuat48::from(q);
-        println!("{:?}\n{:b}", nq48, nq48);
-        let q2 = Quat::from(nq48);
-        println!("< {q}\n> {q2}");
-        assert_relative_eq!(q, q2, epsilon = 1e-5);
+        let q = Quat::from_xyzw(10.0, 10.0, 10.0, 10.0);
+        let q48 =  NQuat48::from(q);
     }
 
     #[test]
-    fn to_from_3()
+    #[should_panic]
+    fn zero()
     {
-        debug_assert!(cfg!(target_endian = "little"));
-
-        let q = Quat::from_rotation_z(std::f32::consts::FRAC_PI_4).normalize();
-
-        let nq48 =  NQuat48::from(q);
-        println!("{:?}\n{:b}", nq48, nq48);
-        let q2 = Quat::from(nq48);
-        println!("< {q}\n> {q2}");
-        assert_relative_eq!(q, q2, epsilon = 1e-5);
+        let q = Quat::from_xyzw(0.0, 0.0, 0.0, 0.0);
+        let q48 =  NQuat48::from(q);
     }
 
-    #[test]
-    fn to_from_4()
+    macro_rules! q48_tests
     {
-        debug_assert!(cfg!(target_endian = "little"));
+        ($($name:ident: $test_quat:expr),*$(,)?) =>
+        { $(
+                #[test]
+                fn $name()
+                {
+                    let in_q = Quat::from($test_quat).normalize();
+                    let test_48q = NQuat48::from(in_q);
+                    println!("Input: {in_q}\n N48Q: {test_48q:?}\n       {test_48q:b}");
 
-        let q = Quat::from_array([1.0, 0.0, 0.0, 0.0]);
-
-        let nq48 =  NQuat48::from(q);
-        println!("{:?}\n{:b}", nq48, nq48);
-        let q2 = Quat::from(nq48);
-        println!("< {q}\n> {q2}");
-        assert_relative_eq!(q, q2, epsilon = 1e-5);
+                    let out_q =  Quat::from(test_48q);
+                    println!("Recon: {out_q}");
+                    assert_relative_eq!(in_q, out_q, epsilon = 1e-5);
+                }
+        )* }
     }
 
-    #[test]
-    fn to_from_5()
+    q48_tests!
     {
-        debug_assert!(cfg!(target_endian = "little"));
+        qrx: Quat::from_rotation_x(std::f32::consts::FRAC_PI_4),
+        qry: Quat::from_rotation_y(std::f32::consts::FRAC_PI_4),
+        qrz: Quat::from_rotation_z(std::f32::consts::FRAC_PI_4),
 
-        let q = Quat::from_array([0.0, 1.0, 0.0, 0.0]);
+        x1: Quat::from_xyzw(1.0, 0.0, 0.0, 0.0),
+        y1: Quat::from_xyzw(0.0, 1.0, 0.0, 0.0),
+        z1: Quat::from_xyzw(0.0, 0.0, 1.0, 0.0),
+        w1: Quat::from_xyzw(0.0, 0.0, 0.0, 1.0),
 
-        let nq48 =  NQuat48::from(q);
-        println!("{:?}\n{:b}", nq48, nq48);
-        let q2 = Quat::from(nq48);
-        println!("< {q}\n> {q2}");
-        assert_relative_eq!(q, q2, epsilon = 1e-5);
-    }
-
-    #[test]
-    fn to_from_6()
-    {
-        debug_assert!(cfg!(target_endian = "little"));
-
-        let q = Quat::from_array([0.0, 0.0, 1.0, 0.0]);
-
-        let nq48 =  NQuat48::from(q);
-        println!("{:?}\n{:b}", nq48, nq48);
-        let q2 = Quat::from(nq48);
-        println!("< {q}\n> {q2}");
-        assert_relative_eq!(q, q2, epsilon = 1e-5);
+        nx1: Quat::from_xyzw(-1.0, 0.0, 0.0, 0.0),
+        ny1: Quat::from_xyzw(0.0, -1.0, 0.0, 0.0),
+        nz1: Quat::from_xyzw(0.0, 0.0, -1.0, 0.0),
+        nw1: Quat::from_xyzw(0.0, 0.0, 0.0, -1.0),
     }
 }
