@@ -37,7 +37,7 @@ impl Sphere
     // outer_distance/sq
 
     #[must_use]
-    fn from_two_points(a: Vec3, b: Vec3) -> Self
+    pub fn from_two_points(a: Vec3, b: Vec3) -> Self
     {
         Self::new((a + b) / 2.0, a.distance(b) / 2.0)
     }

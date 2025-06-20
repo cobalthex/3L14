@@ -9,5 +9,7 @@ path = "lib.rs"
 
 [dependencies]
 math_3l14.workspace = true # needed by R* Trees, move that elsewhere?
+nab_3l14.workspace = true
 
 crossbeam.workspace = true
+glam.workspace = true

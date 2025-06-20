@@ -50,6 +50,8 @@ impl<'s> SkeletonPoser<'s>
     // Apply an animation to the pose.
     pub fn blend(&mut self, animation: &SkeletalAnimation, mode: PoseBlendMode, time: TickCount, should_loop: bool)
     {
+        puffin::profile_function!();
+        
         // TODO: blend mode (additive, replace, exlusive(?))
 
         // would this be faster to convert to float first? (floating point div may be faster)
@@ -88,7 +90,8 @@ impl<'s> SkeletonPoser<'s>
                 // else { panic!("Did not find matching bone for {:?} (#{i}) in skel:{:?}", anim.bones[i], skel.hierarchy); };
                 else { continue; }; // skip; TODO this is likely happening when skin.skeleton node is animated
 
-            let lerped = DualQuat::nlerp(*fp, *tp, fraction);
+            // TODO: cache reconstructed dual-quats
+            let lerped = DualQuat::nlerp(fp.clone().into(), tp.clone().into(), fraction);
             // TODO: move the branch out of the loop
             self.poses[bone_idx] = match mode
             {

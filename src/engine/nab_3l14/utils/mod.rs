@@ -5,6 +5,7 @@ pub use bytes_traits::*;
 
 pub mod async_completion;
 pub mod alloc_slice;
+pub mod array;
 pub mod varint;
 pub mod inline_hash;
 

@@ -13,8 +13,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::thread::{Builder, JoinHandle};
 use std::time::Duration;
-use array_init::array_init;
 use debug_3l14::debug_gui::DebugGui;
+use nab_3l14::utils::array::init_array;
 // TODO: probably don't pass around UniCase publicly
 
 type AssetHandleBank = HashMap<AssetKey, UntypedAssetHandle>;
@@ -374,7 +374,7 @@ impl Assets
          */
 
         // todo: async would maybe nice here (file/network IO, multi-part loads)
-        let worker_threads = array_init::<_, _, NUM_ASSET_JOB_THREADS>(|i|
+        let worker_threads = init_array::<_, NUM_ASSET_JOB_THREADS>(|i|
         {
             let thread = Builder::new()
                 .name(format!("Asset worker thread {}", i))

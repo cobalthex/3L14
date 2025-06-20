@@ -32,6 +32,9 @@ macro_rules! iif_debug {
 #[macro_export]
 macro_rules! const_assert
 {
+    ($name:ident : $cond:expr) => { ::paste::paste!( const [<_ $name>]: () = const { assert!($cond); }; ); };
+    ($name:ident : $cond:expr, $($arg:tt)+) => { ::paste::paste!( const [<_ $name>]: () = const { assert!($cond, $($arg)+); }; ); };
+
     ($cond:expr) => { const _: () = { assert!($cond); }; };
     ($cond:expr, $($arg:tt)+) => { const _: () = { assert!($cond, $($arg)+); }; };
 }

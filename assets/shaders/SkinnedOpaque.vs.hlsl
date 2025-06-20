@@ -46,6 +46,7 @@ VertexOutput vs_main(
         SkinnedPoses[indices.y], weights.y,
         SkinnedPoses[indices.z], weights.z,
         SkinnedPoses[indices.w], weights.w);
+    blended = DualQuatNormalize(blended);
     float3 transformed_pos = DualQuatTransformPoint(blended, in_position);
 
     float3 transform_norm = DualQuatTransformDirection(blended, in_normal);

@@ -2,22 +2,40 @@ use std::fmt::{Binary, Debug, Formatter};
 use std::mem::MaybeUninit;
 use bitcode::{Decode, Encode};
 use glam::Quat;
+use nab_3l14::const_assert;
 
-const MAX_PRECISION: f32 = (1 << 14) as f32;
-const MAX_FRAC: f32 = 1.0 - (1.0 /  MAX_PRECISION);
+// NQuat32:
+//  can be done by duplicating this, and setting repr to u/i8
+//  rust generics won't allow consts on generic types, so would prob need to be a macro
+//  will get shit precision
+
+// Can also do NQuat64 (with u/i32) and bits_per_cmp = 20
+
+type URepr = u16;
+type IRepr = i16;
+const _BITS_PER_COMPONENT: u32 = size_of::<URepr>() as u32 * 8 - 1;
+const _REPR_BYTES: usize = 3 * _BITS_PER_COMPONENT.div_ceil(8) as usize;
+
+const_assert!(size_of::<URepr>() == size_of::<IRepr>());
+const_assert!(size_of::<URepr>() * 8 >= _BITS_PER_COMPONENT as usize);
+const_assert!(size_of::<IRepr>() * 8 >= _BITS_PER_COMPONENT as usize);
+const_assert!(size_of::<u64>() * 8 >= _BITS_PER_COMPONENT as usize * 3);
+
+const_assert!(cfg!(target_endian = "little")); // may work on other endians?
 
 #[inline] #[must_use]
-fn to_fixed15(f: f32) -> u16
+fn f32_to_fixed(f: f32) -> URepr
 {
     // -1 is not a fraction due to extra value when negative
-    let as_int = (f.clamp(-1.0, MAX_FRAC) * MAX_PRECISION).round_ties_even() as i16;
-    (as_int as u16) >> 1
+    let as_int = (f.clamp(-1.0, NQuat48::MAX_FRAC) * NQuat48::MAX_PRECISION).round_ties_even() as IRepr;
+    (as_int as URepr) >> 1
 }
 
-fn from_fixed15(i: u16) -> f32
+#[inline] #[must_use]
+fn f32_from_fixed(i: URepr) -> f32
 {
-    let i = (i << 1) as i16;
-    i as f32 / MAX_PRECISION
+    let i = (i << 1) as IRepr;
+    i as f32 / NQuat48::MAX_PRECISION
 }
 
 // Store a normalized quaternion in 48 bits
@@ -27,9 +45,15 @@ fn from_fixed15(i: u16) -> f32
 // bit 47 is the sign of the omitted value
 // todo: use bit 47 to increase precision of one value?
 #[derive(Clone, Copy, PartialEq, Encode, Decode)]
-struct NQuat48([u8; 6]);
+pub struct NQuat48([u8; _REPR_BYTES]);
 impl NQuat48
 {
+    pub const MAX_PRECISION: f32 = (1 << (_BITS_PER_COMPONENT - 1)) as f32;
+    pub const MAX_FRAC: f32 = 1.0 - (1.0 / Self::MAX_PRECISION);
+}
+impl Default for NQuat48
+{
+    fn default() -> Self { Self([0u8; _REPR_BYTES]) }
 }
 impl From<Quat> for NQuat48
 {
@@ -51,15 +75,15 @@ impl From<Quat> for NQuat48
         bits = (bits << 2) | (max & 0b11) as u64;
         for i in 0..vals.len()
         {
-            let n = (3 - i);
+            let n = 3 - i;
             if n == max { continue }
-            bits = (bits << 15) | (to_fixed15(vals[n]) as u64);
+            bits = (bits << _BITS_PER_COMPONENT) | (f32_to_fixed(vals[n]) as u64);
         }
 
         unsafe
         {
-            let mut final_bits = MaybeUninit::<[u8; 6]>::uninit();
-            std::ptr::copy_nonoverlapping(bits.to_le_bytes().as_ptr(),  final_bits.as_mut_ptr() as *mut u8, 6);
+            let mut final_bits = MaybeUninit::<[u8; _REPR_BYTES]>::uninit();
+            std::ptr::copy_nonoverlapping(bits.to_le_bytes().as_ptr(), final_bits.as_mut_ptr() as *mut u8, _REPR_BYTES);
             Self(final_bits.assume_init())
         }
     }
@@ -71,21 +95,21 @@ impl From<NQuat48> for Quat
         let mut bits = 0u64;
         unsafe
         {
-            std::ptr::copy_nonoverlapping(value.0.as_ptr(), &mut bits as *mut u64 as *mut u8, 6);
+            std::ptr::copy_nonoverlapping(value.0.as_ptr(), &mut bits as *mut u64 as *mut u8, _REPR_BYTES);
         }
         let mut vals = [0.0; 4];
-        let max = ((bits >> 45) & 0b11) as usize;
+        let max = ((bits >> (_BITS_PER_COMPONENT * 3)) & 0b11) as usize;
         let mut sum_sq = 0.0;
         for i in 0..4
         {
             if i == max { continue }
-            vals[i] = from_fixed15((bits & 0x7fff) as u16);
+            vals[i] = f32_from_fixed((bits & ((1 << _BITS_PER_COMPONENT) - 1)) as URepr);
             sum_sq += vals[i] * vals[i];
-            bits >>= 15;
+            bits >>= _BITS_PER_COMPONENT;
         }
 
         vals[max] = (1.0 - sum_sq).sqrt();
-        if (bits >> 2) > 0 { vals[max] = -vals[max]; }
+        if (bits >> 2) > 0 { vals[max] = -vals[max]; } // this is likely not needed for animations (nlerp/etc will align)
 
         Quat::from_array(vals)
     }
@@ -100,14 +124,15 @@ impl Debug for NQuat48
             std::ptr::copy_nonoverlapping(self.0.as_ptr(), &mut bits as *mut u64 as *mut u8, 6);
         }
 
-        let max = ((bits >> 45) & 0b11) as usize;
-        f.write_fmt(format_args!("M:{}{}", max, if (bits >> 47) > 0 { "[-]" } else { "[+]" }))?;
+        const COMPONENT_BITS: u32 = _BITS_PER_COMPONENT * 3;
+        let max = ((bits >> COMPONENT_BITS) & 0b11) as usize;
+        f.write_fmt(format_args!("M:{}{}", max, if (bits >> (COMPONENT_BITS + 2)) > 0 { "[-]" } else { "[+]" }))?;
         for i in 0..4
         {
             if i == max { continue }
-            let val = from_fixed15((bits & 0x7fff) as u16);
+            let val = f32_from_fixed((bits & ((1 << _BITS_PER_COMPONENT) - 1)) as URepr);
             f.write_fmt(format_args!(" {}", val))?;
-            bits >>= 15;
+            bits >>= _BITS_PER_COMPONENT;
         }
 
         Ok(())
@@ -123,10 +148,12 @@ impl Binary for NQuat48
             std::ptr::copy_nonoverlapping(self.0.as_ptr(), &mut bits as *mut u64 as *mut u8, 6);
         }
 
-        bits = bits.reverse_bits() >> (64 - 48);
-        let mut str = [' ' as u8; 48 + 4];
+
+        const TOTAL_BITS: u32 = _BITS_PER_COMPONENT * 3 + 3;
+        bits = bits.reverse_bits() >> (u64::BITS - TOTAL_BITS);
+        let mut str = [' ' as u8; TOTAL_BITS as usize + 4];
         let mut next = 0;
-        let lens = [1, 2, 15, 15, 15];
+        let lens = [1, 2, _BITS_PER_COMPONENT, _BITS_PER_COMPONENT, _BITS_PER_COMPONENT];
         for l in lens
         {
             for _i in 0..l { str[next] = if (bits & 1) == 1 { '1' as u8 } else { '0' as u8 }; bits >>= 1; next += 1; }
@@ -144,13 +171,6 @@ mod tests
     use approx::assert_relative_eq;
 
     #[test]
-    fn preconditions()
-    {
-        // maybe not necessary, but encode/decode endianness at least need to match?
-        debug_assert!(cfg!(target_endian = "little"));
-    }
-
-    #[test]
     #[should_panic]
     fn not_normalized()
     {
@@ -164,6 +184,14 @@ mod tests
     {
         let q = Quat::from_xyzw(0.0, 0.0, 0.0, 0.0);
         let q48 =  NQuat48::from(q);
+    }
+
+    #[test]
+    fn default()
+    {
+        let q48 =  NQuat48::default();
+        let q = Quat::from(q48);
+        assert_eq!(q, Quat::from_xyzw(1.0, 0.0, 0.0, 0.0));
     }
 
     macro_rules! q48_tests
@@ -183,7 +211,6 @@ mod tests
                 }
         )* }
     }
-
     q48_tests!
     {
         qrx: Quat::from_rotation_x(std::f32::consts::FRAC_PI_4),

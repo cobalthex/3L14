@@ -4,5 +4,5 @@ pub use object_pool::*;
 mod bucket_vec;
 pub use bucket_vec::*;
 
-mod rstar_tree;
-pub use rstar_tree::*;
+mod aabb_tree;
+pub use aabb_tree::*;

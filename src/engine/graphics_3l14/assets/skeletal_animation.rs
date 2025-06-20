@@ -2,7 +2,7 @@ use asset_3l14::TrivialAssetLifecycler;
 use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
 use egui::Ui;
-use math_3l14::{DualQuat, Ratio};
+use math_3l14::{DualQuat, Ratio, PackedTransform};
 use proc_macros_3l14::asset;
 use crate::assets::BoneId;
 
@@ -14,14 +14,16 @@ pub struct AnimFrameNumber(pub u32);
 #[derive(Encode, Decode)]
 pub struct SkeletalAnimation
 {
-    pub sample_rate: Ratio<u32>,
+    pub sample_rate: Ratio<u32>, // todo: hard code into flags?
+    // flags
+    // TODO: sparse frames.
     pub frame_count: AnimFrameNumber,
     pub bones: Box<[BoneId]>, // sorted by ID
-    pub poses: Box<[DualQuat]>, // 2D array, # of bones (ordered by bone ID) * # of keyframes
+    pub poses: Box<[PackedTransform]>, // 2D array, # of bones (ordered by bone ID) * # of keyframes
 }
 impl SkeletalAnimation
 {
-    pub fn get_pose_for_frame(&self, frame: AnimFrameNumber) -> &[DualQuat]
+    pub fn get_pose_for_frame(&self, frame: AnimFrameNumber) -> &[PackedTransform]
     {
         let bone_count = self.bones.len();
         let start = frame.0 as usize * bone_count;

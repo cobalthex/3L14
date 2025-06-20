@@ -629,8 +629,8 @@ impl ModelBuilder
                 return Err(Box::new(ModelImportError::AnimationTimesOutOfOrder));
             }
 
-            let start = (min / rate).ceil() as u32;
-            let end = (max / rate).ceil() as u32;
+            let start = (min / rate).floor() as u32;
+            let end = (max / rate).floor() as u32;
 
             for i in start..end
             {
@@ -696,7 +696,7 @@ impl ModelBuilder
                     rotations.push(Quat::from_array(cur.1));
                     frame_count = frame_count.max(rotations.len());
                 },
-                ReadOutputs::Scales(_) => { log::warn!("Animating scale is not supported"); } // unsupported (currently)
+                ReadOutputs::Scales(s) => { } // unsupported (currently)
                 ReadOutputs::MorphTargetWeights(_) => {} // unsupported
             }
         }
@@ -716,7 +716,7 @@ impl ModelBuilder
                     .cloned().unwrap_or_default();
                 let rotation = bone_data.rotations.get(usize::min(fr, bone_data.rotations.len() - 1))
                     .cloned().unwrap_or_default();
-                poses[fr * bone_ids.len() + bone] = DualQuat::from_rot_trans(rotation, translation);
+                poses[fr * bone_ids.len() + bone] = DualQuat::from_rot_trans(rotation, translation).into();
             }
         }
         

@@ -8,8 +8,8 @@ use std::ops::{Add, Div, Mul, Neg};
 #[derive(Debug, Default, PartialEq, Clone, Copy, Encode, Decode)]
 pub struct DualQuat
 {
-    real: Quat, // also called primal
-    dual: Quat,
+    pub(super) real: Quat, // also called primal
+    pub(super) dual: Quat,
 }
 impl DualQuat
 {
