@@ -64,7 +64,7 @@ impl DebugDraw
             layout: None,
             vertex: VertexState
             {
-                module: &renderer.device().create_shader_module(include_spirv!("../../../assets/shaders/DebugLines.vs.spv")),
+                module: &renderer.device().create_shader_module(include_spirv!("../../../assets/prebuilt/DebugLines.vs.spv")),
                 entry_point: Some(ShaderStage::Vertex.entry_point()),
                 compilation_options: Default::default(),
                 buffers: &[],
@@ -89,7 +89,7 @@ impl DebugDraw
             },
             fragment: Some(FragmentState
             {
-                module: &renderer.device().create_shader_module(include_spirv!("../../../assets/shaders/DebugLines.ps.spv")),
+                module: &renderer.device().create_shader_module(include_spirv!("../../../assets/prebuilt/DebugLines.ps.spv")),
                 entry_point: Some(ShaderStage::Pixel.entry_point()),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState
@@ -110,7 +110,7 @@ impl DebugDraw
             layout: None,
             vertex: VertexState
             {
-                module: &renderer.device().create_shader_module(include_spirv!("../../../assets/shaders/DebugLines.vs.spv")),
+                module: &renderer.device().create_shader_module(include_spirv!("../../../assets/prebuilt/DebugLines.vs.spv")),
                 entry_point: Some(ShaderStage::Vertex.entry_point()),
                 compilation_options: Default::default(),
                 buffers: &[],
@@ -135,7 +135,7 @@ impl DebugDraw
             },
             fragment: Some(FragmentState
             {
-                module: &renderer.device().create_shader_module(include_spirv!("../../../assets/shaders/DebugLines.ps.spv")),
+                module: &renderer.device().create_shader_module(include_spirv!("../../../assets/prebuilt/DebugLines.ps.spv")),
                 entry_point: Some(ShaderStage::Pixel.entry_point()),
                 compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState
