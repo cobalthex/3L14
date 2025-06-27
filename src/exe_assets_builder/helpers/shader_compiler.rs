@@ -209,6 +209,7 @@ mod tests
     use super::*;
 
     #[test]
+    #[cfg(target_os = "windows")] // TODO: cross platform support
     pub fn compile_vertex_shader()
     {
         let shader_source = r#"
