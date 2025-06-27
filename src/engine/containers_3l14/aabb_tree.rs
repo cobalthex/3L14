@@ -1,7 +1,6 @@
 use math_3l14::AABB;
-use std::cmp::Ordering;
-use std::collections::BinaryHeap;
 use std::fmt::{Debug, Formatter, Write};
+use smallvec::{smallvec, SmallVec};
 
 // move to shared location?
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -16,10 +15,11 @@ impl NodeIndex
     #[inline] #[must_use] pub const fn is_some(self) -> bool { (self.0 & Self::NULL_BIT) == 0 }
     #[inline] #[must_use] pub const fn is_none(self) -> bool { (self.0 & Self::NULL_BIT) != 0 }
 
+    // TODO: make trait
     #[inline] #[must_use]
-    pub fn hydrate(self, tree: &AabbTree) -> &Node { &tree.nodes[self.0] }
+    pub fn hydrate<T>(self, tree: &AabbTree<T>) -> &Node { &tree.nodes[self.0] }
     #[inline] #[must_use]
-    pub fn hydrate_mut(self, tree: &mut AabbTree) -> &mut Node { &mut tree.nodes[self.0] }
+    pub fn hydrate_mut<T>(self, tree: &mut AabbTree<T>) -> &mut Node { &mut tree.nodes[self.0] }
 }
 impl Default for NodeIndex
 {
@@ -30,19 +30,22 @@ impl Default for NodeIndex
 struct Node
 {
     bounds: AABB,
-    leaf: NodeIndex, // index points to values list
-    parent: NodeIndex,
+    leaf_index: NodeIndex, // points to index in values list
+    parent_index: NodeIndex,
     // N children?
-    left_child: NodeIndex,
-    right_child: NodeIndex,
+    left_child_index: NodeIndex,
+    right_child_index: NodeIndex,
 }
 
-pub struct AabbTree
+// AABBTree ?
+pub struct AabbTree<T>
 {
     nodes: Vec<Node>, // TODO: use a free list (and or slot map)
-    root: NodeIndex,
+    len: usize, // todo: get from future free list
+    root_index: NodeIndex,
+    values: Vec<T>,
 }
-impl AabbTree
+impl<T> AabbTree<T>
 {
     #[inline] #[must_use]
     pub fn new() -> Self
@@ -50,96 +53,193 @@ impl AabbTree
         AabbTree
         {
             nodes: Vec::new(),
-            root: NodeIndex::none(),
+            len: 0,
+            root_index: NodeIndex::none(),
+            values: Vec::new(),
         }
     }
 
     #[inline] #[must_use]
-    pub fn len(&self) -> usize { self.nodes.len() }
+    pub fn len(&self) -> usize { self.len }
 
-    // Is this right?
-    #[inline] #[must_use]
-    pub fn depth(&self) -> usize { self.nodes.len().div_ceil(2) }
-
-    pub fn insert(&mut self, bounds: AABB)
+    pub fn insert(&mut self, bounds: AABB, value: T)
     {
-        let leaf = self.alloc_node(Node
+        self.values.push(value);
+        let values_index = self.values.len() - 1;
+        let leaf_index = self.alloc_node(Node
         {
             bounds,
-            leaf: NodeIndex::some(0), // TODO
-            .. Default::default()
+            leaf_index: NodeIndex::some(values_index),
+            ..Default::default()
         });
-        if self.root.is_none()
+        if self.root_index.is_none()
         {
-            self.root = leaf;
+            self.root_index = leaf_index;
             return;
         }
 
-        let sibling = self.pick_best_sibling(bounds);
+        let sibling_index = self.pick_best_sibling(bounds);
 
         // create new parent
-        let old_parent = self.nodes[sibling.0].parent;
-        let new_parent = self.alloc_node(Node
+        let old_parent_index = self.nodes[sibling_index.0].parent_index;
+        let new_parent_index = self.alloc_node(Node
         {
-            bounds: bounds.unioned_with(self.nodes[sibling.0].bounds),
-            leaf: NodeIndex::none(),
-            parent: old_parent,
+            bounds: bounds.unioned_with(self.nodes[sibling_index.0].bounds),
+            leaf_index: NodeIndex::none(),
+            parent_index: old_parent_index,
             .. Default::default()
         });
 
-        if old_parent.is_some()
+        if old_parent_index.is_some()
         {
-            if self.nodes[old_parent.0].left_child == sibling
+            if self.nodes[old_parent_index.0].left_child_index == sibling_index
             {
-                self.nodes[old_parent.0].left_child = new_parent;
+                self.nodes[old_parent_index.0].left_child_index = new_parent_index;
             }
             else
             {
-                self.nodes[old_parent.0].right_child = new_parent;
+                self.nodes[old_parent_index.0].right_child_index = new_parent_index;
             }
 
-            self.nodes[new_parent.0].left_child = sibling;
-            self.nodes[new_parent.0].right_child = leaf;
-            self.nodes[sibling.0].parent = new_parent;
-            self.nodes[leaf.0].parent = new_parent;
+            self.nodes[new_parent_index.0].left_child_index = sibling_index;
+            self.nodes[new_parent_index.0].right_child_index = leaf_index;
+            self.nodes[sibling_index.0].parent_index = new_parent_index;
+            self.nodes[leaf_index.0].parent_index = new_parent_index;
         }
         else
         {
             // sibling was root
-            self.nodes[new_parent.0].left_child = sibling;
-            self.nodes[new_parent.0].right_child = leaf;
-            self.nodes[sibling.0].parent = new_parent;
-            self.nodes[leaf.0].parent = new_parent;
-            self.root = new_parent;
+            self.nodes[new_parent_index.0].left_child_index = sibling_index;
+            self.nodes[new_parent_index.0].right_child_index = leaf_index;
+            self.nodes[sibling_index.0].parent_index = new_parent_index;
+            self.nodes[leaf_index.0].parent_index = new_parent_index;
+            self.root_index = new_parent_index;
         }
 
-        // re-fit parent AABBs
-        let mut index = self.nodes[leaf.0].parent;
-        while index.is_some()
+        self.refit_parents(leaf_index.hydrate(self).parent_index);
+    }
+
+    fn refit_parents(&mut self, mut node_index: NodeIndex)
+    {
+        // debug_assert not leaf?
+        while node_index.is_some()
         {
-            let left_child = self.nodes[index.0].left_child;
-            let right_child = self.nodes[index.0].right_child;
-            self.nodes[index.0].bounds = self.nodes[left_child.0].bounds.unioned_with(self.nodes[right_child.0].bounds);
+            // todo: awkward syntax w/ ref lifetimes
+            let node = node_index.hydrate(self);
+            let left_child_bounds = node.left_child_index.hydrate(&self).bounds;
+            let right_child_bounds = node.right_child_index.hydrate(&self).bounds;
+            let mut node_mut = node_index.hydrate_mut(self);
+            node_mut.bounds = left_child_bounds.unioned_with(right_child_bounds);
 
             // if should_rotate
             {
                 // rotate
             }
 
-            index = self.nodes[index.0].parent;
+            node_index = node_mut.parent_index;
         }
     }
 
-    pub fn remove(&mut self, bounds: AABB)
+    pub fn remove(&mut self, bounds: AABB) -> bool
     {
-        todo!()
+        let leaf_index = self.index_of(bounds);
+        if leaf_index.is_none()
+        {
+            return false;
+        }
+
+        if leaf_index == self.root_index
+        {
+            self.free_node(self.root_index);
+            self.root_index = NodeIndex::none();
+            return true;
+        }
+
+        let leaf = leaf_index.hydrate(self);
+        let parent_index = leaf.parent_index;
+        let parent = leaf.parent_index.hydrate(self);
+        let gparent_index = parent.parent_index;
+        let sibling_index =
+            if parent.left_child_index == leaf_index { parent.right_child_index }
+            else { parent.left_child_index };
+
+        if gparent_index.is_some()
+        {
+            println!("removed {:?}", &parent.bounds);
+            let mut gparent = gparent_index.hydrate_mut(self);
+            // destroy parent and replace w/ leaf sibling
+            if gparent.left_child_index == parent_index
+            {
+                gparent.left_child_index = sibling_index;
+            }
+            else
+            {
+                gparent.right_child_index = sibling_index;
+            }
+
+            sibling_index.hydrate_mut(self).parent_index = gparent_index;
+            self.free_node(parent_index);
+
+            self.refit_parents(gparent_index);
+        }
+        else
+        {
+            self.root_index = sibling_index;
+            sibling_index.hydrate_mut(self).parent_index = NodeIndex::none();
+            self.free_node(parent_index);
+        }
+
+        self.free_node(leaf_index);
+        return true;
+    }
+
+    // pub fn contains()
+
+    #[must_use]
+    fn index_of(&self, bounds: AABB) -> NodeIndex
+    {
+        if self.root_index.is_none() { return NodeIndex::none(); }
+
+        let mut stack: SmallVec<[usize; 16]> = smallvec![self.root_index.0];
+        while let Some(top) = stack.pop()
+        {
+            let node = &self.nodes[top];
+            if !node.bounds.overlaps(bounds)
+            {
+                continue;
+            }
+
+            if node.leaf_index.is_some()
+            {
+                if node.bounds == bounds
+                {
+                    return NodeIndex::some(top);
+                }
+
+                // assert no children?
+                continue;
+            }
+
+            if node.right_child_index.is_some() { stack.push(node.right_child_index.0); }
+            if node.left_child_index.is_some() { stack.push(node.left_child_index.0); }
+        }
+
+        NodeIndex::none()
     }
 
     #[inline] #[must_use]
     fn alloc_node(&mut self, node: Node) -> NodeIndex
     {
+        self.len += 1;
         self.nodes.push(node);
         NodeIndex::some(self.nodes.len() - 1)
+    }
+
+    #[inline]
+    fn free_node(&mut self, node: NodeIndex)
+    {
+        self.len -= 1;
+        // TODO
     }
 
     #[must_use]
@@ -149,17 +249,17 @@ impl AabbTree
 
         let incoming_area = incoming.surface_area();
 
-        let root = self.root.hydrate(self);
+        let root = self.root_index.hydrate(self);
         let mut curr_area = root.bounds.surface_area();
         let mut direct_cost = root.bounds.unioned_with(incoming).surface_area();
         let mut inherited_cost = 0.0;
 
-        let mut best_sibling = self.root;
+        let mut best_sibling = self.root_index;
         let mut best_cost = direct_cost;
 
-        let mut curr_index = self.root;
+        let mut curr_index = self.root_index;
         let mut curr = curr_index.hydrate(self);
-        while curr.leaf.is_none()
+        while curr.leaf_index.is_none()
         {
             let cost = direct_cost + inherited_cost;
             if cost < best_cost
@@ -170,17 +270,17 @@ impl AabbTree
 
             inherited_cost += direct_cost - curr_area;
 
-            let left = curr.left_child.hydrate(self);
+            let left = curr.left_child_index.hydrate(self);
             let mut left_lower_bound = f32::MAX;
             let mut left_area = 0.0;
             let left_direct_cost = left.bounds.unioned_with(incoming).surface_area();
-            if left.leaf.is_some()
+            if left.leaf_index.is_some()
             {
                 let left_cost = left_direct_cost + inherited_cost;
                 if  left_cost < best_cost
                 {
                     best_cost = left_cost;
-                    best_sibling = curr.left_child;
+                    best_sibling = curr.left_child_index;
                 }
             }
             else
@@ -190,17 +290,17 @@ impl AabbTree
             }
 
             // TODO: dedupe this
-            let right = curr.right_child.hydrate(self);
+            let right = curr.right_child_index.hydrate(self);
             let mut right_lower_bound = f32::MAX;
             let mut right_area = 0.0;
             let right_direct_cost = right.bounds.unioned_with(incoming).surface_area();
-            if right.leaf.is_some()
+            if right.leaf_index.is_some()
             {
                 let right_cost = right_direct_cost + inherited_cost;
                 if  right_cost < best_cost
                 {
                     best_cost = right_cost;
-                    best_sibling = curr.right_child;
+                    best_sibling = curr.right_child_index;
                 }
             }
             else
@@ -209,14 +309,14 @@ impl AabbTree
                 right_lower_bound = inherited_cost + right_direct_cost + f32::min(0.0, incoming_area - right_area);
             }
 
-            if (left.leaf.is_some() && right.leaf.is_some()) ||
+            if (left.leaf_index.is_some() && right.leaf_index.is_some()) ||
                 (best_cost <= left_lower_bound && best_cost <= right_lower_bound)
             {
                 break;
             }
 
             if left_lower_bound == right_lower_bound &&
-                left.leaf.is_none()
+                left.leaf_index.is_none()
             {
                 debug_assert!(left_lower_bound < f32::MAX);
 
@@ -229,16 +329,16 @@ impl AabbTree
             }
 
             if left_lower_bound < right_lower_bound &&
-                left.leaf.is_none()
+                left.leaf_index.is_none()
             {
-                curr_index = curr.left_child;
+                curr_index = curr.left_child_index;
                 curr = left;
                 curr_area = left_area;
                 direct_cost = left_direct_cost;
             }
             else
             {
-                curr_index = curr.right_child;
+                curr_index = curr.right_child_index;
                 curr = right;
                 curr_area = right_area;
                 direct_cost = right_direct_cost;
@@ -250,70 +350,90 @@ impl AabbTree
 
     fn rotate(&mut self)
     {
-        todo!()
+        // TODO
     }
 
     #[must_use]
-    pub fn iter_inside(&self, aabb: AABB) -> AabbTreeIter
+    pub fn iter_overlapping(&self, aabb: AABB) -> AabbTreeIterOverlapping<T>
     {
-        // TODO: need to verify root contains aabb
-
-        AabbTreeIter { tree: self, aabb, curr: self.root.0 }
+        AabbTreeIterOverlapping
+        {
+            tree: &self,
+            aabb,
+            stack: if self.root_index.is_some() { smallvec![self.root_index.0] } else { SmallVec::new() },
+        }
     }
 }
-impl Debug for AabbTree
+impl<T: Debug> Debug for AabbTree<T>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
         f.write_fmt(format_args!("AabbTree ({} nodes)", self.len()))?;
-        if self.root.is_none()
+        if self.root_index.is_none()
         {
             return Ok(());
         }
 
-        let mut queue = vec![(0, '^', self.root)];
+        let mut queue = vec![(0, '^', self.root_index)];
         while let Some((depth, l_r, node)) = queue.pop()
         {
-            f.write_str("\n  ")?;
+            if f.alternate()
+            {
+                f.write_fmt(format_args!("\n{:3}  ", node.0))?;
+            }
+            else
+            {
+                f.write_str("\n  ")?;
+            }
+
             for i in 0..depth
             {
                 f.write_str([" ┗━ ", "━━ "][i.min(1)])?;
             }
             let hydrated = node.hydrate(self);
-            f.write_fmt(format_args!("[{l_r}] {:?}{}", hydrated.bounds, ["", " (Leaf)"][hydrated.leaf.is_some() as usize]))?;
-            if hydrated.right_child.is_some() { queue.push((depth + 1, 'R', hydrated.right_child)); }
-            if hydrated.left_child.is_some() { queue.push((depth + 1, 'L', hydrated.left_child)); }
+            f.write_fmt(format_args!("[{l_r}] {:?}", hydrated.bounds))?;
+            if hydrated.leaf_index.is_some()
+            {
+                f.write_str(" (Leaf) value: ");
+                Debug::fmt(&self.values[hydrated.leaf_index.0], f)?;
+            }
+            if hydrated.right_child_index.is_some() { queue.push((depth + 1, 'R', hydrated.right_child_index)); }
+            if hydrated.left_child_index.is_some() { queue.push((depth + 1, 'L', hydrated.left_child_index)); }
         }
 
         Ok(())
     }
 }
 
-struct AabbTreeIter<'t>
+struct AabbTreeIterOverlapping<'t, T>
 {
-    tree: &'t AabbTree,
+    tree: &'t AabbTree<T>,
     aabb: AABB,
-    curr: usize,
+    stack: SmallVec<[usize; 16]>, // TODO: determine a good size based on usage?
 }
-impl Iterator for AabbTreeIter<'_>
+impl<'t, T> Iterator for AabbTreeIterOverlapping<'t, T>
 {
-    type Item = AABB;
+    type Item = (AABB, &'t T);
     fn next(&mut self) -> Option<Self::Item>
     {
-        if self.curr >= self.tree.len()
+        while let Some(top) = self.stack.pop()
         {
-            return None;
+            let node = &self.tree.nodes[top];
+            if !node.bounds.overlaps(self.aabb)
+            {
+                continue;
+            }
+
+            if node.leaf_index.is_some()
+            {
+                return Some((node.bounds, &self.tree.values[node.leaf_index.0]));
+            }
+
+            if node.right_child_index.is_some() { self.stack.push(node.right_child_index.0); }
+            if node.left_child_index.is_some() { self.stack.push(node.left_child_index.0); }
         }
 
-        let rv = &self.tree.nodes[self.curr];
-        if rv.leaf.is_some()
-        {
-            self.curr = rv.parent.hydrate(self.tree).right_child.0;
-            return Some(rv.bounds);
-        }
-
-        // todo: loop until found leaf
-        todo!()
+        None
     }
 }
 
@@ -336,26 +456,89 @@ mod tests
     fn basic()
     {
         let mut tree = AabbTree::new();
-        println!("{:?}\n", tree);
 
-        let insert = AABB::new(Vec3::splat(1.0), Vec3::splat(2.0));
-        tree.insert(insert);
-        println!("{insert:?}\n{:?}\n", tree);
+        let a = AABB::new(Vec3::splat(1.0), Vec3::splat(2.0));
+        tree.insert(a, 'a');
 
-        let insert = AABB::new(Vec3::splat(10.0), Vec3::splat(15.0));
-        tree.insert(insert);
-        println!("{insert:?}\n{:?}\n", tree);
+        let b = AABB::new(Vec3::splat(10.0), Vec3::splat(15.0));
+        tree.insert(b, 'b');
 
-        let insert = AABB::new(Vec3::splat(12.0), Vec3::splat(13.0));
-        tree.insert(insert);
-        println!("{insert:?}\n{:?}\n", tree);
+        let c = AABB::new(Vec3::splat(12.0), Vec3::splat(13.0));
+        tree.insert(c, 'c');
 
-        let insert = AABB::new(Vec3::splat(3.0), Vec3::splat(4.0));
-        tree.insert(insert);
-        println!("{insert:?}\n{:?}\n", tree);
+        let d = AABB::new(Vec3::splat(3.0), Vec3::splat(4.0));
+        tree.insert(d, 'd');
 
-        let insert = AABB::new(Vec3::splat(3.5), Vec3::splat(3.8));
-        tree.insert(insert);
-        println!("{insert:?}\n{:?}\n", tree);
+        let e = AABB::new(Vec3::splat(3.5), Vec3::splat(3.8));
+        tree.insert(e, 'e');
+
+        println!("{tree:?}\n");
+
+        let test = AABB::new(Vec3::splat(3.0), Vec3::splat(11.0));
+        let overlapping: Box<[_]> = tree.iter_overlapping(test).collect();
+        assert_eq!(overlapping.len(), 3);
+
+        assert_eq!(overlapping[0].0, d);
+        assert_eq!(*overlapping[0].1, 'd');
+
+        assert_eq!(overlapping[1].0, e);
+        assert_eq!(*overlapping[1].1, 'e');
+
+        assert_eq!(overlapping[2].0, b);
+        assert_eq!(*overlapping[2].1, 'b');
+
+        // TODO: test other bounds
+    }
+
+    #[test]
+    fn remove()
+    {
+        let mut tree = AabbTree::new();
+
+        let a = AABB::new(Vec3::splat(1.0), Vec3::splat(2.0));
+        tree.insert(a, 'a');
+
+        let b = AABB::new(Vec3::splat(10.0), Vec3::splat(15.0));
+        tree.insert(b, 'b');
+
+        let c = AABB::new(Vec3::splat(12.0), Vec3::splat(13.0));
+        tree.insert(c, 'c');
+
+        println!("{tree:#?}\n");
+
+        assert!(tree.remove(b));
+        println!("Removed b: {tree:#?}\n");
+        let overlapping: Box<[_]> = tree.iter_overlapping(AABB::MIN_MAX).collect();
+        assert_eq!(overlapping.len(), 2);
+
+        assert_eq!(overlapping[0].0, a);
+        assert_eq!(*overlapping[0].1, 'a');
+
+        assert_eq!(overlapping[1].0, c);
+        assert_eq!(*overlapping[1].1, 'c');
+
+        assert!(!tree.remove(b));
+        println!("Removed b (no-op): {tree:#?}\n");
+        let overlapping: Box<[_]> = tree.iter_overlapping(AABB::MIN_MAX).collect();
+        assert_eq!(overlapping.len(), 2);
+
+        assert_eq!(overlapping[0].0, a);
+        assert_eq!(*overlapping[0].1, 'a');
+
+        assert_eq!(overlapping[1].0, c);
+        assert_eq!(*overlapping[1].1, 'c');
+
+        assert!(tree.remove(a));
+        println!("Removed a: {tree:#?}\n");
+        let overlapping: Box<[_]> = tree.iter_overlapping(AABB::MIN_MAX).collect();
+        assert_eq!(overlapping.len(), 1);
+
+        assert_eq!(overlapping[0].0, c);
+        assert_eq!(*overlapping[0].1, 'c');
+
+        assert!(tree.remove(c));
+        println!("Removed c: {tree:#?}\n");
+        let overlapping: Box<[_]> = tree.iter_overlapping(AABB::MIN_MAX).collect();
+        assert_eq!(overlapping.len(), 0);
     }
 }

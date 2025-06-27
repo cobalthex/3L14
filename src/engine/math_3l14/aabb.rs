@@ -10,7 +10,8 @@ pub struct AABB
 }
 impl AABB
 {
-    pub const MAX_MIN: Self = Self { min: Vec3::MAX, max: Vec3::MIN };
+    pub const MIN_MAX: Self = Self { min: Vec3::MIN, max: Vec3::MAX }; // for 'universe' queries
+    pub const MAX_MIN: Self = Self { min: Vec3::MAX, max: Vec3::MIN }; // for finding min volume
 
     #[inline] #[must_use] pub const fn new(min: Vec3, max: Vec3) -> Self { Self { min, max } }
     #[inline] #[must_use] pub const fn empty() -> Self { Self { min: Vec3::ZERO, max: Vec3::ZERO } }
@@ -67,29 +68,18 @@ impl AABB
         }
     }
 
-    #[inline] #[must_use]
-    fn vec3_le(a: Vec3, b: Vec3) -> bool
-    {
-        a.x <= b.x && a.y <= b.y && a.z <= b.z
-    }
-    #[inline] #[must_use]
-    fn vec3_ge(a: Vec3, b: Vec3) -> bool
-    {
-        a.x >= b.x && a.y >= b.y && a.z >= b.z
-    }
-
     #[must_use]
     pub fn fully_contains(self, rhs: Self) -> bool
     {
-        Self::vec3_le(self.min, rhs.min) &&
-        Self::vec3_ge(self.max, rhs.max)
+        self.min.cmple(rhs.min).all() &&
+        self.max.cmpge(rhs.max).all()
     }
 
     #[must_use]
     pub fn overlaps(self, rhs: Self) -> bool
     {
-        Self::vec3_le(self.min, rhs.max) &&
-        Self::vec3_ge(self.max, rhs.min)
+        self.min.cmple(rhs.max).all() &&
+        self.max.cmpge(rhs.min).all()
     }
 }
 impl Intersects<AABB> for AABB
@@ -159,7 +149,15 @@ mod tests
         assert!(outer.fully_contains(inner));
         assert!(inner.fully_contains(outer));
 
-        // TODO: negative test cases
+        // overlap
+        let inner = AABB::new(Vec3::ONE, Vec3::splat(5.0));
+        assert!(!outer.fully_contains(inner));
+        assert!(!inner.fully_contains(outer));
+
+        // no overlap
+        let inner = AABB::new(Vec3::splat(10.0), Vec3::splat(15.0));
+        assert!(!outer.fully_contains(inner));
+        assert!(!inner.fully_contains(outer));
     }
 
     #[test]
@@ -170,12 +168,27 @@ mod tests
         assert!(a.overlaps(b));
         assert!(b.overlaps(a));
 
-        // TODO: negative test cases
+        // partial overlap
+        let a = AABB::new(Vec3::ONE, Vec3::splat(5.0));
+        assert!(a.overlaps(b));
+        assert!(b.overlaps(a));
+
+        // touching edges
+        let b = a;
+        assert!(a.overlaps(b));
+        assert!(b.overlaps(a));
+
+        // no overlap
+        let b = AABB::new(Vec3::splat(10.0), Vec3::splat(15.0));
+        assert!(!a.overlaps(b));
+        assert!(!b.overlaps(a));
     }
 
     #[test]
     fn asdf()
     {
+        // testing some stuff here
+
         let a = AABB::new(Vec3::splat(1.0), Vec3::splat(4.0));
         let b = AABB::new(Vec3::splat(5.0), Vec3::splat(6.0));
 

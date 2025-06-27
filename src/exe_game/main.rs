@@ -27,6 +27,7 @@ use metrohash::MetroHash64;
 use sdl2::messagebox::MessageBoxFlag;
 use wgpu::{BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
 use graphics_3l14::skeleton_poser::{PoseBlendMode, SkeletonPoser};
+use nab_3l14::utils::array::init_array;
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -131,7 +132,7 @@ fn main() -> ExitReason
 
         let mut obj_rot = Quat::IDENTITY;
 
-        let mut views: [_; renderer::MAX_CONSECUTIVE_FRAMES] = array_init::array_init(|_| View::new(renderer.clone(), &pipeline_cache));
+        let mut views: [_; renderer::MAX_CONSECUTIVE_FRAMES] = init_array(|_| View::new(renderer.clone(), &pipeline_cache));
 
         let mut debug_draw = DebugDraw::new(&renderer);
 

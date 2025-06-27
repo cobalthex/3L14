@@ -13,3 +13,4 @@ nab_3l14.workspace = true
 
 crossbeam.workspace = true
 glam.workspace = true
+smallvec.workspace = true
