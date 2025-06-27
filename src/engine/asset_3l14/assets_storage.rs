@@ -1,20 +1,20 @@
 use super::*;
 use crossbeam::channel::{unbounded, Receiver, Sender};
+use debug_3l14::debug_gui::DebugGui;
 use egui::{Id, Ui};
+use nab_3l14::utils::array::init_array;
 use notify::event::ModifyKind;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use notify_debouncer_full::{Debouncer, FileIdMap};
+use notify_debouncer_full::{Debouncer, FileIdMap, RecommendedCache};
 use parking_lot::Mutex;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::io::Error;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::Arc;
 use std::thread::{Builder, JoinHandle};
 use std::time::Duration;
-use debug_3l14::debug_gui::DebugGui;
-use nab_3l14::utils::array::init_array;
 // TODO: probably don't pass around UniCase publicly
 
 type AssetHandleBank = HashMap<AssetKey, UntypedAssetHandle>;
@@ -321,7 +321,7 @@ const NUM_ASSET_JOB_THREADS: usize = 1;
 pub struct Assets
 {
     storage: Arc<AssetsStorage>,
-    fs_watcher: Option<Debouncer<RecommendedWatcher, FileIdMap>>,
+    fs_watcher: Option<Debouncer<RecommendedWatcher, RecommendedCache>>,
     worker_threads: [Option<JoinHandle<()>>; NUM_ASSET_JOB_THREADS],
 
     debug_state: Mutex<AssetsDebugState>, // only one place ever calls this (MAKE SURE OF THIS)
@@ -397,7 +397,7 @@ impl Assets
         self.storage.notification_channel.1.clone()
     }
 
-    fn try_fs_watch(assets_storage: Arc<AssetsStorage>) -> notify::Result<Debouncer<RecommendedWatcher, FileIdMap>>
+    fn try_fs_watch(assets_storage: Arc<AssetsStorage>) -> notify::Result<Debouncer<RecommendedWatcher, RecommendedCache>>
     {
         let assets_storage_clone = assets_storage.clone();
         // batching?
@@ -484,7 +484,8 @@ impl Assets
         let maybe = self.storage.get_lifecycler::<L::Asset>();
         maybe.map(|l|
         unsafe {
-            debug_assert_eq!(TypeId::of::<L>(), l.type_id);
+            #[cfg(debug_assertions)]
+            assert_eq!(TypeId::of::<L>(), l.type_id); // debug_assert won't work here
             &*(l.lifecycler.as_ref() as *const dyn UntypedAssetLifecycler as *const L)
         })
     }
