@@ -45,20 +45,22 @@ impl Sphere
     #[must_use]
     fn from_three_points(a: Vec3, b: Vec3, c: Vec3) -> Self
     {
+        // note: this will return the minimum sphere, one of the points may be inside the sphere rather than on the edge
         // https://en.wikipedia.org/wiki/Circumcircle
 
         let ab = b - a;
         let ac = c - a;
+        let bc = c - b;
 
         let ab_len_sq = ab.length_squared();
         let ac_len_sq = ac.length_squared();
 
-        let ab_x_ac = ab.cross(ac); // calculate the normal to the plane defined by the two lines
+        let ab_x_ac = ab.cross(ac); // calculate the normal to triangle formed between the three points
 
         // points are collinear, calculate from the two outermost points
-        if ab_x_ac == Vec3::ZERO // todo: abs < epsilon?
+        let norm_len_sq = ab_x_ac.length_squared();
+        if norm_len_sq < f32::EPSILON
         {
-            let bc = c - b;
             let bc_len_sq = bc.length_squared();
 
             return
@@ -73,13 +75,30 @@ impl Sphere
             };
         }
 
-        let num = (ab_len_sq * ac - ac_len_sq * ab).cross(ab_x_ac);
-        let den = 2.0 * ab_x_ac.length_squared();
+        // If the triangle is obtuse, the longest side is the diameter of the minimal sphere
+        // test for obtusity by checking if the angle is >90deg and return the opposing side
+        if ab.dot(ac) < 0.0
+        {
+            Self::from_two_points(b, c)
+        }
+        else if (a - b).dot(bc) < 0.0
+        {
+            Self::from_two_points(a, c)
+        }
+        else if (a - c).dot(b - c) < 0.0
+        {
+            Self::from_two_points(a, b)
+        }
+        else
+        {
+            let num = (ab_len_sq * ac - ac_len_sq * ab).cross(ab_x_ac);
+            let den = 2.0 * norm_len_sq;
 
-        let center = a + (num / den);
-        let radius = center.distance(a);
+            let center = a + (num / den);
+            let radius = center.distance(a);
 
-        Self::new(center, radius)
+            Self::new(center, radius)
+        }
     }
 
     #[must_use]
@@ -156,7 +175,7 @@ impl Sphere
                 };
             }
 
-            let test_index = 0;// rand::random();
+            let test_index = rand::random::<u64>() as usize % remaining_points.len();
             let test_point = remaining_points.swap_remove(test_index);
 
             let smallest = find_recursive(points, remaining_points.clone(), boundary_points);
@@ -212,10 +231,12 @@ impl Intersects<Sphere> for Sphere
     fn get_intersection(&self, other: Sphere) -> Intersection
     {
         let dist = self.center().distance_squared(other.center());
-        let rr = (self.radius() + other.radius()).powi(2);
-        if dist <= rr // approx eq?
+        if dist <= self.radius_squared()
         {
-            // TODO: fully contained
+            Intersection::FullyContained
+        }
+        else if dist <= (self.radius() + other.radius()).powi(2)
+        {
             Intersection::Overlapping
         }
         else
@@ -351,10 +372,10 @@ mod tests
     {
         let sphere = Sphere::new(Vec3::new(0.0, 2.0, 0.0), 5.0);
 
-        assert_eq!(sphere.get_intersection(Vec3::ZERO), Intersection::Overlapping);
+        assert_eq!(sphere.get_intersection(Vec3::ZERO), Intersection::FullyContained);
         assert!(sphere.rhs_is_on_or_inside(Vec3::ZERO));
 
-        assert_eq!(sphere.get_intersection(Vec3::new(0.0, 7.0, 0.0)), Intersection::Overlapping);
+        assert_eq!(sphere.get_intersection(Vec3::new(0.0, 7.0, 0.0)), Intersection::FullyContained);
         assert!(sphere.rhs_is_on_or_inside(Vec3::new(0.0, 7.0, 0.0)));
 
         assert_eq!(sphere.get_intersection(Vec3::new(0.0, 10.0, 0.0)), Intersection::None);
@@ -366,21 +387,27 @@ mod tests
     {
         let sphere = Sphere::new(Vec3::new(0.0, 2.0, 0.0), 5.0);
 
-        let test_a = Sphere::new(Vec3::new(0.0, 4.0, 0.0), 3.0);
-        assert_eq!(sphere.get_intersection(test_a), Intersection::Overlapping);
+        let test_a = Sphere::new(Vec3::new(0.0, 2.0, 0.0), 3.0);
+        assert_eq!(sphere.get_intersection(test_a), Intersection::FullyContained);
         assert!(sphere.rhs_is_on_or_inside(test_a));
 
-        let test_b = Sphere::new(Vec3::new(0.0, 10.0, 0.0), 3.0);
-        assert_eq!(sphere.get_intersection(test_b), Intersection::Overlapping);
+        // on edge
+        let test_b = Sphere::new(Vec3::new(0.0, 4.0, 0.0), 3.0);
+        assert_eq!(sphere.get_intersection(test_b), Intersection::FullyContained);
         assert!(sphere.rhs_is_on_or_inside(test_b));
 
-        let test_c = Sphere::new(Vec3::new(0.0, 100.0, 0.0), 3.0);
-        assert_eq!(sphere.get_intersection(test_c), Intersection::None);
-        assert!(!sphere.rhs_is_on_or_inside(test_c));
+        let test_c = Sphere::new(Vec3::new(0.0, 10.0, 0.0), 3.0);
+        assert_eq!(sphere.get_intersection(test_c), Intersection::Overlapping);
+        assert!(sphere.rhs_is_on_or_inside(test_c));
+
+        let test_d = Sphere::new(Vec3::new(0.0, 100.0, 0.0), 3.0);
+        assert_eq!(sphere.get_intersection(test_d), Intersection::None);
+        assert!(!sphere.rhs_is_on_or_inside(test_d));
     }
 
     mod from_points
     {
+        use rand::seq::SliceRandom;
         use super::*;
         
         #[test]
@@ -424,13 +451,13 @@ mod tests
             ];
             // for i in 0..9
             // {
-            //     points.shuffle(&mut rand::thread_rng());
+            //     points.shuffle(&mut rand::rng());
             //     println!("{:?} -- {:?}", points, Sphere::from_three_points(points[0], points[1], points[2]));
             // }
 
             let sphere = Sphere::from_points(&points);
-            assert_eq!(sphere.center(), Vec3::new(1.0, -1.0, 0.0));
-            assert_relative_eq!(sphere.radius(), 3.1622775);
+            assert_relative_eq!(sphere.radius(), 3.0);
+            assert_eq!(sphere.center(), Vec3::new(1.0, 0.0, 0.0));
         }
 
         #[test]

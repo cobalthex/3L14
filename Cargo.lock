@@ -1526,7 +1526,7 @@ dependencies = [
  "glam",
  "half",
  "nab_3l14",
- "paste",
+ "rand",
 ]
 
 [[package]]

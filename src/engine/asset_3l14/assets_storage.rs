@@ -460,7 +460,7 @@ impl Assets
     {
         let lifecycler = self.storage.get_lifecycler::<A>().expect("No lifecycler found for asset type");
         let handle = self.storage.create_or_update_handle(asset_key);
-        lifecycler.load_untyped(
+        lifecycler.lifecycler.load_untyped(
             self.storage.clone(),
             unsafe { handle.1.clone().into_inner() },
             Box::new(input_data),
@@ -727,10 +727,9 @@ mod tests
         fn debug_gui(&self, ui: &mut Ui) { }
     }
 
-    fn set_passthru<A: Asset, L: TestLifecycler<Asset = A>>(assets: &Assets, passthru_fn: Option<fn(AssetLoadRequest) -> Result<A, Box<dyn Error>>>)
+    fn set_passthru<A: Asset, L: TestLifecycler<Asset = A> + 'static>(assets: &Assets, passthru_fn: Option<fn(AssetLoadRequest) -> Result<A, Box<dyn Error>>>)
     {
-        let lifecycler = assets.storage.get_lifecycler::<TestAsset>().unwrap();
-        let tal = unsafe { &*(lifecycler as *const dyn UntypedAssetLifecycler as *const L) };
+        let tal = assets.get_lifecycler::<L>().unwrap();
         tal.set_passthru(passthru_fn.map(|pfn| Passthru
         {
             call_count: 0,
@@ -738,10 +737,9 @@ mod tests
         }));
     }
 
-    fn get_passthru_call_count<L: TestLifecycler>(assets: &Assets) -> Option<usize>
+    fn get_passthru_call_count<L: TestLifecycler + 'static>(assets: &Assets) -> Option<usize>
     {
-        let lifecycler = assets.storage.get_lifecycler::<L::Asset>().unwrap();
-        let tal = unsafe { &*(lifecycler as *const dyn UntypedAssetLifecycler as *const L) };
+        let tal = assets.get_lifecycler::<L>().unwrap();
         tal.get_passthru_call_count()
     }
 
@@ -754,7 +752,7 @@ mod tests
     {
         use super::*;
         use std::io::Cursor;
-
+        use parking_lot::Condvar;
         // TODO: disable threading and add 'loop_once' function for worker
 
         #[test]
@@ -826,19 +824,28 @@ mod tests
                 .add_lifecycler(TestAssetLifecycler::default());
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
-            set_passthru::<_, TestAssetLifecycler>(&assets, Some(|_req: AssetLoadRequest| Err(Box::new(TestError))));
+            const READY_WAITER: Mutex<()> = Mutex::new(()); // gross
+
+            set_passthru::<_, TestAssetLifecycler>(&assets, Some(|_req: AssetLoadRequest|
+            {
+                let _ = READY_WAITER.lock();
+                Ok(TestAsset { name: "pending asset".to_string(), nested: None })
+            }));
 
             assert_eq!(Some(0), get_passthru_call_count::<TestAssetLifecycler>(&assets));
 
             let _req1: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
-            std::thread::sleep(std::time::Duration::from_secs(1)); // crude
+            await_asset(&_req1);
             assert_eq!(Some(1), get_passthru_call_count::<TestAssetLifecycler>(&assets));
 
-            let _req2: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
-            assert_eq!(Some(1), get_passthru_call_count::<TestAssetLifecycler>(&assets));
-
-            let _req3: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
-            assert_eq!(Some(1), get_passthru_call_count::<TestAssetLifecycler>(&assets));
+            let _req2: Ash<TestAsset>;
+            {
+                let _ = READY_WAITER.lock();
+                _req2 = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+                assert_eq!(Some(1), get_passthru_call_count::<TestAssetLifecycler>(&assets));
+            }
+            await_asset(&_req2);
+            assert_eq!(Some(2), get_passthru_call_count::<TestAssetLifecycler>(&assets));
         }
 
         #[test]

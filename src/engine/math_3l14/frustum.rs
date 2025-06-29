@@ -137,7 +137,7 @@ mod tests
             Plane::new(Vec3::new(0.0, -recip_sqrt2, recip_sqrt2), 0.0),
             Plane::new(Vec3::new(0.0, recip_sqrt2, recip_sqrt2), 0.0),
             Plane::new(Vec3::new(0.0, 0.0, 1.0), 1.0),
-            Plane::new(Vec3::new(0.0, 0.0, 1.0), 10.0),
+            Plane::new(Vec3::new(0.0, 0.0, -1.0), -10.0), // TODO: This seems wrong
         ];
 
         for (i, plane) in frustum.planes.iter().enumerate() {

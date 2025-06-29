@@ -3,7 +3,7 @@ pub enum Intersection
 {
     None,
     Overlapping,
-    FullyContained,
+    FullyContained, // This includes if smaller is on the edge of larger
     // FullyContains?
 }
 

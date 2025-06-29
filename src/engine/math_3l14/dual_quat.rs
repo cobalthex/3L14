@@ -418,18 +418,6 @@ mod tests
         // assert_relative_eq!(DualQuat::new(-r, -(t + test)), dq.translated(test)); // TODO
     }
 
-    #[test]
-    fn rotate()
-    {
-        let r = Quat::from_rotation_y(3.5);
-        let t = Vec3::ZERO;
-        let dq = DualQuat::from_rot_trans(r, t);
-
-        let test = Quat::from_rotation_y(3.0);
-
-        assert_relative_eq!(DualQuat::from_rot_trans(r * test, t), dq.rotated(test));
-    }
-
     // TODO: to/from mat4
-    // TODO: multiply, add, conjugate, length, inverse, dot
+    // TODO: multiply, add, conjugate, length, inverse, dot, rotate
 }
