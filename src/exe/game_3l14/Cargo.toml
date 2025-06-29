@@ -1,0 +1,38 @@
+[package]
+name = "game_3l14"
+description = "3L14"
+workspace = "../../.."
+edition.workspace = true
+build = "build.rs"
+
+[features]
+default = []
+frame_profiler = ["debug_3l14/frame_profiler"]
+
+[[bin]]
+name = "3L14"
+path = "main.rs"
+
+[dependencies]
+asset_3l14 = { workspace = true, features = ["asset_names", "asset_debug_data"] }
+containers_3l14 = { workspace = true, features = [] }
+debug_3l14 = { workspace = true, features = [] }
+graphics_3l14 = { workspace = true, features = ["debug_gpu_labels"] }
+input_3l14 = { workspace = true, features = [] }
+math_3l14 = { workspace = true, features = [] }
+nab_3l14 = { workspace = true, features = [] }
+world_3l14 = { workspace = true, features = [] }
+proc_macros_3l14 = { workspace = true, features = [] }
+
+clap.workspace = true
+egui.workspace = true
+glam.workspace = true
+log.workspace = true
+metrohash.workspace = true
+puffin.workspace = true
+puffin_http.workspace = true
+sdl2.workspace = true
+wgpu.workspace = true
+
+[build-dependencies]
+build_3l14.workspace = true

@@ -30,9 +30,9 @@ dependencies = [
 
 [[package]]
 name = "adler2"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627"
+checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "ahash"
@@ -185,6 +185,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "assets_browser_3l14"
+version = "0.0.0"
+dependencies = [
+ "asset_3l14",
+ "build_3l14",
+ "chrono",
+ "clap",
+ "egui",
+ "graphics_3l14",
+ "input_3l14",
+ "nab_3l14",
+ "sdl2",
+]
+
+[[package]]
+name = "assets_builder_3l14"
+version = "0.0.0"
+dependencies = [
+ "arrayvec",
+ "asset_3l14",
+ "bitcode",
+ "build_3l14",
+ "chrono",
+ "clap",
+ "debug_3l14",
+ "glam",
+ "gltf",
+ "graphics_3l14",
+ "hassle-rs",
+ "log",
+ "math_3l14",
+ "metrohash",
+ "nab_3l14",
+ "parking_lot",
+ "proc_macros_3l14",
+ "serde",
+ "toml 0.8.23",
+ "unicase",
+ "walkdir",
+ "wgpu",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -276,6 +319,14 @@ name = "block"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a"
+
+[[package]]
+name = "build_3l14"
+version = "0.0.0"
+dependencies = [
+ "symlink",
+ "winres",
+]
 
 [[package]]
 name = "bumpalo"
@@ -820,9 +871,9 @@ checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
 name = "flate2"
-version = "1.0.35"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c936bfdafb507ebbf50b8074c54fa31c5be9a1e7e5f467dd659697041407d07c"
+checksum = "4a3d7db9596fecd151c5f638c0ee5d5bd487b6e0ea232e5dc96d5250f6f94b1d"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
@@ -962,37 +1013,26 @@ dependencies = [
 
 [[package]]
 name = "game_3l14"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
- "arrayvec",
  "asset_3l14",
- "bitcode",
- "chrono",
+ "build_3l14",
  "clap",
  "containers_3l14",
  "debug_3l14",
  "egui",
  "glam",
- "gltf",
  "graphics_3l14",
- "hassle-rs",
  "input_3l14",
  "log",
  "math_3l14",
  "metrohash",
  "nab_3l14",
- "parking_lot",
  "proc_macros_3l14",
  "puffin 0.19.1 (git+https://github.com/tedsteen/puffin?branch=upgrade-egui)",
  "puffin_http",
  "sdl2",
- "serde",
- "symlink",
- "toml 0.8.23",
- "unicase",
- "walkdir",
  "wgpu",
- "winres",
  "world_3l14",
 ]
 
@@ -1518,9 +1558,9 @@ checksum = "a84011bfadc339f60fbcc38181da8a0a91cd16375394dd52edf9da80deacd8c5"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.8.3"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8402cab7aefae129c6977bb0ff1b8fd9a04eb5b51efc50a70bea51cda0c7924"
+checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
  "simd-adler32",
@@ -1701,6 +1741,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22ec719bbf3b2a81c109a4e20b1f129b5566b7dce654bc3872f6a05abf82b2c4"
 dependencies = [
  "ttf-parser",
+]
+
+[[package]]
+name = "package_3l14"
+version = "0.1.0"
+dependencies = [
+ "build_3l14",
+ "symlink",
 ]
 
 [[package]]
@@ -2014,9 +2062,9 @@ checksum = "f7c45b9784283f1b2e7fb61b42047c2fd678ef0960d4f6f1eba131594cc369d4"
 
 [[package]]
 name = "ryu"
-version = "1.0.18"
+version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3cb5ba0dc43242ce17de99c180e96db90b235b8a9fdc9543c96d2209116bd9f"
+checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
 name = "same-file"
@@ -2079,9 +2127,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.122"
+version = "1.0.140"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "784b6203951c57ff748476b126ccb5e8e2959a5c19e5c617ab1956be3dbc68da"
+checksum = "20068b6e96dc6c9bd23e01df8827e6c7e1f2fddd43c21810382803c136b99373"
 dependencies = [
  "itoa",
  "memchr",
@@ -2212,6 +2260,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "tests_3l14"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "bitcode",
+ "chrono",
+ "crossbeam",
+ "debug_3l14",
+ "egui",
+ "futures",
+ "log",
+ "metrohash",
+ "nab_3l14",
+ "notify",
+ "notify-debouncer-full",
+ "parking_lot",
+ "proc_macros_3l14",
+ "puffin 0.19.1 (git+https://github.com/tedsteen/puffin?branch=upgrade-egui)",
+ "rand",
+ "serde",
+ "toml 0.8.23",
+ "unicase",
 ]
 
 [[package]]
@@ -2651,9 +2724,9 @@ dependencies = [
 
 [[package]]
 name = "widestring"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7219d36b6eac893fa81e84ebe06485e7dcbb616177469b142df14f1f4deb1311"
+checksum = "dd7cf3379ca1aac9eea11fba24fd7e315d621f8dfe35c8d7d2be8b793726e07d"
 
 [[package]]
 name = "winapi"
@@ -2942,9 +3015,9 @@ checksum = "3f423a2c17029964870cfaabb1f13dfab7d092a62a29a89264f4d36990ca414a"
 
 [[package]]
 name = "zune-jpeg"
-version = "0.4.14"
+version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99a5bab8d7dedf81405c4bb1f2b83ea057643d9cb28778cea9eecddeedd2e028"
+checksum = "7384255a918371b5af158218d131530f694de9ad3815ebdd0453a940485cb0fa"
 dependencies = [
  "zune-core",
 ]

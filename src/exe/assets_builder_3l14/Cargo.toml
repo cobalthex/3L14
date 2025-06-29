@@ -1,0 +1,39 @@
+[package]
+name = "assets_builder_3l14"
+description = "3L14 assets builder"
+workspace = "../../.."
+edition.workspace = true
+build = "build.rs"
+
+[features]
+
+[[bin]]
+name = "assets_builder"
+path = "main.rs"
+
+[dependencies]
+nab_3l14.workspace = true
+asset_3l14.workspace = true
+debug_3l14.workspace = true
+graphics_3l14.workspace = true
+math_3l14.workspace = true
+proc_macros_3l14.workspace = true
+
+arrayvec.workspace = true
+bitcode.workspace = true
+chrono.workspace = true
+clap.workspace = true
+glam.workspace = true
+gltf.workspace = true
+hassle-rs.workspace = true
+log.workspace = true
+metrohash.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+toml.workspace = true
+unicase.workspace = true
+walkdir.workspace = true
+wgpu.workspace = true
+
+[build-dependencies]
+build_3l14.workspace = true

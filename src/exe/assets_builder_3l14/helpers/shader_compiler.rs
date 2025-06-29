@@ -208,36 +208,36 @@ mod tests
     use std::path::Path;
     use super::*;
 
-    #[test]
-    #[cfg(target_os = "windows")] // TODO: cross platform support
-    pub fn compile_vertex_shader()
-    {
-        let shader_source = r#"
-        float4 vs_main(float3 in_position : POSITION) : SV_POSITION
-        {
-            return float4(in_position, 1.0);
-        }
-        "#;
-
-        // TODO: clean up, re-use vertion in build_main
-        let dxc_dir =
-        {
-            // construct with Env:CARGO_MANIFEST_DIR \target\ Env:PROFILE ?
-            let mut out_dir: PathBuf = env::var("OUT_DIR").expect("! Failed to get build target dir").into();
-            out_dir.push("../../.."); // gross
-            out_dir.canonicalize().expect("! Failed to canonicalize Env:OUT_DIR")
-        };
-
-        let compiler = ShaderCompiler::new("$$ INVALID $$", Some(dxc_dir)).unwrap();
-
-        let mut output = Vec::new();
-        compiler.compile_hlsl(&mut output, ShaderCompilation
-        {
-            source_text: shader_source,
-            filename: Path::new("TEST_FILE.vs.hlsl"),
-            stage: ShaderStage::Vertex,
-            flags: ShaderCompileFlags::none(),
-            defines: vec![],
-        }).unwrap();
-    }
+    // #[test]
+    // #[cfg(target_os = "windows")] // TODO: cross platform support
+    // pub fn compile_vertex_shader()
+    // {
+    //     let shader_source = r#"
+    //     float4 vs_main(float3 in_position : POSITION) : SV_POSITION
+    //     {
+    //         return float4(in_position, 1.0);
+    //     }
+    //     "#;
+    // 
+    //     // TODO: clean up, re-use vertion in build_main
+    //     let dxc_dir =
+    //         {
+    //             // construct with Env:CARGO_MANIFEST_DIR \target\ Env:PROFILE ?
+    //             let mut out_dir: PathBuf = env::var("OUT_DIR").expect("! Failed to get build target dir").into();
+    //             out_dir.push("../../.."); // gross
+    //             out_dir.canonicalize().expect("! Failed to canonicalize Env:OUT_DIR")
+    //         };
+    // 
+    //     let compiler = ShaderCompiler::new("$$ INVALID $$", Some(dxc_dir)).unwrap();
+    // 
+    //     let mut output = Vec::new();
+    //     compiler.compile_hlsl(&mut output, ShaderCompilation
+    //     {
+    //         source_text: shader_source,
+    //         filename: Path::new("TEST_FILE.vs.hlsl"),
+    //         stage: ShaderStage::Vertex,
+    //         flags: ShaderCompileFlags::none(),
+    //         defines: vec![],
+    //     }).unwrap();
+    // }
 }

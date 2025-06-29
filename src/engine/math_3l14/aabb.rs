@@ -10,6 +10,7 @@ pub struct AABB
 }
 impl AABB
 {
+    // convert to functions?
     pub const MIN_MAX: Self = Self { min: Vec3::MIN, max: Vec3::MAX }; // for 'universe' queries
     pub const MAX_MIN: Self = Self { min: Vec3::MAX, max: Vec3::MIN }; // for finding min volume
 

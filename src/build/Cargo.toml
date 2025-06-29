@@ -1,0 +1,12 @@
+[package]
+name = "build_3l14"
+description = "Shared utilities for build scripts"
+workspace = "../.."
+edition.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+symlink.workspace = true
+winres.workspace = true

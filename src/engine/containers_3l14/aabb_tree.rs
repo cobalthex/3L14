@@ -7,13 +7,13 @@ use smallvec::{smallvec, SmallVec};
 struct NodeIndex(pub usize);
 impl NodeIndex
 {
-    const NULL_BIT: usize = 1 << (usize::BITS - 1);
+    const NONE: usize = usize::MAX;
 
-    #[inline] #[must_use] pub const fn none() -> Self { Self(Self::NULL_BIT) }
-    #[inline] #[must_use] pub const fn some(n: usize) -> Self { Self(n & (Self::NULL_BIT - 1)) } // assert < NULL_BIT?
+    #[inline] #[must_use] pub const fn none() -> Self { Self(Self::NONE) }
+    #[inline] #[must_use] pub const fn some(n: usize) -> Self { Self(n) }
 
-    #[inline] #[must_use] pub const fn is_some(self) -> bool { (self.0 & Self::NULL_BIT) == 0 }
-    #[inline] #[must_use] pub const fn is_none(self) -> bool { (self.0 & Self::NULL_BIT) != 0 }
+    #[inline] #[must_use] pub const fn is_none(self) -> bool { self.0 == Self::NONE }
+    #[inline] #[must_use] pub const fn is_some(self) -> bool { self.0 != Self::NONE }
 
     // TODO: make trait
     #[inline] #[must_use]
@@ -193,7 +193,11 @@ impl<T> AabbTree<T>
         return true;
     }
 
-    // pub fn contains()
+    pub fn contains(&self, bounds: AABB) -> bool
+    {
+        let leaf_index = self.index_of(bounds);
+        leaf_index.is_some()
+    }
 
     #[must_use]
     fn index_of(&self, bounds: AABB) -> NodeIndex
@@ -471,6 +475,13 @@ mod tests
 
         let e = AABB::new(Vec3::splat(3.5), Vec3::splat(3.8));
         tree.insert(e, 'e');
+
+        assert!(tree.contains(a));
+        assert!(tree.contains(b));
+        assert!(tree.contains(c));
+        assert!(tree.contains(d));
+        assert!(tree.contains(e));
+        assert!(!tree.contains(AABB::empty()));
 
         println!("{tree:?}\n");
 

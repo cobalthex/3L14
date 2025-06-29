@@ -1,75 +1,31 @@
 [package]
-name = "game_3l14"
-build = "src/build/build_main.rs"
+name = "package_3l14"
 autobins = false
+autotests = false
+autobenches = false
+autoexamples = false
 edition.workspace = true
 version.workspace = true
+build = "./src/build_common.rs"
+
+[lib]
+path = "./src/dummy.rs"
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 publish = false
 
-### TODO: put exes into their own crates
-
-[[bin]]
-name = "assets_builder"
-path = "src/exe_assets_builder/main.rs"
-
-[[bin]]
-name = "assets_browser"
-path = "src/exe_assets_browser/main.rs"
-
-[[bin]]
-name = "3L14"
-path = "src/exe_game/main.rs"
-
-### TODO: test
-[[test]]
-name = "tests"
-path = "src/exe_tests/lib.rs"
-
 [workspace]
 resolver = "2"
-members = ["./src/engine/*"]
-
-[features]
-default = []
-frame_profiler = ["debug_3l14/frame_profiler"]
+members = ["./src/engine/*", "src/exe/*", "src/build"]
 
 [dependencies]
-asset_3l14 = { workspace = true, features = ["asset_names", "asset_debug_data"] }
-containers_3l14 = { workspace = true, features = [] }
-debug_3l14 = { workspace = true, features = [] }
-graphics_3l14 = { workspace = true, features = ["debug_gpu_labels"] }
-input_3l14 = { workspace = true, features = [] }
-math_3l14 = { workspace = true, features = [] }
-nab_3l14 = { workspace = true, features = [] }
-world_3l14 = { workspace = true, features = [] }
-proc_macros_3l14 = { workspace = true, features = [] }
-
-arrayvec.workspace = true
-bitcode.workspace = true
-chrono.workspace = true
-clap.workspace = true
-egui.workspace = true
-glam.workspace = true
-gltf.workspace = true
-hassle-rs.workspace = true
-log.workspace = true
-metrohash.workspace = true
-parking_lot.workspace = true
-puffin.workspace = true
-puffin_http.workspace = true
-sdl2.workspace = true
-serde.workspace = true
-toml.workspace = true
-unicase.workspace = true
-walkdir.workspace = true
-wgpu.workspace = true
 
 [workspace.dependencies]
+build_3l14 = { path = "./src/build" }
 proc_macros_3l14 = { path = "./src/macros" }
+
 asset_3l14 = { path = "./src/engine/asset_3l14" }
 containers_3l14 = { path = "./src/engine/containers_3l14" }
 debug_3l14 = { path = "./src/engine/debug_3l14" }
@@ -78,6 +34,12 @@ input_3l14 = { path = "./src/engine/input_3l14" }
 math_3l14 = { path = "./src/engine/math_3l14" }
 nab_3l14 = { path = "./src/engine/nab_3l14" }
 world_3l14 = { path = "./src/engine/world_3l14" }
+
+game_3l14 = { path = "./src/exe/game_3l14" }
+assets_builder_3l14 = { path = "./src/exe/assets_builder_3l14" }
+assets_browser_3l14 = { path = "./src/exe/assets_browser_3l14" }
+
+tests_3l14 = { path = "./src/exe/tests_3l14" }
 
 #egui_wgpu_backend = "0.33.0"
 #puffin = "0.19.1"
@@ -119,8 +81,12 @@ unicase = "2.8.1"
 walkdir = "2.5.0"
 wgpu = { version = "24.0.3", features = ["spirv"] }
 
-[dev-dependencies]
+# workspace dev-dependencies
 
-[build-dependencies]
+# workspace build-dependencies
 symlink = "0.1.0"
 winres = "0.1.12"
+
+[build-dependencies]
+build_3l14.workspace = true
+symlink.workspace = true

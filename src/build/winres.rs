@@ -1,7 +1,13 @@
-use winres::WindowsResource;
+use std::env;
+use ::winres::WindowsResource;
 
 pub fn generate_windows_resources()
 {
+    if env::var_os("CARGO_CFG_WINDOWS").is_none()
+    {
+        return;
+    }
+
     WindowsResource::new()
         .set_manifest(r#"
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3" manifestVersion="1.0">
@@ -28,5 +34,5 @@ pub fn generate_windows_resources()
 </assembly>
         "#)
         .set_icon("res/App.ico")
-        .compile().expect("! Failed to compile windows resource definitions");
+        .compile().expect("! Failed to compile Windows resource definitions");
 }

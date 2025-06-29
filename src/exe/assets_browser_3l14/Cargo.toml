@@ -1,0 +1,26 @@
+[package]
+name = "assets_browser_3l14"
+description = "3L14 assets browser"
+workspace = "../../.."
+edition.workspace = true
+build = "build.rs"
+
+[features]
+
+[[bin]]
+name = "assets_browser"
+path = "main.rs"
+
+[dependencies]
+nab_3l14.workspace = true
+asset_3l14.workspace = true
+graphics_3l14.workspace = true
+input_3l14.workspace = true
+
+chrono.workspace = true
+clap.workspace = true
+egui.workspace = true
+sdl2.workspace = true
+
+[build-dependencies]
+build_3l14.workspace = true

@@ -1,37 +1,19 @@
-mod winres;
-mod crates_codegen;
-
 use std::{env, fs, io};
 use std::ffi::OsStr;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use build_3l14::ProjectDirs;
 
 fn main()
 {
     eprintln!(">>> Running build scripts <<<");
 
-    if env::var_os("CARGO_CFG_WINDOWS").is_some()
-    {
-        winres::generate_windows_resources();
-    }
-
-    let project_root: PathBuf = env::var("CARGO_MANIFEST_DIR").expect("! Failed to get project root").into();
-    let out_dir =
-    {
-        // construct with Env:CARGO_MANIFEST_DIR \target\ Env:PROFILE ?
-        let mut out_dir: PathBuf = env::var("OUT_DIR").expect("! Failed to get build target dir").into();
-        out_dir.push("../../.."); // gross
-        out_dir.canonicalize().expect("! Failed to canonicalize Env:OUT_DIR")
-    };
-    let generated_dir: PathBuf = out_dir.join("generated");
-    fs::create_dir_all(&generated_dir).expect("! Failed to create generated dir");
-
-    crates_codegen::crates_codegen(&generated_dir);
+    let ProjectDirs { root_dir, out_dir } = ProjectDirs::default();
 
     let mut assets_symlink_target = out_dir.clone();
     assets_symlink_target.push("assets");
     
-    let mut assets_symlink_src = project_root.clone();
+    let mut assets_symlink_src = root_dir.clone();
     assets_symlink_src.push("assets/build");
     match assets_symlink_src.canonicalize()
     {
