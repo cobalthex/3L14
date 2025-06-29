@@ -171,6 +171,7 @@ mod tests
     use approx::assert_relative_eq;
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic]
     fn not_normalized()
     {
@@ -179,6 +180,7 @@ mod tests
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic]
     fn zero()
     {

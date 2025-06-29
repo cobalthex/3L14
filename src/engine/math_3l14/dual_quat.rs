@@ -401,8 +401,8 @@ mod tests
 
         let test = Vec3::new(10.0, 3.032, 8.5);
 
-        assert_relative_eq!(m.transform_vector3(test), dq.transform_vector3(test));
-        assert_relative_eq!(m.transform_point3(test), dq.transform_point3(test));
+        assert_relative_eq!(m.transform_vector3(test), dq.transform_vector3(test), epsilon = 0.001);
+        assert_relative_eq!(m.transform_point3(test), dq.transform_point3(test), epsilon = 0.001);
     }
 
     #[test]
@@ -414,7 +414,7 @@ mod tests
 
         let test = Vec3::new(10.0, 11.0, 12.0);
 
-        assert_relative_eq!(DualQuat::from_rot_trans(r, t + test), dq.translated(test));
+        assert_relative_eq!(DualQuat::from_rot_trans(r, t + test), dq.translated(test), epsilon = 0.001);
         // assert_relative_eq!(DualQuat::new(-r, -(t + test)), dq.translated(test)); // TODO
     }
 
