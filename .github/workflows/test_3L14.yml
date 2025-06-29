@@ -32,7 +32,4 @@ jobs:
     - name: Build and test 3L14
       id: build_test_3l14
       run: |
-        cargo test --verbose --release --package assets_builder_3l14
-        cargo test --verbose --release --package asets_browser_3l14
-        cargo test --verbose --release --package tests_3l14
-        cargo test --verbose --release --package game_3l14
+        cargo test --verbose --release --all
