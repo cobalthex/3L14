@@ -31,6 +31,7 @@ containers_3l14 = { path = "./src/engine/containers_3l14" }
 debug_3l14 = { path = "./src/engine/debug_3l14" }
 graphics_3l14 = { path = "./src/engine/graphics_3l14" }
 input_3l14 = { path = "./src/engine/input_3l14" }
+latch_3l14 = { path = "./src/engine/latch_3l14" }
 math_3l14 = { path = "./src/engine/math_3l14" }
 nab_3l14 = { path = "./src/engine/nab_3l14" }
 world_3l14 = { path = "./src/engine/world_3l14" }

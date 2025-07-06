@@ -6,3 +6,6 @@ pub use bucket_vec::*;
 
 mod aabb_tree;
 pub use aabb_tree::*;
+
+mod node_index;
+pub use node_index::*;

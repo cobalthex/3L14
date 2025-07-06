@@ -126,16 +126,17 @@ impl<T> ShortTypeName for T
     }
 }
 
-pub struct NoOpDebug<T>(pub T);
-impl<T> Debug for NoOpDebug<T>
+
+pub struct NoOpFmtDebug<T>(pub T);
+impl<T> Debug for NoOpFmtDebug<T>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { f.write_str(T::short_type_name()) }
 }
-impl<T> AsRef<T> for NoOpDebug<T>
+impl<T> AsRef<T> for NoOpFmtDebug<T>
 {
     fn as_ref(&self) -> &T { &self.0 }
 }
-impl<T> AsMut<T> for NoOpDebug<T>
+impl<T> AsMut<T> for NoOpFmtDebug<T>
 {
     fn as_mut(&mut self) -> &mut T { &mut self.0 }
 }

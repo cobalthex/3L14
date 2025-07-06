@@ -1,30 +1,7 @@
 use math_3l14::AABB;
 use std::fmt::{Debug, Formatter, Write};
 use smallvec::{smallvec, SmallVec};
-
-// move to shared location?
-#[derive(Copy, Clone, PartialEq, Eq)]
-struct NodeIndex(pub usize);
-impl NodeIndex
-{
-    const NONE: usize = usize::MAX;
-
-    #[inline] #[must_use] pub const fn none() -> Self { Self(Self::NONE) }
-    #[inline] #[must_use] pub const fn some(n: usize) -> Self { Self(n) }
-
-    #[inline] #[must_use] pub const fn is_none(self) -> bool { self.0 == Self::NONE }
-    #[inline] #[must_use] pub const fn is_some(self) -> bool { self.0 != Self::NONE }
-
-    // TODO: make trait
-    #[inline] #[must_use]
-    pub fn hydrate<T>(self, tree: &AabbTree<T>) -> &Node { &tree.nodes[self.0] }
-    #[inline] #[must_use]
-    pub fn hydrate_mut<T>(self, tree: &mut AabbTree<T>) -> &mut Node { &mut tree.nodes[self.0] }
-}
-impl Default for NodeIndex
-{
-    fn default() -> Self { Self::none() }
-}
+use crate::NodeIndex;
 
 #[derive(Default)]
 struct Node
@@ -116,7 +93,7 @@ impl<T> AabbTree<T>
             self.root_index = new_parent_index;
         }
 
-        self.refit_parents(leaf_index.hydrate(self).parent_index);
+        self.refit_parents(self.nodes[leaf_index.0].parent_index);
     }
 
     fn refit_parents(&mut self, mut node_index: NodeIndex)
@@ -125,10 +102,10 @@ impl<T> AabbTree<T>
         while node_index.is_some()
         {
             // todo: awkward syntax w/ ref lifetimes
-            let node = node_index.hydrate(self);
-            let left_child_bounds = node.left_child_index.hydrate(&self).bounds;
-            let right_child_bounds = node.right_child_index.hydrate(&self).bounds;
-            let mut node_mut = node_index.hydrate_mut(self);
+            let node = &self.nodes[node_index.0];
+            let left_child_bounds = self.nodes[node.left_child_index.0].bounds;
+            let right_child_bounds = self.nodes[node.right_child_index.0].bounds;
+            let mut node_mut = &mut self.nodes[node_index.0];
             node_mut.bounds = left_child_bounds.unioned_with(right_child_bounds);
 
             // if should_rotate
@@ -155,9 +132,9 @@ impl<T> AabbTree<T>
             return true;
         }
 
-        let leaf = leaf_index.hydrate(self);
+        let leaf = &self.nodes[leaf_index.0];
         let parent_index = leaf.parent_index;
-        let parent = leaf.parent_index.hydrate(self);
+        let parent = &self.nodes[leaf.parent_index.0];
         let gparent_index = parent.parent_index;
         let sibling_index =
             if parent.left_child_index == leaf_index { parent.right_child_index }
@@ -166,7 +143,7 @@ impl<T> AabbTree<T>
         if gparent_index.is_some()
         {
             println!("removed {:?}", &parent.bounds);
-            let mut gparent = gparent_index.hydrate_mut(self);
+            let mut gparent = &mut self.nodes[gparent_index.0];
             // destroy parent and replace w/ leaf sibling
             if gparent.left_child_index == parent_index
             {
@@ -177,7 +154,7 @@ impl<T> AabbTree<T>
                 gparent.right_child_index = sibling_index;
             }
 
-            sibling_index.hydrate_mut(self).parent_index = gparent_index;
+            self.nodes[sibling_index.0].parent_index = gparent_index;
             self.free_node(parent_index);
 
             self.refit_parents(gparent_index);
@@ -185,7 +162,7 @@ impl<T> AabbTree<T>
         else
         {
             self.root_index = sibling_index;
-            sibling_index.hydrate_mut(self).parent_index = NodeIndex::none();
+            self.nodes[sibling_index.0].parent_index = NodeIndex::none();
             self.free_node(parent_index);
         }
 
@@ -253,7 +230,7 @@ impl<T> AabbTree<T>
 
         let incoming_area = incoming.surface_area();
 
-        let root = self.root_index.hydrate(self);
+        let root = &self.nodes[self.root_index.0];
         let mut curr_area = root.bounds.surface_area();
         let mut direct_cost = root.bounds.unioned_with(incoming).surface_area();
         let mut inherited_cost = 0.0;
@@ -262,7 +239,7 @@ impl<T> AabbTree<T>
         let mut best_cost = direct_cost;
 
         let mut curr_index = self.root_index;
-        let mut curr = curr_index.hydrate(self);
+        let mut curr = &self.nodes[curr_index.0];
         while curr.leaf_index.is_none()
         {
             let cost = direct_cost + inherited_cost;
@@ -274,7 +251,7 @@ impl<T> AabbTree<T>
 
             inherited_cost += direct_cost - curr_area;
 
-            let left = curr.left_child_index.hydrate(self);
+            let left = &self.nodes[curr.left_child_index.0];
             let mut left_lower_bound = f32::MAX;
             let mut left_area = 0.0;
             let left_direct_cost = left.bounds.unioned_with(incoming).surface_area();
@@ -294,7 +271,7 @@ impl<T> AabbTree<T>
             }
 
             // TODO: dedupe this
-            let right = curr.right_child_index.hydrate(self);
+            let right = &self.nodes[curr.right_child_index.0];
             let mut right_lower_bound = f32::MAX;
             let mut right_area = 0.0;
             let right_direct_cost = right.bounds.unioned_with(incoming).surface_area();
@@ -394,7 +371,7 @@ impl<T: Debug> Debug for AabbTree<T>
             {
                 f.write_str([" ┗━ ", "━━ "][i.min(1)])?;
             }
-            let hydrated = node.hydrate(self);
+            let hydrated = &self.nodes[node.0];
             f.write_fmt(format_args!("[{l_r}] {:?}", hydrated.bounds))?;
             if hydrated.leaf_index.is_some()
             {
@@ -446,15 +423,6 @@ mod tests
 {
     use super::*;
     use glam::Vec3;
-
-    #[test]
-    fn node_index()
-    {
-        assert!(NodeIndex::none().is_none());
-        assert!(NodeIndex::some(0).is_some());
-        assert!(NodeIndex::some(1).is_some());
-        assert!(NodeIndex::some((1 << 63) - 1).is_some());
-    }
 
     #[test]
     fn basic()

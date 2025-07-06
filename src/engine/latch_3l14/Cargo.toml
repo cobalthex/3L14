@@ -1,0 +1,16 @@
+[package]
+name = "latch_3l14"
+description = "Logic state machine"
+workspace = "../../.."
+edition.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+nab_3l14.workspace = true
+containers_3l14.workspace = true
+
+puffin.workspace = true
+smallvec.workspace = true
+log.workspace = true

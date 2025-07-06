@@ -5,6 +5,7 @@ use attribs::asset;
 mod derives;
 mod has_derive;
 mod attribs;
+mod case_conv;
 
 // FancyEnum adds .variant_ident() and for each #[enum_prop(k=v)] a method k() returning v
 #[proc_macro_derive(FancyEnum, attributes(enum_prop))]
@@ -26,3 +27,5 @@ pub fn type_layout_hash_derive(input: TokenStream) -> TokenStream { type_layout_
 #[proc_macro_attribute] // todo: better name?
 pub fn asset(attrib_input: TokenStream, input: TokenStream) -> TokenStream { asset::asset_attrib(attrib_input, input) }
 
+#[proc_macro]
+pub fn pascal_to_title(input: TokenStream) -> TokenStream { case_conv::pascal_to_title(input) }

@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter};
 use std::time::Instant;
 use glam::IVec2;
 use nab_3l14::ToggleState;
-use nab_3l14::utils::NoOpDebug;
+use nab_3l14::utils::NoOpFmtDebug;
 use super::{ButtonState, InputReader};
 
 pub type MouseButton = sdl2::mouse::MouseButton;
@@ -24,7 +24,7 @@ pub struct MouseState
     pub wheel: IVec2,
     pub wheel_delta: IVec2,
 
-    sdl_mouse: NoOpDebug<sdl2::mouse::MouseUtil>,
+    sdl_mouse: NoOpFmtDebug<sdl2::mouse::MouseUtil>,
     pub(super) buttons: [MouseButtonState; MAX_MOUSE_BUTTON_STATES], // L, M, R, X1, X2
 }
 impl MouseState
@@ -37,7 +37,7 @@ impl MouseState
             position_delta: IVec2::default(),
             wheel: IVec2::default(),
             wheel_delta: IVec2::default(),
-            sdl_mouse: NoOpDebug(sdl_mouse_util),
+            sdl_mouse: NoOpFmtDebug(sdl_mouse_util),
             buttons: [MouseButtonState::default(); MAX_MOUSE_BUTTON_STATES],
         }
     }

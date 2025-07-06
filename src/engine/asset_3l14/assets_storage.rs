@@ -336,6 +336,7 @@ impl Assets
 
         // TODO: pqueue
 
+        // TODO: flume is probably a better choice here
         let (lifecycle_send, lifecycle_recv) = unbounded::<AssetLifecycleRequest>();
         let storage = Arc::new(AssetsStorage
         {

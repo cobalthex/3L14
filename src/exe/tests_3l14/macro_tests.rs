@@ -1,5 +1,6 @@
-#[cfg(test)]
-#[cfg(target_os = "windows")] // TODO: This is broken in (linux) CI for some reason
+#![cfg(test)]
+#![cfg(target_os = "windows")] // TODO: This is broken in (linux) CI for some reason
+
 mod fancy_enum_tests
 {
     use proc_macros_3l14::FancyEnum;
@@ -50,9 +51,7 @@ mod fancy_enum_tests
     }
 }
 
-#[cfg(test)]
 #[allow(dead_code)]
-#[cfg(target_os = "windows")] // TODO: This is broken in (linux) CI for some reason
 mod flags_tests
 {
     use proc_macros_3l14::Flags;
@@ -117,7 +116,6 @@ mod flags_tests
     }
 }
 
-#[cfg(test)]
 #[allow(dead_code)]
 mod type_hash_tests
 {
@@ -142,5 +140,19 @@ mod type_hash_tests
         let _ = Single::TYPE_LAYOUT_HASH;
         let _ = Enum::TYPE_LAYOUT_HASH;
         let _ = Union::TYPE_LAYOUT_HASH;
+    }
+}
+
+mod sentence_case
+{
+    use proc_macros_3l14::pascal_to_title;
+
+    struct FooBarBazBonk;
+
+    #[test]
+    fn test()
+    {
+        assert_eq!(pascal_to_title!(FooBarBazQuux), "Foo Bar Baz Quux");
+        assert_eq!(pascal_to_title!("FooBarBazQuux"), "Foo Bar Baz Quux");
     }
 }

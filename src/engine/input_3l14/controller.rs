@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Formatter};
 use glam::Vec2;
-use nab_3l14::utils::NoOpDebug;
+use nab_3l14::utils::NoOpFmtDebug;
 use crate::{ButtonState, InputReader};
 
 #[derive(Debug, Default)]

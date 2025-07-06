@@ -5,6 +5,7 @@ use bitcode::{Decode, Encode};
 use glam::{Mat4, Quat, Vec3};
 use std::ops::{Add, Div, Mul, Neg};
 
+#[repr(C, align(16))]
 #[derive(Debug, Default, PartialEq, Clone, Copy, Encode, Decode)]
 pub struct DualQuat
 {
