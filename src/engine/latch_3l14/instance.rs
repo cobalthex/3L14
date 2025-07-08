@@ -3,6 +3,26 @@ use std::fmt::Debug;
 use smallvec::SmallVec;
 use super::*;
 
+/* TODO: at build time:
+- eliminate entries that point nowhere
+- graphs that have no entrypoint
+- states with only power-off inlets
+- guarantee block index order? (lower numbers guaranteed to be closer to root?)
+- (currently) disable multiple links to a single inlet
+    - possible design alt for 'all': blocks keep a count of number of links per inlet, runtime info tracks powered links
+ */
+
+#[derive(Debug)]
+enum Action
+{
+    Entry(EntryPoint, u32),
+    // Exit
+    Terminate,
+    Pulse(OutletLink),
+    PowerOn(BlockId),
+    Poweroff(BlockId),
+}
+
 #[derive(Debug)]
 struct HydratedState
 {
@@ -16,7 +36,8 @@ pub struct Instance
 
     hydrated_states: HashMap<u32, HydratedState>,
 
-    // TODO: action history
+    #[cfg(feature = "action_history")]
+    action_history: Vec<Action>, // ring buffer?
 }
 impl Instance
 {
@@ -30,187 +51,242 @@ impl Instance
             graph,
             scope: Scope::default(),
             hydrated_states: HashMap::default(),
+            #[cfg(feature = "action_history")]
+            action_history: Vec::new(),
         };
 
-        let mut auto_blocks: SmallVec<[BlockId; 8]> = SmallVec::new();
-        for entry in &new_inst.graph.entries
+        let mut auto_blocks: SmallVec<[(BlockId, u32); 8]> = SmallVec::new();
+        for (i, entry) in new_inst.graph.entries.iter().enumerate()
         {
             let EntryPoint::Automatic = entry.kind else { continue; };
-            auto_blocks.extend_from_slice(&entry.outlet);
+            for outlet in &entry.outlet
+            {
+                auto_blocks.push((*outlet, i as u32));
+            }
         }
-        for link in auto_blocks
+        for (block, i) in auto_blocks
         {
-            new_inst.pulse(link);
+            new_inst.push_action(Action::Entry(EntryPoint::Automatic, i));
+            new_inst.pulse(OutletLink { block, inlet: Inlet::Pulse });
         }
 
         new_inst
     }
 
+    #[inline]
+    fn push_action(&mut self, action: Action)
+    {
+        #[cfg(feature = "action_history")]
+        self.action_history.push(action);
+    }
+    #[inline]
+    fn clear_action_history(&mut self)
+    {
+        #[cfg(feature = "action_history")]
+        self.action_history.clear();
+    }
+
     const MAX_PULSE_DEPTH: u32 = 100; // smaller number?
 
-    // TODO: make not pub(crate)
-    fn pulse(&mut self, block: BlockId)
+    fn pulse(&mut self, block: OutletLink)
     {
         puffin::profile_function!();
 
         // TODO: track cache misses on small vec
 
-        let mut stack: SmallVec<[(OutletLink, u32); 8]> = smallvec![(OutletLink { block, inlet: Inlet::Pulse }, 0)];
+        let mut stack: SmallVec<[(OutletLink, u32); 8]> = smallvec![(block, 0)];
 
         let mut pulsed_links = OutletLinkList::default();
         let mut latching_links = OutletLinkList::default();
 
+        let mut powering_off_states: SmallVec<[u32; 16]> = SmallVec::new();
+
         while let Some((link, depth)) = stack.pop()
         {
             debug_assert!(depth < Self::MAX_PULSE_DEPTH, "Maximum pulse depth exceeded");
-            match link.block
+
+            self.push_action(Action::Pulse(link));
+
+            if link.block.is_impulse()
             {
-                BlockId::Impulse(id) =>
+                let impulse = self.graph.impulses[link.block.value() as usize].as_ref();
+                if let Inlet::Pulse = link.inlet
                 {
-                    let impulse = self.graph.impulses[id as usize].as_ref();
-                    // if let Inlet::Pulse = link.inlet (only necessary if merging pulse() and power_off()
-                    {
-                        impulse.pulse(&mut self.scope);
-                    }
-                    impulse.visit_outlets(ImpulseOutletVisitor { pulses: &mut pulsed_links });
+                    impulse.pulse(&mut self.scope);
                 }
-                BlockId::State(id) =>
+                impulse.visit_outlets(ImpulseOutletVisitor { pulses: &mut pulsed_links });
+            }
+            else
+            {
+                let hydrated = self.hydrated_states.entry(link.block.value())
+                    .or_insert_with(|| HydratedState { is_powered: false });
+                match link.inlet
                 {
-                    let mut hydrated = self.hydrated_states.entry(id)
-                        .or_insert_with(|| HydratedState { is_powered: false });
-                    match link.inlet
+                    Inlet::Pulse =>
                     {
-                        Inlet::Pulse =>
-                        {
-                            if hydrated.is_powered { continue; }
+                        if hydrated.is_powered { continue; }
 
-                            hydrated.is_powered = true;
-                            let state = self.graph.states[id as usize].as_ref();
-                            state.power_on(&mut self.scope);
-                            state.visit_powered_outlets(StateOutletVisitor { pulses: &mut pulsed_links, latching: &mut latching_links });
-                        }
-                        Inlet::PowerOff =>
-                        {
-                            if !hydrated.is_powered { continue; }
+                        hydrated.is_powered = true;
+                        self.push_action(Action::PowerOn(link.block));
 
-                            // TODO: should this go in reverse order?
-                            hydrated.is_powered = false;
-                            let state = self.graph.states[id as usize].as_ref();
-                            state.power_off(&mut self.scope);
-                            state.visit_powered_outlets(StateOutletVisitor { pulses: &mut pulsed_links, latching: &mut latching_links });
-                        }
+                        let state = self.graph.states[link.block.value() as usize].as_ref();
+                        state.power_on(&mut self.scope);
+                        state.visit_powered_outlets(StateOutletVisitor { pulses: &mut pulsed_links, latching: &mut latching_links });
+                    }
+                    Inlet::PowerOff =>
+                    {
+                        if !hydrated.is_powered { continue; }
+
+                        hydrated.is_powered = false;
+                        powering_off_states.push(link.block.value());
+
+                        let state = self.graph.states[link.block.value() as usize].as_ref();
+                        state.visit_powered_outlets(StateOutletVisitor { pulses: &mut pulsed_links, latching: &mut latching_links });
+                        pulsed_links.clear(); // only latching links respect power-offs
                     }
                 }
             };
 
             for pulse in &pulsed_links
             {
-                stack.push((*pulse, depth + 1));
+                stack.push((pulse.poison(link.inlet), depth + 1));
             }
             for latch in &latching_links
             {
-                stack.push((*latch, depth + 1));
+                stack.push((latch.poison(link.inlet), depth + 1));
+            }
+
+            pulsed_links.clear();
+            latching_links.clear();
+
+            // post-order traversal to shut-off
+            for powered in powering_off_states.iter().rev()
+            {
+                let state = self.graph.states[*powered as usize].as_ref();
+                state.power_off(&mut self.scope);
+            }
+        }
+    }
+
+    #[inline] #[must_use]
+    pub fn state_has_power(&self, state: u32) -> bool
+    {
+        debug_assert!((state as usize) < self.graph.states.len());
+        self.hydrated_states.get(&state).map_or(false, |state| state.is_powered)
+    }
+
+    #[inline] #[must_use]
+    pub fn any_states_powered(&self) -> bool
+    {
+        self.hydrated_states.iter().any(|(_, state)| state.is_powered)
+    }
+
+    pub fn as_graphviz(&self, mut writer: impl std::io::Write) -> std::io::Result<()>
+    {
+        writer.write_fmt(format_args!("digraph {{\n  rankdir=LR\n  splines=ortho\n"))?; // name?
+
+        let mut stack: SmallVec<[BlockId; 16]> = SmallVec::new();
+        for entry in &self.graph.entries
+        {
+            stack.extend_from_slice(&entry.outlet);
+        }
+
+        let mut pulsed_links = OutletLinkList::default();
+        let mut latching_links = OutletLinkList::default();
+
+        while let Some(block) = stack.pop()
+        {
+            if block.is_impulse()
+            {
+                let impulse = self.graph.impulses[block.value() as usize].as_ref();
+                writer.write_fmt(format_args!("  \"{:?}\" [label=\"{}\\n\\N\" shape=\"box\"]\n",
+                    block,
+                    "impulse"))?; // TODO: type name
+
+                impulse.visit_outlets(ImpulseOutletVisitor { pulses: &mut pulsed_links });
+            }
+            else
+            {
+                let hydrated = self.hydrated_states.get(&block.value());
+                let state = self.graph.states[block.value() as usize].as_ref();
+
+                let is_powered = hydrated.map(|h| h.is_powered).unwrap_or(false);
+                writer.write_fmt(format_args!("  \"{:?}\" [label=\"{}\\n\\N\" shape=\"{}\"]\n",
+                    block,
+                    "state", // TODO: type name
+                    if is_powered { "doubleoctagon" } else { "octagon" }))?;
+
+                state.visit_powered_outlets(StateOutletVisitor { pulses: &mut pulsed_links, latching: &mut latching_links });
+            }
+
+            for pulse in &pulsed_links
+            {
+                stack.push(pulse.block);
+                writer.write_fmt(format_args!("  \"{:?}\" -> \"{:?}\" [minlen=3 taillabel=\"{}\" headlabel=\"{:?}\"]\n",
+                    block,
+                    pulse.block,
+                    "Pulsed (TODO NAME)",
+                    pulse.inlet))?;
+            }
+            for latch in &latching_links
+            {
+                stack.push(latch.block);
+                writer.write_fmt(format_args!("  \"{:?}\" -> \"{:?}\" [color=\"black:invis:black\" minlen=3 taillabel=\"{}\" headlabel=\"{:?}\"]\n",
+                    block,
+                    latch.block,
+                    "Latching (TODO NAME)",
+                    latch.inlet))?;
             }
 
             pulsed_links.clear();
             latching_links.clear();
         }
-    }
 
-    fn power_off(&mut self, block: BlockId)
-    {
-        puffin::profile_function!();
-
-        // TODO: track cache misses on small vec
-
-        let mut stack: SmallVec<[(BlockId, u32); 8]> = smallvec![(block, 0)];
-        let mut powered_states: SmallVec<[u32; 16]> = SmallVec::new();
-
-        let mut pulsed_links = OutletLinkList::default();
-        let mut latching_links = OutletLinkList::default();
-
-        while let Some((top_block, depth)) = stack.pop()
-        {
-            debug_assert!(depth < Self::MAX_PULSE_DEPTH, "Maximum pulse depth exceeded");
-            match top_block
-            {
-                BlockId::Impulse(id) =>
-                {
-                    let impulse = self.graph.impulses[id as usize].as_ref();
-                    impulse.visit_outlets(ImpulseOutletVisitor { pulses: &mut pulsed_links });
-
-                    // impulses themselves can't latch but can be in a chain between states
-                    for pulse in &pulsed_links
-                    {
-                        stack.push((pulse.block, depth + 1));
-                    }
-                    pulsed_links.clear();
-                }
-                BlockId::State(id) =>
-                {
-                    let Some(mut hydrated) = self.hydrated_states.get_mut(&id) else { continue; };
-                    if !hydrated.is_powered { continue; }
-
-                    hydrated.is_powered = false;
-                    let state = self.graph.states[id as usize].as_ref();
-                    state.visit_powered_outlets(StateOutletVisitor { pulses: &mut pulsed_links, latching: &mut latching_links });
-                    powered_states.push(id);
-
-                    // only latched outputs carry power-off
-                    for latch in &latching_links
-                    {
-                        stack.push((latch.block, depth + 1));
-                    }
-                    pulsed_links.clear();
-                    latching_links.clear();
-                }
-            };
-        }
-
-        // post-order traversal to shut-off
-        for powered in powered_states.iter().rev()
-        {
-            let state = self.graph.states[*powered as usize].as_ref();
-            state.power_off(&mut self.scope);
-        }
-    }
-
-    #[must_use]
-    pub fn state_has_power(&self, state: u32) -> bool
-    {
-        // assert if not state?
-        debug_assert!((state as usize) < self.graph.states.len());
-        self.hydrated_states.get(&state).map_or(false, |state| state.is_powered)
+        writer.write_fmt(format_args!("}}"))
     }
 }
 impl Debug for Instance
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
     {
-        f.debug_struct("Instance")
-            .field("hydrated states", &self.hydrated_states)
-            // TODO
-            .finish()
+        let mut s = f.debug_struct("Instance");
+        s.field("hydrated states", &self.hydrated_states);
+
+        #[cfg(feature = "action_history")]
+        {
+            s.field("action history", &self.action_history);
+        }
+
+        s.finish()
     }
 }
 impl Drop for Instance
 {
     fn drop(&mut self)
     {
-        let mut links: SmallVec<[BlockId; 8]> = SmallVec::new();
-        for entry in &self.graph.entries
+        self.push_action(Action::Terminate);
+
+        // iter all powered states and power-off
+        let mut powered_states = Vec::new();
+        for (id, state) in &self.hydrated_states
         {
-            links.extend_from_slice(&entry.outlet);
+            if state.is_powered
+            {
+                powered_states.push(*id);
+            }
         }
-        for link in links
+        powered_states.sort_unstable(); // TODO: guarantee state ordering?
+
+        // states that are already powered-off should no-op
+        for ps in powered_states
         {
-            self.power_off(link);
+            self.pulse(OutletLink { block: BlockId::state(ps), inlet: Inlet::PowerOff });
         }
 
-        // TODO: non-latching links will be missed here
-        // they will need to be manually located
+        println!("!!! {self:#?}");
 
-        debug_assert!(self.hydrated_states.iter().all(|(_, state)| !state.is_powered));
+        // TODO: remove once more sure of design
+        debug_assert!(!self.any_states_powered(), "Instance still has powered states after termination");
     }
 }
 
@@ -229,7 +305,7 @@ mod tests
     /* TODO tests:
     - recursive power-ons
     - recursive power-offs
-    - power-off inlets
+    - power-off (and pulse) inlets
     - power-on and power-off carry through inter-chained impulses
     - power-off does not carry through non latching state output
     - all states are powered off upon shutdown
@@ -313,7 +389,7 @@ mod tests
                 EntryBlock
                 {
                     kind: EntryPoint::Automatic,
-                    outlet: Box::new([BlockId::State(0)]),
+                    outlet: Box::new([BlockId::state(0)]),
                 },
             ]),
 
@@ -324,7 +400,7 @@ mod tests
                     name: "Impulse 0",
                     outlet: PulsedOutlet
                     {
-                        links: Box::new([OutletLink { block: BlockId::State(1), inlet: Inlet::Pulse }]),
+                        links: Box::new([OutletLink { block: BlockId::state(1), inlet: Inlet::Pulse }]),
                     },
                 }),
                 Box::new(TestImpulse
@@ -352,15 +428,15 @@ mod tests
                     value: false,
                     on_false_outlet: PulsedOutlet
                     {
-                        links: Box::new([OutletLink { block: BlockId::State(0), inlet: Inlet::Pulse }]),
+                        links: Box::new([OutletLink { block: BlockId::impulse(1), inlet: Inlet::Pulse }]),
                     },
                     false_outlet: LatchingOutlet
                     {
-                        links: Box::new([OutletLink { block: BlockId::State(1), inlet: Inlet::Pulse }]),
+                        links: Box::new([OutletLink { block: BlockId::impulse(0), inlet: Inlet::Pulse }]),
                     },
                     true_outlet: LatchingOutlet
                     {
-                        links: Box::new([OutletLink { block: BlockId::Impulse(3), inlet: Inlet::Pulse }]),
+                        links: Box::new([OutletLink { block: BlockId::impulse(3), inlet: Inlet::Pulse }]),
                     },
                     .. Default::default()
                 }),
@@ -371,7 +447,7 @@ mod tests
                     value: true,
                     true_outlet: LatchingOutlet
                     {
-                        links: Box::new([OutletLink { block: BlockId::Impulse(2), inlet: Inlet::Pulse }]),
+                        links: Box::new([OutletLink { block: BlockId::impulse(2), inlet: Inlet::Pulse }]),
                     },
                     .. Default::default()
                 }),
@@ -385,5 +461,13 @@ mod tests
         assert_eq!(instance.state_has_power(0), true);
 
         // TODO: create and verify ordering in action log
+
+        let mut s = Vec::new();
+        let _ = instance.as_graphviz(&mut s);
+        println!("{}\n ", String::from_utf8(s).unwrap());
+
+        instance.clear_action_history();
+        instance.pulse(OutletLink { block: BlockId::state(0), inlet: Inlet::PowerOff });
+        println!("\n{:#?}\n", instance);
     }
 }

@@ -126,7 +126,6 @@ impl<T> ShortTypeName for T
     }
 }
 
-
 pub struct NoOpFmtDebug<T>(pub T);
 impl<T> Debug for NoOpFmtDebug<T>
 {

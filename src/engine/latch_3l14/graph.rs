@@ -1,17 +1,58 @@
-use std::marker::PhantomData;
+use nab_3l14::utils::ShortTypeName;
+use std::fmt::{Debug, Formatter};
 use smallvec::SmallVec;
 use super::Scope;
 
-// This can probably go into reflection info
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
-pub enum BlockId
+#[derive(Hash, PartialEq, Eq, Clone, Copy)]
+pub struct BlockId(u32);
+impl BlockId
 {
-    Impulse(u32),
-    State(u32),
-}
-// ensure size of BlockId?
+    #[inline] #[must_use]
+    pub const fn impulse(id: u32) -> Self
+    {
+        debug_assert!(id < (1 << 31));
+        Self(id)
+    }
+    #[inline] #[must_use]
+    pub const fn state(id: u32) -> Self
+    {
+        debug_assert!(id < (1 << 31));
+        Self(id | (1 << 31))
+    }
 
-#[derive(Clone, Copy, Default)]
+    #[inline] #[must_use]
+    pub const fn is_impulse(self) -> bool
+    {
+        self.0 < (1 << 31)
+    }
+    #[inline] #[must_use]
+    pub const fn is_state(self) -> bool
+    {
+        self.0 >= (1 << 31)
+    }
+
+    #[inline] #[must_use]
+    pub(super) const fn value(self) -> u32
+    {
+        self.0 & ((1 << 31) - 1)
+    }
+}
+impl Debug for BlockId
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    {
+        if self.is_state()
+        {
+            f.write_fmt(format_args!("[State|{}]", self.value()))
+        }
+        else
+        {
+            f.write_fmt(format_args!("[Impulse|{}]", self.value()))
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default, Debug)]
 pub enum Inlet
 {
     #[default]
@@ -19,11 +60,26 @@ pub enum Inlet
     PowerOff, // ignored by non-stateful blocks
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct OutletLink
 {
     pub block: BlockId,
     pub inlet: Inlet,
+}
+impl OutletLink
+{
+    // TODO: better design
+    pub(crate) fn poison(self, poison: Inlet) -> Self
+    {
+        if let Inlet::PowerOff = poison
+        {
+            Self { block: self.block, inlet: poison }
+        }
+        else
+        {
+            self
+        }
+    }
 }
 
 #[derive(Default)]
@@ -37,7 +93,7 @@ pub struct LatchingOutlet
     pub links: Box<[OutletLink]>,
 }
 
-pub trait Block { }
+pub trait Block  { }
 
 pub(super) type OutletLinkList = SmallVec<[OutletLink; 2]>;
 
@@ -90,6 +146,7 @@ pub trait StateBlock
 }
 impl Block for dyn StateBlock { }
 
+#[derive(Debug)]
 pub enum EntryPoint
 {
     Automatic,
@@ -112,4 +169,24 @@ pub struct Graph
     pub(super) entries: Box<[EntryBlock]>,
     pub(super) impulses: Box<[Box<dyn ImpulseBlock>]>,
     pub(super) states: Box<[Box<dyn StateBlock>]>,
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    #[test]
+    fn block_id()
+    {
+        let block = BlockId::impulse(0);
+        println!("{:?}", block);
+        assert!(block.is_impulse());
+        assert!(!block.is_state());
+
+        let block = BlockId::state(0);
+        println!("{:?}", block);
+        assert!(block.is_state());
+        assert!(!block.is_impulse());
+    }
 }

@@ -60,13 +60,14 @@ impl StateBlock for BoolSwitch
     }
 }
 
+// stack var
+// pulser
+// wait
+// timeout
+
 #[cfg(test)]
 mod tests
 {
     use super::*;
 
-    pub fn test_latch()
-    {
-
-    }
 }

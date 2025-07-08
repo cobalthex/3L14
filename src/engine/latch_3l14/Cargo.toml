@@ -7,6 +7,9 @@ edition.workspace = true
 [lib]
 path = "lib.rs"
 
+[features]
+action_history = []
+
 [dependencies]
 nab_3l14.workspace = true
 containers_3l14.workspace = true
