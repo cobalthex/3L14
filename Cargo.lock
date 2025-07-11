@@ -1452,6 +1452,7 @@ name = "latch_3l14"
 version = "0.0.0"
 dependencies = [
  "containers_3l14",
+ "crossbeam",
  "log",
  "nab_3l14",
  "puffin 0.19.1 (git+https://github.com/tedsteen/puffin?branch=upgrade-egui)",

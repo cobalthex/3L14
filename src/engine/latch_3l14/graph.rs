@@ -1,4 +1,3 @@
-use nab_3l14::utils::ShortTypeName;
 use std::fmt::{Debug, Formatter};
 use smallvec::SmallVec;
 use super::Scope;
@@ -52,7 +51,7 @@ impl Debug for BlockId
     }
 }
 
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum Inlet
 {
     #[default]
@@ -60,7 +59,7 @@ pub enum Inlet
     PowerOff, // ignored by non-stateful blocks
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OutletLink
 {
     pub block: BlockId,
@@ -68,7 +67,14 @@ pub struct OutletLink
 }
 impl OutletLink
 {
+    #[inline] #[must_use]
+    pub fn new(block: BlockId, inlet: Inlet) -> Self
+    {
+        Self { block, inlet }
+    }
+
     // TODO: better design
+    #[inline] #[must_use]
     pub(crate) fn poison(self, poison: Inlet) -> Self
     {
         if let Inlet::PowerOff = poison
@@ -146,27 +152,15 @@ pub trait StateBlock
 }
 impl Block for dyn StateBlock { }
 
-#[derive(Debug)]
-pub enum EntryPoint
-{
-    Automatic,
-    // event/message, parametric
-}
-
-pub struct EntryBlock
-{
-    pub kind: EntryPoint,
-    // entry blocks are not 'stateful' and only 'pulse' blocks
-    pub outlet: Box<[BlockId]>,
-}
-
 // [standardized] template blocks?
-// in->out actions
-// in->powered
+//      in->out actions
+//      in->powered
+
+pub type EntryPoints = Box<[BlockId]>;
 
 pub struct Graph
 {
-    pub(super) entries: Box<[EntryBlock]>,
+    pub(super) auto_entries: EntryPoints,
     pub(super) impulses: Box<[Box<dyn ImpulseBlock>]>,
     pub(super) states: Box<[Box<dyn StateBlock>]>,
 }
@@ -180,12 +174,10 @@ mod tests
     fn block_id()
     {
         let block = BlockId::impulse(0);
-        println!("{:?}", block);
         assert!(block.is_impulse());
         assert!(!block.is_state());
 
         let block = BlockId::state(0);
-        println!("{:?}", block);
         assert!(block.is_state());
         assert!(!block.is_impulse());
     }

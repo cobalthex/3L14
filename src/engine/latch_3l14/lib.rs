@@ -9,6 +9,9 @@ pub use graph::*;
 mod instance;
 pub use instance::*;
 
+mod runtime;
+pub use runtime::*;
+
 mod vars;
 pub use vars::*;
 

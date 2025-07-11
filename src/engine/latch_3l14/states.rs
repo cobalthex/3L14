@@ -8,10 +8,8 @@ pub struct Latch
 }
 impl StateBlock for Latch
 {
-    fn power_on(&self, scope: &mut Scope) { }
-
-    fn power_off(&self, scope: &mut Scope) { }
-
+    fn power_on(&self, _scope: &mut Scope) { }
+    fn power_off(&self, _scope: &mut Scope) { }
     fn visit_powered_outlets(&self, mut visitor: StateOutletVisitor)
     {
         visitor.visit_latching(&self.powered_outlet);
@@ -32,14 +30,15 @@ pub struct BoolSwitch
 }
 impl StateBlock for BoolSwitch
 {
-    fn power_on(&self, scope: &mut Scope)
+    fn power_on(&self, _scope: &mut Scope)
     {
         /* TODO:
             dependency change enqueues power-off then power-on (if bool flipped)
          */
+
     }
 
-    fn power_off(&self, scope: &mut Scope)
+    fn power_off(&self, _scope: &mut Scope)
     {
     }
 

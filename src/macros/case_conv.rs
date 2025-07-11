@@ -1,6 +1,5 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, LitStr};
 
 pub fn pascal_to_title(input: TokenStream) -> TokenStream
 {

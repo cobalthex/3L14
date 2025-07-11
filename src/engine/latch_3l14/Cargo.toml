@@ -17,3 +17,4 @@ containers_3l14.workspace = true
 puffin.workspace = true
 smallvec.workspace = true
 log.workspace = true
+crossbeam.workspace = true

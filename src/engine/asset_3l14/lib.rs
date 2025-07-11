@@ -18,3 +18,6 @@ pub use asset_types::*;
 
 mod asset_meta;
 pub use asset_meta::*;
+
+mod symbol;
+pub use symbol::*;

@@ -7,7 +7,7 @@ struct NoOp
 }
 impl ImpulseBlock for NoOp
 {
-    fn pulse(&self, scope: &mut Scope) { }
+    fn pulse(&self, _scope: &mut Scope) { }
 
     fn visit_outlets(&self, mut visitor: ImpulseOutletVisitor)
     {
@@ -24,7 +24,7 @@ struct DebugPrint
 }
 impl ImpulseBlock for DebugPrint
 {
-    fn pulse(&self, scope: &mut Scope)
+    fn pulse(&self, _scope: &mut Scope)
     {
         log::debug!("{}", self.message);
     }
@@ -45,7 +45,7 @@ pub struct SetVars
 }
 impl ImpulseBlock for SetVars
 {
-    fn pulse(&self, scope: &mut Scope)
+    fn pulse(&self, _scope: &mut Scope)
     {
         // TODO
     }
