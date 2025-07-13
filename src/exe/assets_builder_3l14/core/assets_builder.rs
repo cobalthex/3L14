@@ -4,7 +4,7 @@ use bitcode::Encode;
 use clap::ValueEnum;
 use metrohash::MetroHash64;
 use nab_3l14::utils::inline_hash::InlineWriteHash;
-use nab_3l14::utils::{varint, ShortTypeName};
+use nab_3l14::utils::{hash_bstrings, varint, ShortTypeName};
 use std::cell::{LazyCell, UnsafeCell};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -56,7 +56,7 @@ impl AssetsBuilderConfig
         {
             sources_root: sources_root.into(),
             assets_root: assets_root.into(),
-            builders_version_hash: Self::hash_bstrings(0, &[
+            builders_version_hash: hash_bstrings(0, &[
                 b"Initial"
             ]),
             asset_builders: Vec::new(),
@@ -66,13 +66,6 @@ impl AssetsBuilderConfig
 
     pub fn builders_version_hash(&self) -> u64 { self.builders_version_hash }
 
-    fn hash_bstrings(seed: u64, bstrings: &[&[u8]]) -> u64
-    {
-        let mut hasher = MetroHash64::with_seed(seed);
-        bstrings.iter().for_each(|s| { hasher.write(s); });
-        hasher.finish()
-    }
-
     // Register a builder for it's registered extensions. Will panic if a particular extension was already registered
     pub fn add_builder<B: AssetBuilder<BuildConfig=impl AssetBuildConfig> + AssetBuilderMeta + 'static>(&mut self, builder: B)
     {
@@ -80,8 +73,8 @@ impl AssetsBuilderConfig
         self.asset_builders.push(AssetBuilderEntry
         {
             name: B::short_type_name(),
-            builder_hash: BuilderHash(Self::hash_bstrings(self.builders_version_hash, B::builder_version())),
-            format_hash: BuilderHash(Self::hash_bstrings(0, B::format_version())),
+            builder_hash: BuilderHash(hash_bstrings(self.builders_version_hash, B::builder_version())),
+            format_hash: BuilderHash(hash_bstrings(0, B::format_version())),
             builder: Box::new(builder),
         });
 

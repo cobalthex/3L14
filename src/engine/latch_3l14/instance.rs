@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use smallvec::SmallVec;
+use asset_3l14::Signal;
 use super::*;
 
 /* TODO: at build time:
@@ -18,9 +19,10 @@ use super::*;
 pub(crate) enum Action
 {
     AutoEntry,
+    SignaledEntry(Signal),
     // Exit
-    Terminate,
-    Visit(OutletLink),
+    Stop,
+    Visit(Plug),
     Pulse(BlockId),
     PowerOn(BlockId),
     PowerOff(BlockId),
@@ -44,12 +46,10 @@ pub struct Instance
 }
 impl Instance
 {
-    #[must_use]
+    #[inline] #[must_use]
     pub fn new(graph: Graph) -> Self
     {
-        puffin::profile_function!();
-        
-        let mut new_inst = Self
+        Self
         {
             graph,
             scope: Scope::default(),
@@ -57,16 +57,33 @@ impl Instance
 
             #[cfg(any(test, feature = "action_history"))]
             action_history: Vec::new(),
-        };
+        }
+    }
 
-        let mut auto_blocks: SmallVec<[BlockId; 8]> = SmallVec::from_slice(&new_inst.graph.auto_entries);
-        new_inst.push_action(Action::AutoEntry);
+    #[inline] #[must_use]
+    pub fn graph(&self) -> &Graph { &self.graph }
+
+    pub(crate) fn start(&mut self)
+    {
+        puffin::profile_function!();
+
+        self.push_action(Action::AutoEntry);
+        let auto_blocks: SmallVec<[BlockId; 8]> = SmallVec::from_slice(&self.graph.auto_entries);
         for block in auto_blocks
         {
-            new_inst.pulse(OutletLink { block, inlet: Inlet::Pulse });
+            self.pulse(Plug { target: block, inlet: Inlet::Pulse });
         }
+    }
 
-        new_inst
+    pub(crate) fn signal(&mut self, signal_slot: usize)
+    {
+        let mut outlets = SmallVec::<[_; 2]>::new();
+        self.push_action(Action::SignaledEntry(self.graph.signaled_entries[signal_slot].0));
+        outlets.extend_from_slice(&self.graph.signaled_entries[signal_slot].1);
+        for block in outlets
+        {
+            self.pulse(Plug { target: block, inlet: Inlet::Pulse });
+        }
     }
 
     #[inline] #[allow(unused_variables)]
@@ -92,44 +109,44 @@ impl Instance
 
     const MAX_PULSE_DEPTH: u32 = 100; // smaller number?
 
-    fn pulse(&mut self, block: OutletLink)
+    fn pulse(&mut self, plug: Plug)
     {
         puffin::profile_function!();
 
         // TODO: track cache misses on small vec
 
-        let mut stack: SmallVec<[(OutletLink, u32); 8]> = smallvec![(block, 0)];
+        let mut stack: SmallVec<[(Plug, u32); 8]> = smallvec![(plug, 0)];
 
         let mut pulsed_links = OutletLinkList::default();
         let mut latching_links = OutletLinkList::default();
 
         let mut powering_off_states: SmallVec<[u32; 16]> = SmallVec::new();
 
-        while let Some((link, depth)) = stack.pop()
+        while let Some((tp, depth)) = stack.pop()
         {
             debug_assert!(depth < Self::MAX_PULSE_DEPTH, "Maximum pulse depth exceeded");
 
-            self.push_action(Action::Visit(link));
+            self.push_action(Action::Visit(tp));
 
-            if link.block.is_impulse()
+            if tp.target.is_impulse()
             {
-                let impulse = self.graph.impulses[link.block.value() as usize].as_ref();
-                if let Inlet::Pulse = link.inlet
+                let impulse = self.graph.impulses[tp.target.value() as usize].as_ref();
+                if let Inlet::Pulse = tp.inlet
                 {
                     impulse.pulse(&mut self.scope);
 
                     // stupid rust mutability rules
                     // ordering here to match state ordering
                     #[cfg(any(test, feature = "action_history"))]
-                    self.action_history.push(Action::Pulse(link.block));
+                    self.action_history.push(Action::Pulse(tp.target));
                 }
                 impulse.visit_outlets(ImpulseOutletVisitor { pulses: &mut pulsed_links });
             }
             else
             {
-                let hydrated = self.hydrated_states.entry(link.block.value())
+                let hydrated = self.hydrated_states.entry(tp.target.value())
                     .or_insert_with(|| HydratedState { is_powered: false });
-                match link.inlet
+                match tp.inlet
                 {
                     Inlet::Pulse =>
                     {
@@ -137,11 +154,11 @@ impl Instance
 
                         hydrated.is_powered = true;
 
-                        let state = self.graph.states[link.block.value() as usize].as_ref();
+                        let state = self.graph.states[tp.target.value() as usize].as_ref();
                         state.power_on(&mut self.scope);
                         state.visit_powered_outlets(StateOutletVisitor { pulses: &mut pulsed_links, latching: &mut latching_links });
 
-                        self.push_action(Action::PowerOn(link.block));
+                        self.push_action(Action::PowerOn(tp.target));
                     }
                     Inlet::PowerOff =>
                     {
@@ -151,9 +168,9 @@ impl Instance
                         // don't traverse if no states
 
                         hydrated.is_powered = false;
-                        powering_off_states.push(link.block.value());
+                        powering_off_states.push(tp.target.value());
 
-                        let state = self.graph.states[link.block.value() as usize].as_ref();
+                        let state = self.graph.states[tp.target.value() as usize].as_ref();
                         state.visit_powered_outlets(StateOutletVisitor { pulses: &mut pulsed_links, latching: &mut latching_links });
                         pulsed_links.clear(); // only latching links respect power-offs
                     }
@@ -162,11 +179,11 @@ impl Instance
 
             for pulse in &pulsed_links
             {
-                stack.push((pulse.poison(link.inlet), depth + 1));
+                stack.push((pulse.poison(tp.inlet), depth + 1));
             }
             for latch in &latching_links
             {
-                stack.push((latch.poison(link.inlet), depth + 1));
+                stack.push((latch.poison(tp.inlet), depth + 1));
             }
 
             pulsed_links.clear();
@@ -238,21 +255,21 @@ impl Instance
 
             for pulse in &pulsed_links
             {
-                stack.push(pulse.block);
+                stack.push(pulse.target);
                 writer.write_fmt(format_args!("  \"{:?}\" -> \"{:?}\" [minlen=3 taillabel=\"{}\" headlabel=\"{:?}\"]\n",
-                    block,
-                    pulse.block,
-                    "Pulsed (TODO NAME)",
-                    pulse.inlet))?;
+                                              block,
+                                              pulse.target,
+                                              "Pulsed (TODO NAME)",
+                                              pulse.inlet))?;
             }
             for latch in &latching_links
             {
-                stack.push(latch.block);
+                stack.push(latch.target);
                 writer.write_fmt(format_args!("  \"{:?}\" -> \"{:?}\" [color=\"black:invis:black\" minlen=3 taillabel=\"{}\" headlabel=\"{:?}\"]\n",
-                    block,
-                    latch.block,
-                    "Latching (TODO NAME)",
-                    latch.inlet))?;
+                                              block,
+                                              latch.target,
+                                              "Latching (TODO NAME)",
+                                              latch.inlet))?;
             }
 
             pulsed_links.clear();
@@ -263,10 +280,12 @@ impl Instance
     }
 
     // power off all blocks immediately
-    pub fn terminate(&mut self)
+    pub fn stop(&mut self)
     {
+        puffin::profile_function!();
+
         // free memory?
-        self.push_action(Action::Terminate);
+        self.push_action(Action::Stop);
 
         // iter all powered states and power-off
         let mut powered_states = Vec::new();
@@ -282,7 +301,7 @@ impl Instance
         // states that are already powered-off should no-op
         for ps in powered_states
         {
-            self.pulse(OutletLink { block: BlockId::state(ps), inlet: Inlet::PowerOff });
+            self.pulse(Plug { target: BlockId::state(ps), inlet: Inlet::PowerOff });
         }
     }
 }
@@ -305,7 +324,7 @@ impl Drop for Instance
 {
     fn drop(&mut self)
     {
-        self.terminate();
+        self.stop();
         // TODO: remove once more sure of design
         debug_assert!(!self.any_states_powered(), "Instance still has powered states after termination");
     }
@@ -321,6 +340,7 @@ pub struct Scope
 #[cfg(test)]
 mod tests
 {
+    use crate::instance::Action::SignaledEntry;
     use super::*;
 
     #[derive(Default)]
@@ -403,6 +423,8 @@ mod tests
                 BlockId::impulse(4),
             ]),
 
+            signaled_entries: Default::default(),
+
             impulses: Box::new(
             [
                 Box::new(TestImpulse
@@ -410,7 +432,7 @@ mod tests
                     name: "Impulse 0",
                     outlet: PulsedOutlet
                     {
-                        links: Box::new([OutletLink { block: BlockId::state(1), inlet: Inlet::Pulse }]),
+                        plugs: Box::new([Plug { target: BlockId::state(1), inlet: Inlet::Pulse }]),
                     },
                 }),
                 Box::new(TestImpulse
@@ -443,15 +465,15 @@ mod tests
                     value: false,
                     on_false_outlet: PulsedOutlet
                     {
-                        links: Box::new([OutletLink { block: BlockId::impulse(1), inlet: Inlet::Pulse }]),
+                        plugs: Box::new([Plug { target: BlockId::impulse(1), inlet: Inlet::Pulse }]),
                     },
                     false_outlet: LatchingOutlet
                     {
-                        links: Box::new([OutletLink { block: BlockId::impulse(0), inlet: Inlet::Pulse }]),
+                        plugs: Box::new([Plug { target: BlockId::impulse(0), inlet: Inlet::Pulse }]),
                     },
                     true_outlet: LatchingOutlet
                     {
-                        links: Box::new([OutletLink { block: BlockId::impulse(3), inlet: Inlet::Pulse }]),
+                        plugs: Box::new([Plug { target: BlockId::impulse(3), inlet: Inlet::Pulse }]),
                     },
                     .. Default::default()
                 }),
@@ -462,7 +484,7 @@ mod tests
                     value: true,
                     true_outlet: LatchingOutlet
                     {
-                        links: Box::new([OutletLink { block: BlockId::impulse(2), inlet: Inlet::Pulse }]),
+                        plugs: Box::new([Plug { target: BlockId::impulse(2), inlet: Inlet::Pulse }]),
                     },
                     .. Default::default()
                 }),
@@ -470,55 +492,60 @@ mod tests
         };
 
         let mut instance = Instance::new(graph);
+        
+        assert_eq!(instance.state_has_power(0), false);
+        assert_eq!(instance.state_has_power(1), false);
+        
+        instance.start();
 
         assert_eq!(instance.state_has_power(0), true);
         assert_eq!(instance.state_has_power(1), true);
 
         assert_eq!(instance.get_action_history(), &[
             Action::AutoEntry,
-            Action::Visit(OutletLink::new(BlockId::state(0), Inlet::Pulse)),
+            Action::Visit(Plug::new(BlockId::state(0), Inlet::Pulse)),
             Action::PowerOn(BlockId::state(0)),
-            Action::Visit(OutletLink::new(BlockId::impulse(0), Inlet::Pulse)),
+            Action::Visit(Plug::new(BlockId::impulse(0), Inlet::Pulse)),
             Action::Pulse(BlockId::impulse(0)),
-            Action::Visit(OutletLink::new(BlockId::state(1), Inlet::Pulse)),
+            Action::Visit(Plug::new(BlockId::state(1), Inlet::Pulse)),
             Action::PowerOn(BlockId::state(1)),
-            Action::Visit(OutletLink::new(BlockId::impulse(2), Inlet::Pulse)),
+            Action::Visit(Plug::new(BlockId::impulse(2), Inlet::Pulse)),
             Action::Pulse(BlockId::impulse(2)),
-            Action::Visit(OutletLink::new(BlockId::impulse(1), Inlet::Pulse)),
+            Action::Visit(Plug::new(BlockId::impulse(1), Inlet::Pulse)),
             Action::Pulse(BlockId::impulse(1)),
-            Action::Visit(OutletLink::new(BlockId::impulse(4), Inlet::Pulse)),
+            Action::Visit(Plug::new(BlockId::impulse(4), Inlet::Pulse)),
             Action::Pulse(BlockId::impulse(4)),
         ]);
 
         instance.clear_action_history();
-        instance.pulse(OutletLink { block: BlockId::state(0), inlet: Inlet::PowerOff });
+        instance.pulse(Plug { target: BlockId::state(0), inlet: Inlet::PowerOff });
 
         assert_eq!(instance.state_has_power(0), false);
         assert_eq!(instance.state_has_power(1), false);
 
         assert_eq!(instance.get_action_history(), &[
-            Action::Visit(OutletLink::new(BlockId::state(0), Inlet::PowerOff)),
-            Action::Visit(OutletLink::new(BlockId::impulse(0), Inlet::PowerOff)),
-            Action::Visit(OutletLink::new(BlockId::state(1), Inlet::PowerOff)),
-            Action::Visit(OutletLink::new(BlockId::impulse(2), Inlet::PowerOff)),
+            Action::Visit(Plug::new(BlockId::state(0), Inlet::PowerOff)),
+            Action::Visit(Plug::new(BlockId::impulse(0), Inlet::PowerOff)),
+            Action::Visit(Plug::new(BlockId::state(1), Inlet::PowerOff)),
+            Action::Visit(Plug::new(BlockId::impulse(2), Inlet::PowerOff)),
             Action::PowerOff(BlockId::state(1)),
             Action::PowerOff(BlockId::state(0)),
         ]);
 
         instance.clear_action_history();
-        instance.pulse(OutletLink { block: BlockId::state(1), inlet: Inlet::Pulse });
+        instance.pulse(Plug { target: BlockId::state(1), inlet: Inlet::Pulse });
         assert!(instance.any_states_powered());
-        instance.terminate();
+        instance.stop();
         assert!(!instance.any_states_powered());
 
         assert_eq!(instance.get_action_history(), &[
-            Action::Visit(OutletLink::new(BlockId::state(1), Inlet::Pulse)),
+            Action::Visit(Plug::new(BlockId::state(1), Inlet::Pulse)),
             Action::PowerOn(BlockId::state(1)),
-            Action::Visit(OutletLink::new(BlockId::impulse(2), Inlet::Pulse)),
+            Action::Visit(Plug::new(BlockId::impulse(2), Inlet::Pulse)),
             Action::Pulse(BlockId::impulse(2)),
-            Action::Terminate,
-            Action::Visit(OutletLink::new(BlockId::state(1), Inlet::PowerOff)),
-            Action::Visit(OutletLink::new(BlockId::impulse(2), Inlet::PowerOff)),
+            Action::Stop,
+            Action::Visit(Plug::new(BlockId::state(1), Inlet::PowerOff)),
+            Action::Visit(Plug::new(BlockId::impulse(2), Inlet::PowerOff)),
             Action::PowerOff(BlockId::state(1)),
         ]);
     }
@@ -533,6 +560,8 @@ mod tests
                 BlockId::state(0),
             ]),
 
+            signaled_entries: Default::default(),
+
             impulses: Box::new(
             [
                 Box::new(TestImpulse
@@ -540,7 +569,7 @@ mod tests
                     name: "Impulse 0",
                     outlet: PulsedOutlet
                     {
-                        links: Box::new([OutletLink { block: BlockId::state(0), inlet: Inlet::PowerOff }]),
+                        plugs: Box::new([Plug { target: BlockId::state(0), inlet: Inlet::PowerOff }]),
                     },
                 }),
             ]),
@@ -553,27 +582,28 @@ mod tests
                     value: false,
                     false_outlet: LatchingOutlet
                     {
-                        links: Box::new([OutletLink { block: BlockId::impulse(0), inlet: Inlet::Pulse }]),
+                        plugs: Box::new([Plug { target: BlockId::impulse(0), inlet: Inlet::Pulse }]),
                     },
                     .. Default::default()
                 }),
             ]),
         };
 
-        let instance = Instance::new(graph);
+        let mut instance = Instance::new(graph);
+        instance.start();
 
         assert_eq!(instance.state_has_power(0), false);
 
         assert_eq!(instance.get_action_history(), &[
             Action::AutoEntry,
-            Action::Visit(OutletLink::new(BlockId::state(0), Inlet::Pulse)),
+            Action::Visit(Plug::new(BlockId::state(0), Inlet::Pulse)),
             Action::PowerOn(BlockId::state(0)),
-            Action::Visit(OutletLink::new(BlockId::impulse(0), Inlet::Pulse)),
+            Action::Visit(Plug::new(BlockId::impulse(0), Inlet::Pulse)),
             Action::Pulse(BlockId::impulse(0)),
             // powering off state will go through impulse and back to itself
-            Action::Visit(OutletLink::new(BlockId::state(0), Inlet::PowerOff)),
-            Action::Visit(OutletLink::new(BlockId::impulse(0), Inlet::PowerOff)),
-            Action::Visit(OutletLink::new(BlockId::state(0), Inlet::PowerOff)),
+            Action::Visit(Plug::new(BlockId::state(0), Inlet::PowerOff)),
+            Action::Visit(Plug::new(BlockId::impulse(0), Inlet::PowerOff)),
+            Action::Visit(Plug::new(BlockId::state(0), Inlet::PowerOff)),
             Action::PowerOff(BlockId::state(0)),
         ]);
     }
@@ -588,6 +618,8 @@ mod tests
                 BlockId::state(0),
             ]),
 
+            signaled_entries: Default::default(),
+
             impulses: Box::new([]),
 
             states: Box::new(
@@ -598,7 +630,7 @@ mod tests
                     value: false,
                     on_false_outlet: PulsedOutlet
                     {
-                        links: Box::new([OutletLink { block: BlockId::state(1), inlet: Inlet::Pulse }]),
+                        plugs: Box::new([Plug { target: BlockId::state(1), inlet: Inlet::Pulse }]),
                     },
                     .. Default::default()
                 }),
@@ -612,23 +644,82 @@ mod tests
         };
 
         let mut instance = Instance::new(graph);
+        instance.start();
 
         assert_eq!(instance.state_has_power(0), true);
         assert_eq!(instance.state_has_power(1), true);
 
-        instance.pulse(OutletLink { block: BlockId::state(0), inlet: Inlet::PowerOff });
+        instance.pulse(Plug { target: BlockId::state(0), inlet: Inlet::PowerOff });
 
         assert_eq!(instance.state_has_power(0), false);
         assert_eq!(instance.state_has_power(1), true);
 
         assert_eq!(instance.get_action_history(), &[
             Action::AutoEntry,
-            Action::Visit(OutletLink::new(BlockId::state(0), Inlet::Pulse)),
+            Action::Visit(Plug::new(BlockId::state(0), Inlet::Pulse)),
             Action::PowerOn(BlockId::state(0)),
-            Action::Visit(OutletLink::new(BlockId::state(1), Inlet::Pulse)),
+            Action::Visit(Plug::new(BlockId::state(1), Inlet::Pulse)),
             Action::PowerOn(BlockId::state(1)),
-            Action::Visit(OutletLink::new(BlockId::state(0), Inlet::PowerOff)),
+            Action::Visit(Plug::new(BlockId::state(0), Inlet::PowerOff)),
             Action::PowerOff(BlockId::state(0)),
+        ]);
+    }
+
+    #[test]
+    fn signaled_entry()
+    {
+        let graph = Graph
+        {
+            auto_entries: Box::new([]),
+            signaled_entries: Box::new(
+                [
+                    (Signal::test('a'), Box::new([BlockId::impulse(0), BlockId::state(0)])),
+                    (Signal::test('b'), Box::new([BlockId::impulse(1)])),
+            ]),
+
+            impulses: Box::new(
+                [
+                    Box::new(TestImpulse
+                    {
+                        name: "Impulse 0",
+                        outlet: Default::default(),
+                    }),
+                    Box::new(TestImpulse
+                    {
+                        name: "Impulse 1",
+                        outlet: Default::default(),
+                    }),
+                ]),
+
+            states: Box::new(
+            [
+                Box::new(TestState
+                {
+                    name: "State 0 (false)",
+                    value: false,
+                    .. Default::default()
+                }),
+            ]),
+        };
+
+        let mut instance = Instance::new(graph);
+        instance.start();
+
+        assert_eq!(instance.state_has_power(0), false);
+        assert_eq!(instance.get_action_history(), &[
+            Action::AutoEntry,
+        ]);
+        instance.clear_action_history();
+
+        instance.signal(0);
+
+        assert_eq!(instance.state_has_power(0), true);
+        assert_eq!(instance.get_action_history(), &[
+            Action::SignaledEntry(Signal::test('a')),
+            Action::Visit(Plug::new(BlockId::impulse(0), Inlet::Pulse)),
+            Action::Pulse(BlockId::impulse(0)),
+            Action::Visit(Plug::new(BlockId::state(0), Inlet::Pulse)),
+            Action::PowerOn(BlockId::state(0)),
         ]);
     }
 }

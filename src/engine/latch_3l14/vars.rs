@@ -4,6 +4,7 @@ use super::BlockId;
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 pub struct VarId(usize);
 
+#[derive(Debug, PartialEq, Clone, Hash)]
 pub struct Var
 {
     // provider (name, inputs, get_val())

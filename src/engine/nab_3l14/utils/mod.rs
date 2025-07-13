@@ -1,6 +1,8 @@
 pub mod bytes_traits;
 
 use std::fmt::{Debug, Display, Formatter};
+use std::hash::Hasher;
+use metrohash::MetroHash64;
 pub use bytes_traits::*;
 
 pub mod async_completion;
@@ -138,4 +140,11 @@ impl<T> AsRef<T> for NoOpFmtDebug<T>
 impl<T> AsMut<T> for NoOpFmtDebug<T>
 {
     fn as_mut(&mut self) -> &mut T { &mut self.0 }
+}
+
+pub fn hash_bstrings(seed: u64, bstrings: &[&[u8]]) -> u64
+{
+    let mut hasher = MetroHash64::with_seed(seed);
+    bstrings.iter().for_each(|s| { hasher.write(s); });
+    hasher.finish()
 }

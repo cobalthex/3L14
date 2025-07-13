@@ -2,7 +2,7 @@ mod core;
 mod builders;
 mod helpers;
 
-use crate::core::{AssetsBuilder, AssetsBuilderConfig, BuildRule, ScanError};
+use crate::core::{validate_syhmbols, AssetsBuilder, AssetsBuilderConfig, BuildRule, ScanError};
 use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use log::log;
@@ -15,10 +15,14 @@ pub enum CliCommands
     Build
     {
         #[arg(long, group = "build_what")]
-        all: bool,
+        all: bool, // includes symbols
+
         // extension/type
         #[arg(long, group = "build_what", value_delimiter = ',', num_args = 1..)]
         source: Vec<String>,
+
+        #[arg(long, group = "build_what")]
+        symbols: bool,
 
         #[arg(long)]
         rule: Option<BuildRule>,
@@ -60,9 +64,14 @@ fn main()
     {
         CliCommands::Build { all: true, .. } =>
         {
+            // TODO: scan assets and build, validate symbols
             todo!();
         },
-        CliCommands::Build { all: false, source: sources, rule } =>
+        CliCommands::Build { symbols: true, .. } =>
+        {
+            let _validation = validate_syhmbols(assets_root.join("symbols"));
+        }
+        CliCommands::Build { all: false, symbols: false, source: sources, rule } =>
         {
             for source in sources
             {
@@ -73,7 +82,7 @@ fn main()
                 {
                     Ok(results) =>
                     {
-                        log::info!("Successfully built {src_path:?} into {results:#?}");
+                        log::info!("Successfully built {src_path:?} into {results:#?}"); // log debug?
                     }
                     Err(err) =>
                     {

@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Formatter};
 use smallvec::SmallVec;
+use asset_3l14::Signal;
 use super::Scope;
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]
@@ -51,6 +52,7 @@ impl Debug for BlockId
     }
 }
 
+// How the target block should behave on pulse
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum Inlet
 {
@@ -59,18 +61,19 @@ pub enum Inlet
     PowerOff, // ignored by non-stateful blocks
 }
 
+// Where an outlet points to
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OutletLink
+pub struct Plug
 {
-    pub block: BlockId,
+    pub target: BlockId,
     pub inlet: Inlet,
 }
-impl OutletLink
+impl Plug
 {
     #[inline] #[must_use]
-    pub fn new(block: BlockId, inlet: Inlet) -> Self
+    pub fn new(target: BlockId, inlet: Inlet) -> Self
     {
-        Self { block, inlet }
+        Self { target, inlet }
     }
 
     // TODO: better design
@@ -79,7 +82,7 @@ impl OutletLink
     {
         if let Inlet::PowerOff = poison
         {
-            Self { block: self.block, inlet: poison }
+            Self { target: self.target, inlet: poison }
         }
         else
         {
@@ -88,20 +91,22 @@ impl OutletLink
     }
 }
 
+// Outlets that pass-thru incoming pulses (but not power-offs)
 #[derive(Default)]
 pub struct PulsedOutlet
 {
-    pub links: Box<[OutletLink]>,
+    pub plugs: Box<[Plug]>,
 }
+// Outlets that carry the parent signal and respond to power-offs
 #[derive(Default)]
 pub struct LatchingOutlet
 {
-    pub links: Box<[OutletLink]>,
+    pub plugs: Box<[Plug]>,
 }
 
 pub trait Block  { }
 
-pub(super) type OutletLinkList = SmallVec<[OutletLink; 2]>;
+pub(super) type OutletLinkList = SmallVec<[Plug; 2]>;
 
 pub struct ImpulseOutletVisitor<'s>
 {
@@ -112,10 +117,11 @@ impl ImpulseOutletVisitor<'_>
 {
     pub fn visit_pulsed(&mut self, outlet: &PulsedOutlet)
     {
-        self.pulses.extend_from_slice(&outlet.links);
+        self.pulses.extend_from_slice(&outlet.plugs);
     }
 }
 
+// A block that can perform an action whenever they are pulsed
 pub trait ImpulseBlock
 {
     fn pulse(&self, scope: &mut Scope);
@@ -132,14 +138,16 @@ impl StateOutletVisitor<'_>
 {
     pub fn visit_pulsed(&mut self, outlet: &PulsedOutlet)
     {
-        self.pulses.extend_from_slice(&outlet.links);
+        self.pulses.extend_from_slice(&outlet.plugs);
     }
     pub fn visit_latching(&mut self, outlet: &LatchingOutlet)
     {
-        self.latching.extend_from_slice(&outlet.links);
+        self.latching.extend_from_slice(&outlet.plugs);
     }
 }
 
+// A block that can be powered on/off, performing an action upon on/off.
+// Will turn off any downstream blocks when turned off
 pub trait StateBlock
 {
     // different names? activate/deactivate?
@@ -156,11 +164,13 @@ impl Block for dyn StateBlock { }
 //      in->out actions
 //      in->powered
 
+// A list of target blocks to pulse
 pub type EntryPoints = Box<[BlockId]>;
 
 pub struct Graph
 {
     pub(super) auto_entries: EntryPoints,
+    pub(super) signaled_entries: Box<[(Signal, EntryPoints)]>,
     pub(super) impulses: Box<[Box<dyn ImpulseBlock>]>,
     pub(super) states: Box<[Box<dyn StateBlock>]>,
 }

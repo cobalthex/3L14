@@ -5,3 +5,6 @@ pub use assets_builder::*;
 
 mod scan;
 pub use scan::*;
+
+mod symbol_validator;
+pub use symbol_validator::*;

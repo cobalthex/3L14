@@ -220,6 +220,7 @@ dependencies = [
  "nab_3l14",
  "parking_lot",
  "proc_macros_3l14",
+ "regex",
  "serde",
  "toml 0.8.23",
  "unicase",
@@ -1451,6 +1452,7 @@ dependencies = [
 name = "latch_3l14"
 version = "0.0.0"
 dependencies = [
+ "asset_3l14",
  "containers_3l14",
  "crossbeam",
  "log",

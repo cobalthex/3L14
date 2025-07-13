@@ -57,8 +57,7 @@ impl From<IndexFormat> for wgpu::IndexFormat
     }
 }
 
-// TODO: use structured buffers, possibly non-interleaved
-// TODO: switch back to unified geo
+// TODO: maybe use structured buffers, possibly non-interleaved
 
 #[derive(Encode, Decode)]
 pub struct GeometryFile
