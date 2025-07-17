@@ -63,10 +63,8 @@ impl Instance
     #[inline] #[must_use]
     pub fn graph(&self) -> &Graph { &self.graph }
 
-    pub(crate) fn start(&mut self)
+    pub(crate) fn power_on(&mut self)
     {
-        puffin::profile_function!();
-
         self.push_action(Action::AutoEntry);
         let auto_blocks: SmallVec<[BlockId; 8]> = SmallVec::from_slice(&self.graph.auto_entries);
         for block in auto_blocks
@@ -280,7 +278,7 @@ impl Instance
     }
 
     // power off all blocks immediately
-    pub fn stop(&mut self)
+    pub fn power_off(&mut self)
     {
         puffin::profile_function!();
 
@@ -324,17 +322,8 @@ impl Drop for Instance
 {
     fn drop(&mut self)
     {
-        self.stop();
-        // TODO: remove once more sure of design
         debug_assert!(!self.any_states_powered(), "Instance still has powered states after termination");
     }
-}
-
-#[derive(Default)]
-pub struct Scope
-{
-    vars: HashMap<VarId, Var>,
-    // stacked vars
 }
 
 #[cfg(test)]
@@ -496,7 +485,7 @@ mod tests
         assert_eq!(instance.state_has_power(0), false);
         assert_eq!(instance.state_has_power(1), false);
         
-        instance.start();
+        instance.power_on();
 
         assert_eq!(instance.state_has_power(0), true);
         assert_eq!(instance.state_has_power(1), true);
@@ -535,7 +524,7 @@ mod tests
         instance.clear_action_history();
         instance.pulse(Plug { target: BlockId::state(1), inlet: Inlet::Pulse });
         assert!(instance.any_states_powered());
-        instance.stop();
+        instance.power_off();
         assert!(!instance.any_states_powered());
 
         assert_eq!(instance.get_action_history(), &[
@@ -590,7 +579,7 @@ mod tests
         };
 
         let mut instance = Instance::new(graph);
-        instance.start();
+        instance.power_on();
 
         assert_eq!(instance.state_has_power(0), false);
 
@@ -644,7 +633,7 @@ mod tests
         };
 
         let mut instance = Instance::new(graph);
-        instance.start();
+        instance.power_on();
 
         assert_eq!(instance.state_has_power(0), true);
         assert_eq!(instance.state_has_power(1), true);
@@ -703,7 +692,7 @@ mod tests
         };
 
         let mut instance = Instance::new(graph);
-        instance.start();
+        instance.power_on();
 
         assert_eq!(instance.state_has_power(0), false);
         assert_eq!(instance.get_action_history(), &[

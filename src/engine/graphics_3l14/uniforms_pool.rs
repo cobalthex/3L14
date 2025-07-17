@@ -3,7 +3,7 @@ use crate::{debug_label, Renderer};
 use std::sync::Arc;
 use egui::Ui;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, QueueWriteBufferView, RenderPass, ShaderStages};
-use containers_3l14::{ObjectPool, ObjectPoolEntryGuard};
+use containers_3l14::{ReusePool, ObjectPoolEntryGuard};
 use math_3l14::{DualQuat, StaticGeoUniform};
 use nab_3l14::utils::ShortTypeName;
 use crate::assets::MAX_SKINNED_BONES;
@@ -21,9 +21,9 @@ pub struct UniformsPool
 {
     renderer: Arc<Renderer>,
     max_ubo_size: usize,
-    cameras: ObjectPool<UniformBufferEntry>,
-    transforms: ObjectPool<UniformBufferEntry>,
-    poses: ObjectPool<UniformBufferEntry>,
+    cameras: ReusePool<UniformBufferEntry>,
+    transforms: ReusePool<UniformBufferEntry>,
+    poses: ReusePool<UniformBufferEntry>,
 
     pub camera_bind_layout: BindGroupLayout,
     pub transform_bind_layout: BindGroupLayout,
@@ -99,9 +99,9 @@ impl UniformsPool
         Self
         {
             max_ubo_size,
-            cameras: ObjectPool::default(),
-            transforms: ObjectPool::default(),
-            poses: ObjectPool::default(),
+            cameras: ReusePool::default(),
+            transforms: ReusePool::default(),
+            poses: ReusePool::default(),
             renderer,
             camera_bind_layout,
             transform_bind_layout,

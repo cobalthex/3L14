@@ -21,6 +21,7 @@ pub fn scene<'f>(
             {
                 // todo: optimize
                 view,
+                depth_slice: None,
                 resolve_target,
                 ops: Operations
                 {
@@ -58,6 +59,7 @@ pub fn debug<'f>(
             {
                 view,
                 resolve_target,
+                depth_slice: None,
                 ops: Operations
                 {
                     load: LoadOp::Load,

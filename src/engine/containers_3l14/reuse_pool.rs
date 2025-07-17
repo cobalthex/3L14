@@ -16,13 +16,13 @@ struct Buckets<T>
     buckets: Vec<Box<[MaybeUninit<T>; OBJECT_POOL_BUCKET_ENTRY_COUNT as usize]>>,
 }
 
-pub struct ObjectPool<T>
+pub struct ReusePool<T>
 {
     free: SegQueue<PoolEntryIndex>, // ArrayQueue w/ max 2 or 3 buckets of free space? overflow buckets get deleted?
-    buckets: ShardedLock<Buckets<T>>,
+    buckets: ShardedLock<Buckets<T>>, // TODO: grow only lock-free storage?
     uid: u32,
 }
-impl<T> Default for ObjectPool<T>
+impl<T> Default for ReusePool<T>
 {
     fn default() -> Self
     {
@@ -41,11 +41,13 @@ impl<T> Default for ObjectPool<T>
         }
     }
 }
-impl<T> ObjectPool<T>
+impl<T> ReusePool<T>
 {
     const UID_COUNTER: AtomicU32 = AtomicU32::new(1);
 
+    #[inline] #[must_use]
     pub fn free_count(&self) -> usize { self.free.len() }
+    #[inline] #[must_use]
     pub fn total_count(&self) -> usize { self.buckets.read().unwrap().count as usize }
 
     // returns the first entry, ready for use; or none if a failure happened
@@ -58,7 +60,7 @@ impl<T> ObjectPool<T>
             return None;
         }
 
-        // TODO: push all entries, or perhaps 8/16 at a time to the free list
+        // todo: push 8 or so entries to the free list at a time
 
         let index;
         let bucket_local = count & (OBJECT_POOL_BUCKET_ENTRY_COUNT - 1);
@@ -105,11 +107,6 @@ impl<T> ObjectPool<T>
     pub fn return_token(&self, token: ObjectPoolToken<T>)
     {
         debug_assert_eq!(token.pool_uid, self.uid);
-
-        let locked = self.buckets.read().unwrap();
-        let entry = &locked.buckets[(token.entry >> OBJECT_POOL_BUCKET_ENTRY_BITS) as usize][(token.entry & (OBJECT_POOL_BUCKET_ENTRY_COUNT - 1)) as usize];
-        unsafe { entry.as_ptr().cast_mut().drop_in_place() }
-
         self.free.push(token.entry);
     }
 
@@ -136,20 +133,28 @@ impl<T> ObjectPool<T>
         }
     }
 }
-impl<T> Drop for ObjectPool<T>
+impl<T> Drop for ReusePool<T>
 {
     fn drop(&mut self)
     {
-        let locked = self.buckets.write().unwrap();
-        assert_eq!(locked.count as usize, self.free.len(), "Pool object tokens were not returned");
-        // TODO: this will happen for tokens, maybe store a list of taken tokens? (maybe only fail if non-trivial drop)
+        let mut locked = self.buckets.write().unwrap();
+        let mut count = locked.count;
+        for bucket in &mut locked.buckets
+        {
+            let n = count.min(OBJECT_POOL_BUCKET_ENTRY_COUNT);
+            for i in 0..n
+            {
+                unsafe { bucket[i as usize].assume_init_drop() };
+            }
+            count -= n;
+        }
     }
 }
 
 #[must_use]
 pub struct ObjectPoolEntryGuard<'p, T>
 {
-    pool: &'p ObjectPool<T>,
+    pool: &'p ReusePool<T>,
     entry: &'p mut T,
     index: PoolEntryIndex,
 }
@@ -181,7 +186,6 @@ impl<'p, T> Drop for ObjectPoolEntryGuard<'p, T>
 {
     fn drop(&mut self)
     {
-        unsafe { (self.entry as *const T as *mut T).drop_in_place() }
         self.pool.free.push(self.index);
     }
 }
@@ -196,7 +200,7 @@ pub struct ObjectPoolToken<T>
 }
 impl<T> ObjectPoolToken<T>
 {
-    pub fn hydrate(&mut self, pool: &ObjectPool<T>) -> &mut T
+    pub fn hydrate(&mut self, pool: &ReusePool<T>) -> &mut T
     {
         // store pointer?
         debug_assert_eq!(self.pool_uid, pool.uid);
@@ -211,25 +215,14 @@ mod tests
 {
     use super::*;
 
-    static DROP_COUNT: AtomicU32 = AtomicU32::new(0);
-    fn drop_count() -> u32 { DROP_COUNT.load(std::sync::atomic::Ordering::SeqCst) }
-
     struct TestEntry(pub usize);
-    impl Drop for TestEntry
-    {
-        fn drop(&mut self)
-        {
-            DROP_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        }
-    }
 
     #[test]
     fn test()
     {
-        let pool = ObjectPool::default();
+        let pool = ReusePool::default();
         assert_eq!(pool.total_count(), 0);
         assert_eq!(pool.free_count(), 0);
-        assert_eq!(drop_count(), 0);
 
         {
             let entry = pool.take(TestEntry);
@@ -240,7 +233,6 @@ mod tests
 
         assert_eq!(pool.total_count(), 1);
         assert_eq!(pool.free_count(), 1);
-        assert_eq!(drop_count(), 1);
 
         {
             let entry = pool.take(TestEntry);
@@ -254,12 +246,10 @@ mod tests
 
             assert_eq!(pool.total_count(), 2);
             assert_eq!(pool.free_count(), 1);
-            assert_eq!(drop_count(), 2);
         }
 
         assert_eq!(pool.total_count(), 2);
         assert_eq!(pool.free_count(), 2);
-        assert_eq!(drop_count(), 3);
 
         {
             let mut t = pool.take_token(TestEntry);
@@ -274,15 +264,6 @@ mod tests
             assert_eq!(pool.total_count(), 2);
             assert_eq!(pool.free_count(), 2);
         }
-        assert_eq!(drop_count(), 4);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_no_return()
-    {
-        let pool = ObjectPool::default();
-        let t = pool.take_token(|u| u);
     }
 
     // TODO: create POOL_BUCKET_ENTRY_MAX + 1 entries

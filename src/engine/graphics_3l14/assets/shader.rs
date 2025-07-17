@@ -6,7 +6,8 @@ use std::default::Default;
 use std::error::Error;
 use std::sync::Arc;
 use wgpu::util::{make_spirv, make_spirv_raw};
-use wgpu::{ShaderModuleDescriptor, ShaderModuleDescriptorSpirV};
+use wgpu::{ShaderModuleDescriptor, ShaderModuleDescriptorPassthrough};
+use wgpu::wgt::ShaderModuleDescriptorSpirV;
 use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use debug_3l14::debug_gui::DebugGui;
 
@@ -70,11 +71,11 @@ impl AssetLifecycler for ShaderLifecycler
         {
             true => unsafe
             {
-                self.renderer.device().create_shader_module_spirv(&ShaderModuleDescriptorSpirV
-                {
+                self.renderer.device().create_shader_module_passthrough(ShaderModuleDescriptorPassthrough::SpirV(
+                ShaderModuleDescriptorSpirV {
                     label: debug_label!(&format!("{:?} ({:?})", request.asset_key, shader_file.stage)),
                     source: make_spirv_raw(&shader_file.module_bytes),
-                })
+                }))
             },
             false =>
             {

@@ -92,6 +92,7 @@ impl Renderer
             backends: Backends::PRIMARY,
             flags: InstanceFlags::from_build_config(),
             backend_options: BackendOptions::from_env_or_default(),
+            memory_budget_thresholds: MemoryBudgetThresholds::default(),
         });
 
         let surface = unsafe { instance.create_surface_unsafe(window_handle).expect("Failed to create swap-chain") };
@@ -127,9 +128,8 @@ impl Renderer
                     .. Default::default()
                 }.using_resolution(adapter.limits()),
                 memory_hints: MemoryHints::Performance,
-                // trace: Trace::Off,
+                trace: Trace::Off,
             },
-            None,
             ).await
             .expect("Failed to create device");
 
@@ -353,7 +353,8 @@ impl Renderer
             let rf_data = &render_frames[frame_number.0 as usize % render_frames.len()];
             if let Some(i) = &rf_data.last_submission
             {
-                self.device.poll(Maintain::WaitForSubmissionIndex(i.clone()));
+                let _ = self.device.poll(PollType::WaitForSubmissionIndex(i.clone()));
+                // TODO: handle poll error
             };
             depth_buffer_view = rf_data.depth_buffer.create_view(&TextureViewDescriptor::default());
         }
@@ -417,6 +418,7 @@ impl Renderer
                     {
                         view: target,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: Operations
                         {
                             load: LoadOp::Load,

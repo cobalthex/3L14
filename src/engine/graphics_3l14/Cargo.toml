@@ -30,7 +30,6 @@ metrohash.workspace = true
 parking_lot.workspace = true
 sdl2.workspace = true # TODO: Remove this dependency here
 arc-swap.workspace = true
-#egui_wgpu_backend.workspace = true
 egui-wgpu.workspace = true
 futures.workspace = true
 log.workspace = true

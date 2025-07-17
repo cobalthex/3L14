@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use super::BlockId;
+use super::{BlockId, InstRunId};
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]
-pub struct VarId(usize);
+pub struct VarId(u32); // two 2 bits define scope?
 
 #[derive(Debug, PartialEq, Clone, Hash)]
 pub struct Var
@@ -10,7 +10,7 @@ pub struct Var
     // provider (name, inputs, get_val())
     // value
     // listeners (block refs)
-    pub listeners: Box<[BlockId]>,
+    pub listeners: Box<[(InstRunId, BlockId)]>,
 }
 
 pub enum VarValue
@@ -24,4 +24,21 @@ pub enum VarValue
     // Asset?
     // Array
     // Map
+}
+
+#[derive(Default)]
+pub struct LocalScope
+{
+    vars: HashMap<VarId, Var>,
+    // stacked vars
+}
+impl LocalScope
+{
+
+}
+
+#[derive(Default)]
+pub struct SharedScope
+{
+    // TODO
 }
