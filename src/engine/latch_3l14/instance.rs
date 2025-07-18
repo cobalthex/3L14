@@ -20,8 +20,7 @@ pub(crate) enum Action
 {
     AutoEntry,
     SignaledEntry(Signal),
-    // Exit
-    Stop,
+    Exit,
     Visit(Plug),
     Pulse(BlockId),
     PowerOn(BlockId),
@@ -52,7 +51,7 @@ impl Instance
         Self
         {
             graph,
-            scope: Scope::default(),
+            scope: Scope { },
             hydrated_states: HashMap::default(),
 
             #[cfg(any(test, feature = "action_history"))]
@@ -283,7 +282,7 @@ impl Instance
         puffin::profile_function!();
 
         // free memory?
-        self.push_action(Action::Stop);
+        self.push_action(Action::Exit);
 
         // iter all powered states and power-off
         let mut powered_states = Vec::new();
@@ -532,7 +531,7 @@ mod tests
             Action::PowerOn(BlockId::state(1)),
             Action::Visit(Plug::new(BlockId::impulse(2), Inlet::Pulse)),
             Action::Pulse(BlockId::impulse(2)),
-            Action::Stop,
+            Action::Exit,
             Action::Visit(Plug::new(BlockId::state(1), Inlet::PowerOff)),
             Action::Visit(Plug::new(BlockId::impulse(2), Inlet::PowerOff)),
             Action::PowerOff(BlockId::state(1)),
@@ -643,6 +642,8 @@ mod tests
         assert_eq!(instance.state_has_power(0), false);
         assert_eq!(instance.state_has_power(1), true);
 
+        instance.power_off();
+
         assert_eq!(instance.get_action_history(), &[
             Action::AutoEntry,
             Action::Visit(Plug::new(BlockId::state(0), Inlet::Pulse)),
@@ -651,6 +652,9 @@ mod tests
             Action::PowerOn(BlockId::state(1)),
             Action::Visit(Plug::new(BlockId::state(0), Inlet::PowerOff)),
             Action::PowerOff(BlockId::state(0)),
+            Action::Exit,
+            Action::Visit(Plug::new(BlockId::state(1), Inlet::PowerOff)),
+            Action::PowerOff(BlockId::state(1)),
         ]);
     }
 
@@ -701,14 +705,19 @@ mod tests
         instance.clear_action_history();
 
         instance.signal(0);
-
         assert_eq!(instance.state_has_power(0), true);
+
+        instance.power_off();
+
         assert_eq!(instance.get_action_history(), &[
             Action::SignaledEntry(Signal::test('a')),
             Action::Visit(Plug::new(BlockId::impulse(0), Inlet::Pulse)),
             Action::Pulse(BlockId::impulse(0)),
             Action::Visit(Plug::new(BlockId::state(0), Inlet::Pulse)),
             Action::PowerOn(BlockId::state(0)),
+            Action::Exit,
+            Action::Visit(Plug::new(BlockId::state(0), Inlet::PowerOff)),
+            Action::PowerOff(BlockId::state(0)),
         ]);
     }
 }

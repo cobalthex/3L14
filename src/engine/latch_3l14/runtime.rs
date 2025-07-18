@@ -104,7 +104,7 @@ impl Runtime
             {
                 Event::SpawnInstance(mut instance_id) =>
                 {
-                    let instance = &mut self.instances[&instance_id];
+                    let instance = &mut self.instances.get_mut(&instance_id).expect("Failed to find just-created instance");
                     instance.power_on();
                 }
                 Event::TerminateInstance(instance_id) =>
@@ -123,7 +123,8 @@ impl Runtime
                     let Some(instances) = self.signals.get(&signal) else { continue; };
                     for (instance_id, slot) in instances.iter()
                     {
-                        let instance = &mut self.instances[&instance_id];
+                        // TODO: guarantee atomicity when removing instance?
+                        let Some(instance) =self.instances.get_mut(&instance_id) else { continue; };
                         instance.signal(*slot);
                     }
                 }

@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use smallvec::SmallVec;
 use asset_3l14::Signal;
-use super::Scope;
+use crate::Scope;
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 pub struct BlockId(u32);
