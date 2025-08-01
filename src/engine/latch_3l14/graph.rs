@@ -150,7 +150,6 @@ impl StateOutletVisitor<'_>
 // Will turn off any downstream blocks when turned off
 pub trait StateBlock
 {
-    // different names? activate/deactivate?
     fn power_on(&self, scope: &mut Scope);
     fn power_off(&self, scope: &mut Scope);
 
@@ -160,11 +159,6 @@ pub trait StateBlock
 }
 impl Block for dyn StateBlock { }
 
-// [standardized] template blocks?
-//      in->out actions
-//      in->powered
-
-// A list of target blocks to pulse
 pub type EntryPoints = Box<[BlockId]>;
 
 pub struct Graph

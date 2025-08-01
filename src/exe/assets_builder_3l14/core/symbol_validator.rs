@@ -30,7 +30,7 @@ pub enum SymbolValidation
 
 type SymbolEntries<'s> = Box<[(&'s str, u32)]>;
 
-pub fn validate_syhmbols(root_dir: impl AsRef<Path>) -> bool
+pub fn validate_symbols(root_dir: impl AsRef<Path>) -> bool
 {
     let validator_version_hash: u64 = hash_bstrings(0, &[
         b"Initial"

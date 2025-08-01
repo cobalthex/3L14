@@ -2,7 +2,7 @@ mod core;
 mod builders;
 mod helpers;
 
-use crate::core::{validate_syhmbols, AssetsBuilder, AssetsBuilderConfig, BuildRule, ScanError};
+use crate::core::{validate_symbols, AssetsBuilder, AssetsBuilderConfig, BuildRule, ScanError};
 use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use log::log;
@@ -69,7 +69,7 @@ fn main()
         },
         CliCommands::Build { symbols: true, .. } =>
         {
-            let _validation = validate_syhmbols(assets_root.join("symbols"));
+            let _validation = validate_symbols(assets_root.join("symbols"));
         }
         CliCommands::Build { all: false, symbols: false, source: sources, rule } =>
         {

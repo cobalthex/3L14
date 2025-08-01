@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
-use crossbeam::channel::{unbounded, Receiver, Sender};
+use std::sync::atomic::{AtomicBool, Ordering};
+use crossbeam::queue::SegQueue;
 use smallvec::SmallVec;
 use asset_3l14::Signal;
 use super::*;
@@ -13,6 +14,15 @@ use super::*;
 - (currently) disable multiple links to a single inlet
     - possible design alt for 'all': blocks keep a count of number of links per inlet, runtime info tracks powered links
  */
+
+pub(crate) enum Event
+{
+    // rename entry/exit to match metaphor?
+    AutoEnter,
+    SignalEntry(u32),
+    Exit,
+    // var changed
+}
 
 #[derive(Debug, PartialEq, Eq)]
 #[allow(dead_code)]
@@ -36,12 +46,15 @@ struct HydratedState
 pub struct Instance
 {
     graph: Graph,
-    scope: Scope,
+    scope: LocalScope,
+    event_queue: SegQueue<Event>,
+    pub(super) is_processing_events: AtomicBool, // leaky abstraction
 
     hydrated_states: HashMap<u32, HydratedState>,
 
     #[cfg(any(test, feature = "action_history"))]
     action_history: Vec<Action>, // ring buffer?
+
 }
 impl Instance
 {
@@ -51,8 +64,10 @@ impl Instance
         Self
         {
             graph,
-            scope: Scope { },
+            scope: LocalScope::default(),
             hydrated_states: HashMap::default(),
+            event_queue: SegQueue::new(),
+            is_processing_events: AtomicBool::new(false),
 
             #[cfg(any(test, feature = "action_history"))]
             action_history: Vec::new(),
@@ -62,7 +77,40 @@ impl Instance
     #[inline] #[must_use]
     pub fn graph(&self) -> &Graph { &self.graph }
 
-    pub(crate) fn power_on(&mut self)
+    #[inline]
+    pub(crate) fn enqueue_event(&self, event: Event)
+    {
+        self.event_queue.push(event);
+    }
+
+    pub(crate) fn process_events(&mut self)
+    {
+        loop
+        {
+            while let Some(event) = self.event_queue.pop()
+            {
+                match event
+                {
+                    Event::AutoEnter => self.power_on(),
+                    Event::SignalEntry(slot) => self.signal(slot as usize),
+                    Event::Exit => self.power_off(),
+                }
+            }
+
+            self.is_processing_events.store(false, Ordering::Release);
+
+            if self.event_queue.is_empty()
+            {
+                break;
+            }
+            if !self.is_processing_events.swap(true, Ordering::Acquire)
+            {
+                break;
+            }
+        }
+    }
+
+    fn power_on(&mut self)
     {
         self.push_action(Action::AutoEntry);
         let auto_blocks: SmallVec<[BlockId; 8]> = SmallVec::from_slice(&self.graph.auto_entries);
@@ -72,7 +120,7 @@ impl Instance
         }
     }
 
-    pub(crate) fn signal(&mut self, signal_slot: usize)
+    fn signal(&mut self, signal_slot: usize)
     {
         let mut outlets = SmallVec::<[_; 2]>::new();
         self.push_action(Action::SignaledEntry(self.graph.signaled_entries[signal_slot].0));
@@ -90,13 +138,13 @@ impl Instance
         self.action_history.push(action);
     }
     #[inline]
-    pub(crate) fn clear_action_history(&mut self)
+    fn clear_action_history(&mut self)
     {
         #[cfg(any(test, feature = "action_history"))]
         self.action_history.clear();
     }
     #[inline] #[must_use]
-    pub(crate) fn get_action_history(&self) -> &[Action]
+    fn get_action_history(&self) -> &[Action]
     {
         #[cfg(any(test, feature = "action_history"))]
         { &self.action_history }
@@ -277,7 +325,7 @@ impl Instance
     }
 
     // power off all blocks immediately
-    pub fn power_off(&mut self)
+    fn power_off(&mut self)
     {
         puffin::profile_function!();
 
