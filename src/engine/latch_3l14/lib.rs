@@ -15,5 +15,5 @@ pub use runtime::*;
 mod vars;
 pub use vars::*;
 
-pub mod states;
+pub mod latches;
 pub mod impulses;

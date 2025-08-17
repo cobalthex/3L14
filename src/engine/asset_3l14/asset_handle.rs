@@ -305,7 +305,7 @@ impl<A: Asset> Ash<A>
         handle
     }
 
-    #[inline] #[must_use]
+    #[inline]
     fn debug_assert_type(&self)
     {
         debug_assert_eq!(A::asset_type(), self.key().asset_type());
@@ -356,7 +356,7 @@ impl<A: Asset> Ash<A>
     {
         self.inner().ref_count()
     }
-    
+
     // // Is this asset + all dependencies loaded
     #[inline] #[must_use]
     pub fn is_loaded_recursive(&self) -> bool

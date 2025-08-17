@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::io::{Read, Seek};
 use std::sync::Arc;
-use log::debug;
 use debug_3l14::debug_gui::DebugGui;
 use nab_3l14::utils::alloc_slice::alloc_slice_uninit;
 use nab_3l14::utils::{varint, ShortTypeName};
@@ -47,7 +46,7 @@ impl AssetLoadRequest
         self.input.read_exact(&mut input)?;
         Ok(input)
     }
-    // 
+    //
     // // Load another asset, but don't reload this asset if the requested asset is reloaded
     // #[must_use]
     // pub fn load_reference<A: Asset>(&self, asset_key: AssetKey) -> AssetHandle<A>

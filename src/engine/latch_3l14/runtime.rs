@@ -1,18 +1,19 @@
 use std::collections::HashMap;
+use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicU32, Ordering};
 use smallvec::SmallVec;
-use crossbeam::channel::{unbounded, Receiver, Sender};
 use crossbeam::queue::SegQueue;
 use super::{Graph, Instance};
 use asset_3l14::Signal;
 use crate::instance::Event;
+use crate::{Scope, SharedScope};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InstRunId(u32);
 
 pub struct Runtime
 {
-    instances: HashMap<InstRunId, Instance>, // TODO: thread-safe/lock free
+    instances: HashMap<InstRunId, UnsafeCell<Instance>>, // TODO: thread-safe/lock free
     instance_id_counter: AtomicU32,
     signals: HashMap<Signal, SmallVec<[(InstRunId, usize); 4]>>,
 
@@ -45,7 +46,7 @@ impl Runtime
         let inst_id = InstRunId(self.instance_id_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
         let inst = Instance::new(graph);
         inst.enqueue_event(Event::AutoEnter);
-        self.instances.insert(inst_id, inst);
+        self.instances.insert(inst_id, UnsafeCell::new(inst));
 
         for (slot, signal) in signals
         {
@@ -59,7 +60,8 @@ impl Runtime
     pub fn stop(&mut self, instance_id: InstRunId)
     {
         let Some(inst) = self.instances.get(&instance_id) else { return; };
-        inst.enqueue_event(Event::Exit);
+
+        unsafe { &* inst.get() }.enqueue_event(Event::Exit);
         self.process_queue.push(instance_id);
     }
 
@@ -68,17 +70,17 @@ impl Runtime
     {
         puffin::profile_function!();
 
-        while let Ok(run_id) = self.process_queue.pop()
+        while let Some(run_id) = self.process_queue.pop()
         {
             let Some(inst) = self.instances.get(&run_id) else { continue; };
-            if inst.is_processing_events.compare_exchange(
-                false,
-                true,
-                Ordering::Relaxed, // relaxed is ok here, b/c all jobs are queued from this one thread
-                Ordering::Relaxed)
-                .is_ok()
+            let inst_mut = unsafe { &mut *inst.get() };
+            if !inst_mut.is_processing_events.swap(true, Ordering::AcqRel)
             {
-                // enqueue job
+                // TODO: real shared scope
+                let todo_shared_scope = SharedScope::default();
+
+                // TODO: enqueue job
+                inst_mut.process_events(&todo_shared_scope);
             }
         }
 
@@ -108,7 +110,7 @@ mod tests
             auto_entries: Box::new([]),
             signaled_entries: Box::new([]),
             impulses: Box::new([]),
-            states: Box::new([]),
+            latches: Box::new([]),
         };
 
         let mut runtime = Runtime::new();
@@ -121,7 +123,7 @@ mod tests
 
 var changes:
 node/external var queues var change which then signals
-vars should update/signal immediately -- don't signal to downstream states not yet activated
+vars should update/signal immediately -- don't signal to downstream latches not yet powered on
 
 on_dependency_changed() -> [pulsing outlets]
     - optionally power-off self

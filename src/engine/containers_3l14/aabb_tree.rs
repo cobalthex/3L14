@@ -143,7 +143,7 @@ impl<T> AabbTree<T>
         if gparent_index.is_some()
         {
             println!("removed {:?}", &parent.bounds);
-            let mut gparent = &mut self.nodes[gparent_index.0];
+            let gparent = &mut self.nodes[gparent_index.0];
             // destroy parent and replace w/ leaf sibling
             if gparent.left_child_index == parent_index
             {
