@@ -841,6 +841,7 @@ mod tests
             {
                 let _ = READY_WAITER.lock();
                 _req2 = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+                // TODO: this appears to be non-deterministic
                 assert_eq!(Some(1), get_passthru_call_count::<TestAssetLifecycler>(&assets));
             }
             await_asset(&_req2);

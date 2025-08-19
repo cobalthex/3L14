@@ -10,6 +10,11 @@ use crate::{Scope, SharedScope};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InstRunId(u32);
+impl InstRunId
+{
+    #[cfg(test)]
+    pub(crate) const TEST: Self = Self(1);
+}
 
 pub struct Runtime
 {
@@ -80,7 +85,7 @@ impl Runtime
                 let todo_shared_scope = SharedScope::default();
 
                 // TODO: enqueue job
-                inst_mut.process_events(&todo_shared_scope);
+                inst_mut.process_events(&todo_shared_scope, run_id);
             }
         }
 
@@ -111,6 +116,7 @@ mod tests
             signaled_entries: Box::new([]),
             impulses: Box::new([]),
             latches: Box::new([]),
+            num_local_vars: 0,
         };
 
         let mut runtime = Runtime::new();

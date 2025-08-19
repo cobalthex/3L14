@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use super::{BlockId, InstRunId, Instance};
 use smallvec::SmallVec;
+use nab_3l14::utils::alloc_slice::alloc_slice_default;
 
 #[repr(u8)]
 pub enum VarScope
@@ -13,10 +14,23 @@ pub enum VarScope
 pub struct VarId(u32);
 impl VarId
 {
+    #[cfg(test)]
+    #[inline] #[must_use]
+    pub fn test(id: u8, scope: VarScope) -> Self
+    {
+        Self((id as u32) | (scope as u32) << (u32::BITS - 1))
+    }
+
     #[inline] #[must_use]
     pub fn scope(self) -> VarScope
     {
         unsafe { std::mem::transmute((self.0 >> (u32::BITS - 1)) as u8) }
+    }
+
+    #[inline] #[must_use]
+    fn value(self) -> u32
+    {
+        self.0 & ((1 << (u32::BITS - 1)) - 1)
     }
 }
 impl Debug for VarId
@@ -33,7 +47,7 @@ impl Debug for VarId
 
 pub(super) type VarListener = (InstRunId, BlockId);
 
-#[derive(PartialEq, Clone)]
+#[derive(Default, PartialEq, Clone)]
 pub struct Var
 {
     // provider (name, inputs, get_val())
@@ -60,13 +74,22 @@ pub enum VarValue
 
 pub(super) type ScopeChanges = SmallVec<[VarChange; 4]>;
 
-#[derive(Default)]
 pub struct LocalScope
 {
     vars: Box<[Var]>,
     // var ID->u32 mapping
     // stacked vars
-
+}
+impl LocalScope
+{
+    #[inline] #[must_use]
+    pub(super) fn new(count: u32) -> Self
+    {
+        Self
+        {
+            vars: alloc_slice_default(count as usize)
+        }
+    }
 }
 
 #[derive(Default)]
@@ -85,6 +108,9 @@ pub(crate) struct VarChange
 
 pub struct Scope<'s>
 {
+    pub(super) run_id: InstRunId,
+    pub(super) block_id: BlockId,
+
     pub(super) local_scope: &'s mut LocalScope,
     pub(super) local_changes: &'s mut ScopeChanges,
     pub(super) shared_scope: &'s SharedScope,
@@ -92,13 +118,14 @@ pub struct Scope<'s>
 }
 impl<'s> Scope<'s>
 {
+    #[must_use]
     pub fn get(&self, var_id: VarId) -> Option<VarValue>
     {
         let val = match var_id.scope()
         {
             VarScope::Local =>
             {
-                self.local_scope.vars.get(var_id.0 as usize)
+                self.local_scope.vars.get(var_id.value() as usize)
             }
             VarScope::Shared =>
             {
@@ -127,6 +154,43 @@ impl<'s> Scope<'s>
                         new_value: value.clone(),
                     });
                 }
+            }
+            VarScope::Shared =>
+            {
+                todo!()
+            }
+        }
+    }
+
+    pub fn subscribe(&mut self, var_id: VarId)
+    {
+        match var_id.scope()
+        {
+            VarScope::Local =>
+            {
+                let var = self.local_scope.vars.get_mut(var_id.value() as usize).expect("Invalid var ID");
+                var.listeners.push((self.run_id, self.block_id));
+                // assert unique?
+            }
+            VarScope::Shared =>
+            {
+                todo!()
+            }
+        }
+    }
+
+    pub fn unsubscribe(&mut self, var_id: VarId)
+    {
+        match var_id.scope()
+        {
+            VarScope::Local =>
+            {
+                let var = self.local_scope.vars.get_mut(var_id.value() as usize).expect("Invalid var ID");
+                if let Some(idx) = var.listeners.iter().position(|l| *l == (self.run_id, self.block_id))
+                {
+                    var.listeners.remove(idx);
+                }
+                // assert unique?
             }
             VarScope::Shared =>
             {

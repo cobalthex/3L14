@@ -111,7 +111,6 @@ pub(super) type PlugList = SmallVec<[Plug; 2]>; // todo: re-eval count
 
 pub struct ImpulseOutletVisitor<'s>
 {
-    // TODO: move this back to a pass-by-(mut)ref
     pub(super) pulses: &'s mut PlugList,
 }
 impl ImpulseOutletVisitor<'_>
@@ -132,7 +131,7 @@ impl Block for dyn ImpulseBlock { }
 pub struct LatchOutletVisitor<'s>
 {
     pub(super) pulses: &'s mut PlugList,
-    pub(super) latching: &'s mut PlugList,
+    pub(super) latches: &'s mut PlugList,
 }
 impl LatchOutletVisitor<'_>
 {
@@ -142,10 +141,10 @@ impl LatchOutletVisitor<'_>
     }
     pub fn visit_latching(&mut self, outlet: &LatchingOutlet, inlet: Inlet)
     {
-        self.latching.reserve(outlet.plugs.len());
+        self.latches.reserve(outlet.plugs.len());
         for plug in outlet.plugs.iter()
         {
-            self.latching.push(plug.poison(inlet));
+            self.latches.push(plug.poison(inlet));
         }
     }
 }
@@ -175,6 +174,7 @@ pub struct Graph
     pub(super) signaled_entries: Box<[(Signal, EntryPoints)]>,
     pub(super) impulses: Box<[Box<dyn ImpulseBlock>]>,
     pub(super) latches: Box<[Box<dyn LatchBlock>]>,
+    pub(super) num_local_vars: u32,
 }
 
 #[cfg(test)]
