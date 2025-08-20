@@ -208,7 +208,7 @@ impl Instance
                 .chain(latching_plugs.iter().rev().map(|p| Plug { target: p.target, inlet: Inlet::Pulse }));
             self.pulse(plugs, shared_scope, run_id);
 
-
+            // should these evaluate immediately?
             for change in local_changes.drain(..)
             {
                 self.enqueue_event(Event::VarChanged(change));
@@ -957,7 +957,11 @@ mod var_tests
     }
     impl LatchBlock for WriteLatch
     {
-        fn power_on(&self, _scope: Scope, _outlet_visitor: LatchOutletVisitor) { println!("powered on WriteLatch"); }
+        fn power_on(&self, mut scope: Scope, _outlet_visitor: LatchOutletVisitor)
+        {
+            println!("powered on WriteLatch");
+            scope.set(self.var, VarValue::Bool(true));
+        }
         fn power_off(&self, _scope: Scope) { }
         fn on_var_changed(&self, _change: VarChange, _scope: Scope, _outlet_visitor: LatchOutletVisitor) -> OnVarChangedResult
         {
@@ -977,10 +981,13 @@ mod var_tests
             scope.subscribe(self.var);
             println!("powered on ReadLatch");
         }
-        fn power_off(&self, _scope: Scope) { }
+        fn power_off(&self, mut scope: Scope)
+        {
+            scope.unsubscribe(self.var);
+        }
         fn on_var_changed(&self, change: VarChange, _scope: Scope, mut outlet_visitor: LatchOutletVisitor) -> OnVarChangedResult
         {
-            println!("read {:?} {:?}", change.var, change.new_value);
+            println!("read {:?} = {:?}", change.var, change.new_value);
             outlet_visitor.visit_pulsed(&self.on_read);
             OnVarChangedResult::NoChange
         }
@@ -1021,16 +1028,10 @@ mod var_tests
         };
 
         let mut instance = Instance::new(graph);
-
         let shared_scope = SharedScope::default();
 
-        assert_eq!(instance.latch_has_power(0), false);
-        assert_eq!(instance.latch_has_power(1), false);
-
         instance.power_on(&shared_scope, InstRunId::TEST);
-
-        assert_eq!(instance.latch_has_power(0), true);
-        assert_eq!(instance.latch_has_power(1), true);
+        instance.process_events(&shared_scope, InstRunId::TEST);
 
         assert_eq!(instance.get_action_history(), &[
             Action::AutoEntry,
@@ -1044,5 +1045,57 @@ mod var_tests
         instance.power_off(&shared_scope, InstRunId::TEST);
     }
 
-    // TODO: var that propagates to further vars
+    #[test]
+    fn var_propagation()
+    {
+        let graph = Graph
+        {
+            auto_entries: Box::new([
+                BlockId::latch(1),
+                BlockId::latch(0),
+            ]),
+
+            signaled_entries: Box::new([]),
+
+            impulses: Box::new([
+                Box::new(TestImpulse),
+            ]),
+
+            latches: Box::new([
+                Box::new(WriteLatch
+                {
+                    var: VarId::test(0, VarScope::Local),
+                }),
+                Box::new(ReadLatch
+                {
+                    var: VarId::test(0, VarScope::Local),
+                    on_read: PulsedOutlet
+                    {
+                        plugs: Box::new([Plug { target: BlockId::impulse(0), inlet: Inlet::Pulse }]),
+                    },
+                }),
+            ]),
+
+            num_local_vars: 1,
+        };
+
+        let mut instance = Instance::new(graph);
+        let shared_scope = SharedScope::default();
+
+        instance.power_on(&shared_scope, InstRunId::TEST);
+        instance.process_events(&shared_scope, InstRunId::TEST);
+
+        assert_eq!(instance.get_action_history(), &[
+            Action::AutoEntry,
+            Action::Visit(Plug::new(BlockId::latch(1), Inlet::Pulse)),
+            Action::PowerOn(BlockId::latch(1)),
+            Action::Visit(Plug::new(BlockId::latch(0), Inlet::Pulse)),
+            Action::PowerOn(BlockId::latch(0)),
+            Action::VarChanged(VarId::test(0, VarScope::Local), VarValue::Bool(true)),
+            Action::Visit(Plug::new(BlockId::impulse(0), Inlet::Pulse)),
+            Action::Pulse(BlockId::impulse(0)),
+        ]);
+
+        instance.power_off(&shared_scope, InstRunId::TEST);
+    }
 }

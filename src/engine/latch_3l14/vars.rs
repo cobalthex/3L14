@@ -50,9 +50,7 @@ pub(super) type VarListener = (InstRunId, BlockId);
 #[derive(Default, PartialEq, Clone)]
 pub struct Var
 {
-    // provider (name, inputs, get_val())
-    // value
-    // listeners (block refs)
+    // TODO: should vars be fixed types? (would be tricky w/ shared vars)
     pub value: VarValue,
     pub(super) listeners: SmallVec<[VarListener; 2]>,
 }
@@ -104,7 +102,6 @@ pub(crate) struct VarChange
     pub target: VarListener,
     pub new_value: VarValue,
 }
-
 
 pub struct Scope<'s>
 {
@@ -162,8 +159,13 @@ impl<'s> Scope<'s>
         }
     }
 
+    // TODO: automate sub/unsub in latches?
+
     pub fn subscribe(&mut self, var_id: VarId)
     {
+        // statically restrict this?
+        debug_assert!(self.block_id.is_latch());
+
         match var_id.scope()
         {
             VarScope::Local =>
@@ -181,6 +183,8 @@ impl<'s> Scope<'s>
 
     pub fn unsubscribe(&mut self, var_id: VarId)
     {
+        debug_assert!(self.block_id.is_latch());
+
         match var_id.scope()
         {
             VarScope::Local =>
@@ -211,3 +215,12 @@ mod tests
     {
     }
 }
+
+
+/* TODO
+
+- code-backed var values:
+  - code can push changes (live values)
+- expressions
+
+ */
