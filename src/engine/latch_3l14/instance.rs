@@ -3,15 +3,14 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crossbeam::queue::SegQueue;
 use smallvec::SmallVec;
-use asset_3l14::Signal;
-use nab_3l14::debug_panic;
+use nab_3l14::{debug_panic, Signal};
 use super::*;
 
 const MAX_PULSE_DEPTH: u32 = 100; // smaller number?
 
 /* TODO: at build time:
 - allow multiple entrypoints during design time but merge into one
-- graphs that have no entrypoint
+- circuits that have no entrypoint
 - latches with only power-off inlets
 - guarantee block index order? (lower numbers guaranteed to be closer to root?)
 - (currently) disable multiple links to a single inlet
@@ -50,7 +49,7 @@ struct HydratedLatch
 
 pub struct Instance
 {
-    graph: Graph,
+    circuit: Circuit,
     pub(super) scope: LocalScope,
 
     // todo: perhaps organize these to be on their own cache line
@@ -66,12 +65,12 @@ pub struct Instance
 impl Instance
 {
     #[inline] #[must_use]
-    pub fn new(graph: Graph) -> Self
+    pub fn new(circuit: Circuit) -> Self
     {
         Self
         {
-            scope: LocalScope::new(graph.num_local_vars),
-            graph,
+            scope: LocalScope::new(circuit.num_local_vars),
+            circuit,
             hydrated_latches: HashMap::default(),
             event_queue: SegQueue::new(),
             is_processing_events: AtomicBool::new(false),
@@ -82,7 +81,7 @@ impl Instance
     }
 
     #[inline] #[must_use]
-    pub fn graph(&self) -> &Graph { &self.graph }
+    pub fn circuit(&self) -> &Circuit { &self.circuit }
 
     #[inline]
     pub(crate) fn enqueue_event(&self, event: Event)
@@ -125,7 +124,7 @@ impl Instance
     fn power_on(&mut self, shared_scope: &SharedScope, run_id: InstRunId)
     {
         self.push_action(Action::AutoEntry);
-        let auto_blocks: SmallVec<[BlockId; 8]> = SmallVec::from_slice(&self.graph.auto_entries);
+        let auto_blocks: SmallVec<[BlockId; 8]> = SmallVec::from_slice(&self.circuit.auto_entries);
         self.pulse(
             auto_blocks.iter().rev().map(|b| Plug { target: *b, inlet: Inlet::Pulse }),
             shared_scope,
@@ -136,8 +135,8 @@ impl Instance
     fn signal(&mut self, signal_slot: usize, shared_scope: &SharedScope, run_id: InstRunId)
     {
         let mut outlets = SmallVec::<[_; 2]>::new();
-        self.push_action(Action::SignaledEntry(self.graph.signaled_entries[signal_slot].0));
-        outlets.extend_from_slice(&self.graph.signaled_entries[signal_slot].1);
+        self.push_action(Action::SignaledEntry(self.circuit.signaled_entries[signal_slot].0));
+        outlets.extend_from_slice(&self.circuit.signaled_entries[signal_slot].1);
         self.pulse(
             outlets.iter().rev().map(|b| Plug { target: *b, inlet: Inlet::Pulse }),
             shared_scope,
@@ -175,11 +174,12 @@ impl Instance
     {
         puffin::profile_function!();
 
-        let (_, block) = change.target;
-        if block.is_latch()
+        let (change_run_id, block_id) = change.target;
+        debug_assert!(change_run_id == run_id); // todo: remove once proven
+        if block_id.is_latch()
         {
             self.push_action(Action::VarChanged(change.var, change.new_value.clone()));
-            let Some(hydrated) = self.hydrated_latches.get(&block.value()) else { return; };
+            let Some(hydrated) = self.hydrated_latches.get(&block_id.value()) else { return; };
             if !hydrated.is_powered { return; };
 
             let mut pulsed_plugs = PlugList::default();
@@ -188,16 +188,16 @@ impl Instance
             let mut local_changes = ScopeChanges::new();
             let mut shared_changes = ScopeChanges::new();
 
-            self.graph.latches[block.value() as usize].on_var_changed(change, Scope
+            self.circuit.latches[block_id.value() as usize].on_var_changed(change, Scope
             {
-                run_id: run_id,
-                block_id: block,
+                run_id,
+                block_id,
                 local_scope: &mut self.scope,
                 local_changes: &mut local_changes,
                 shared_scope,
                 shared_changes: &mut shared_changes
             },
-            LatchOutletVisitor
+                                                                           LatchOutletVisitor
             {
                 pulses: &mut pulsed_plugs,
                 latches: &mut latching_plugs,
@@ -225,7 +225,7 @@ impl Instance
     }
 
     // TODO: pass in array of plugs
-    // pulse nodes down the graph starting at the given plugs (which should be passed in in reverse order)
+    // pulse nodes down the circuit starting at the given plugs (which should be passed in in reverse order)
     fn pulse(&mut self, plugs_in_rev_order: impl IntoIterator<Item=Plug>, shared_scope: &SharedScope, run_id: InstRunId)
     {
         puffin::profile_function!();
@@ -273,7 +273,7 @@ impl Instance
 
             if test_plug.target.is_impulse()
             {
-                let impulse = self.graph.impulses[test_plug.target.value() as usize].as_ref();
+                let impulse = self.circuit.impulses[test_plug.target.value() as usize].as_ref();
                 if let Inlet::Pulse = test_plug.inlet
                 {
                     impulse.pulse(
@@ -321,7 +321,7 @@ impl Instance
                             hydrated_parent.powered_outlets.push(test_plug.target);
                         }
 
-                        let latch = self.graph.latches[test_plug.target.value() as usize].as_ref();
+                        let latch = self.circuit.latches[test_plug.target.value() as usize].as_ref();
                         latch.power_on(
                             scope!(test_plug.target),
                             LatchOutletVisitor
@@ -397,7 +397,7 @@ impl Instance
         for powered in powering_off_latches.iter().rev()
         {
             let blk = BlockId::latch(*powered);
-            let latch = self.graph.latches[*powered as usize].as_ref();
+            let latch = self.circuit.latches[*powered as usize].as_ref();
             latch.power_off(scope!(blk));
             self.push_action(Action::PowerOff(blk));
         }
@@ -427,7 +427,7 @@ impl Instance
     #[inline] #[must_use]
     pub fn latch_has_power(&self, latch: u32) -> bool
     {
-        debug_assert!((latch as usize) < self.graph.latches.len());
+        debug_assert!((latch as usize) < self.circuit.latches.len());
         self.hydrated_latches.get(&latch).map_or(false, |latch| latch.is_powered)
     }
 
@@ -443,7 +443,7 @@ impl Instance
 
         let mut stack: SmallVec<[BlockId; 16]> = SmallVec::new();
         writer.write_fmt(format_args!("  \"auto_entry\" [label=\"Automatic entry\" shape=\"box\"]\n",))?;
-        for outlet in &self.graph.auto_entries
+        for outlet in &self.circuit.auto_entries
         {
             stack.push(*outlet);
             writer.write_fmt(format_args!("  \"auto_entry\" -> \"{:?}\" [minlen=3]\n",
@@ -459,43 +459,43 @@ impl Instance
         {
             if block.is_impulse()
             {
-                let impulse = self.graph.impulses[block.value() as usize].as_ref();
+                let impulse = self.circuit.impulses[block.value() as usize].as_ref();
                 writer.write_fmt(format_args!("  \"{:?}\" [label=\"{}\\n\\N\" shape=\"box\"]\n",
-                                              block,
-                                              "impulse"))?; // TODO: type name
-                // TODO: visit outlets
+                    block,
+                    "impulse"))?; // TODO: type name
+                todo!("visit all outlets");
             }
             else
             {
                 let hydrated = self.hydrated_latches.get(&block.value());
-                let latch = self.graph.latches[block.value() as usize].as_ref();
+                let latch = self.circuit.latches[block.value() as usize].as_ref();
 
                 let is_powered = hydrated.map(|h| h.is_powered).unwrap_or(false);
                 writer.write_fmt(format_args!("  \"{:?}\" [label=\"{}\\n\\N\" shape=\"{}\"]\n",
-                                              block,
-                                              "latch", // TODO: type name
-                                              if is_powered { "doubleoctagon" } else { "octagon" }))?;
+                    block,
+                    "latch", // TODO: type name
+                    if is_powered { "doubleoctagon" } else { "octagon" }))?;
 
-                // TODO: visit outlets
+                todo!("visit all outlets");
             }
 
             for pulse in &pulsed_plugs
             {
                 stack.push(pulse.target);
                 writer.write_fmt(format_args!("  \"{:?}\" -> \"{:?}\" [minlen=3 taillabel=\"{}\" headlabel=\"{:?}\"]\n",
-                                              block,
-                                              pulse.target,
-                                              "Pulsed (TODO NAME)",
-                                              pulse.inlet))?;
+                    block,
+                    pulse.target,
+                    "Pulsed (TODO NAME)",
+                    pulse.inlet))?;
             }
             for latch in &latching_plugs
             {
                 stack.push(latch.target);
                 writer.write_fmt(format_args!("  \"{:?}\" -> \"{:?}\" [color=\"black:invis:black\" minlen=3 taillabel=\"{}\" headlabel=\"{:?}\"]\n",
-                                              block,
-                                              latch.target,
-                                              "Latching (TODO NAME)",
-                                              latch.inlet))?;
+                    block,
+                    latch.target,
+                    "Latching (TODO NAME)",
+latch.inlet))?;
             }
 
             pulsed_plugs.clear();
@@ -546,6 +546,11 @@ mod traversal_tests
         {
             pulse_outlets.visit_pulsed(&self.outlet);
         }
+
+        fn visit_all_outlets(&self, mut visitor: ImpulseOutletVisitor)
+        {
+            visitor.visit_pulsed(&self.outlet);
+        }
     }
 
     #[derive(Default)]
@@ -560,7 +565,7 @@ mod traversal_tests
         on_false_outlet: PulsedOutlet,
         false_outlet: LatchingOutlet,
 
-        any_outlet: LatchingOutlet,
+        powered_outlet: LatchingOutlet,
     }
     impl LatchBlock for TestLatch
     {
@@ -569,14 +574,14 @@ mod traversal_tests
             if self.value
             {
                 pulse_outlets.visit_pulsed(&self.on_true_outlet);
-                pulse_outlets.visit_latching(&self.true_outlet, Inlet::Pulse);
-                pulse_outlets.visit_latching(&self.any_outlet, Inlet::Pulse);
+                pulse_outlets.visit_latching(&self.true_outlet);
+                pulse_outlets.visit_latching(&self.powered_outlet);
             }
             else
             {
                 pulse_outlets.visit_pulsed(&self.on_false_outlet);
-                pulse_outlets.visit_latching(&self.false_outlet, Inlet::Pulse);
-                pulse_outlets.visit_latching(&self.any_outlet, Inlet::Pulse);
+                pulse_outlets.visit_latching(&self.false_outlet);
+                pulse_outlets.visit_latching(&self.powered_outlet);
             }
         }
 
@@ -587,6 +592,15 @@ mod traversal_tests
         fn on_var_changed(&self, change: VarChange, _scope: Scope, pulse_outlets: LatchOutletVisitor) -> OnVarChangedResult
         {
             OnVarChangedResult::NoChange
+        }
+
+        fn visit_all_outlets(&self, mut visitor: LatchOutletVisitor)
+        {
+            visitor.visit_pulsed(&self.on_true_outlet);
+            visitor.visit_pulsed(&self.on_false_outlet);
+            visitor.visit_latching(&self.true_outlet);
+            visitor.visit_latching(&self.false_outlet);
+            visitor.visit_latching(&self.powered_outlet);
         }
     }
 
@@ -605,7 +619,7 @@ mod traversal_tests
         // L -> i -> I -> I -> I
         // L -> L -> L -> L -> I
 
-        let graph = Graph
+        let circuit = Circuit
         {
             auto_entries: Box::new(
             [
@@ -683,7 +697,7 @@ mod traversal_tests
             num_local_vars: 0,
         };
 
-        let mut instance = Instance::new(graph);
+        let mut instance = Instance::new(circuit);
 
         let shared_scope = SharedScope::default();
 
@@ -745,7 +759,7 @@ mod traversal_tests
     #[test]
     fn power_off_inlet()
     {
-        let graph = Graph
+        let circuit = Circuit
         {
             auto_entries: Box::new(
             [
@@ -783,7 +797,7 @@ mod traversal_tests
             num_local_vars: 0,
         };
 
-        let mut instance = Instance::new(graph);
+        let mut instance = Instance::new(circuit);
 
         let shared_scope = SharedScope::default();
 
@@ -806,7 +820,7 @@ mod traversal_tests
     #[test]
     fn non_latching_outlet()
     {
-        let graph = Graph
+        let circuit = Circuit
         {
             auto_entries: Box::new(
             [
@@ -840,7 +854,7 @@ mod traversal_tests
             num_local_vars: 0,
         };
 
-        let mut instance = Instance::new(graph);
+        let mut instance = Instance::new(circuit);
 
         let shared_scope = SharedScope::default();
 
@@ -873,7 +887,7 @@ mod traversal_tests
     #[test]
     fn signaled_entry()
     {
-        let graph = Graph
+        let circuit = Circuit
         {
             auto_entries: Box::new([]),
             signaled_entries: Box::new(
@@ -909,7 +923,7 @@ mod traversal_tests
             num_local_vars: 0,
         };
 
-        let mut instance = Instance::new(graph);
+        let mut instance = Instance::new(circuit);
 
         let shared_scope = SharedScope::default();
 
@@ -948,12 +962,12 @@ mod var_tests
     impl ImpulseBlock for TestImpulse
     {
         fn pulse(&self, _scope: Scope, _outlet_visitor: ImpulseOutletVisitor) { println!("pulsed TestImpulse"); }
+        fn visit_all_outlets(&self, _visitor: ImpulseOutletVisitor) { }
     }
 
     struct WriteLatch
     {
         pub var: VarId,
-
     }
     impl LatchBlock for WriteLatch
     {
@@ -967,6 +981,7 @@ mod var_tests
         {
             OnVarChangedResult::NoChange
         }
+        fn visit_all_outlets(&self, _visitor: LatchOutletVisitor) { }
     }
 
     struct ReadLatch
@@ -991,12 +1006,16 @@ mod var_tests
             outlet_visitor.visit_pulsed(&self.on_read);
             OnVarChangedResult::NoChange
         }
+        fn visit_all_outlets(&self, mut visitor: LatchOutletVisitor)
+        {
+            visitor.visit_pulsed(&self.on_read);
+        }
     }
 
     #[test]
     fn no_propagation_while_powered_off()
     {
-        let graph = Graph
+        let circuit = Circuit
         {
             auto_entries: Box::new([
                 BlockId::latch(0),
@@ -1027,7 +1046,7 @@ mod var_tests
             num_local_vars: 1,
         };
 
-        let mut instance = Instance::new(graph);
+        let mut instance = Instance::new(circuit);
         let shared_scope = SharedScope::default();
 
         instance.power_on(&shared_scope, InstRunId::TEST);
@@ -1048,7 +1067,7 @@ mod var_tests
     #[test]
     fn var_propagation()
     {
-        let graph = Graph
+        let circuit = Circuit
         {
             auto_entries: Box::new([
                 BlockId::latch(1),
@@ -1079,7 +1098,7 @@ mod var_tests
             num_local_vars: 1,
         };
 
-        let mut instance = Instance::new(graph);
+        let mut instance = Instance::new(circuit);
         let shared_scope = SharedScope::default();
 
         instance.power_on(&shared_scope, InstRunId::TEST);

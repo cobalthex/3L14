@@ -1,0 +1,13 @@
+[package]
+name = "webshit_3l14"
+description = "Web testing of code from 3L14"
+workspace = "../../.."
+edition.workspace = true
+
+[lib]
+path = "lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+latch_3l14.workspace = true
+wasm-bindgen = "0.2.100"

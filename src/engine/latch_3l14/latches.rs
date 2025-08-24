@@ -1,5 +1,5 @@
 use crate::vars::VarChange;
-use super::{LatchingOutlet, PulsedOutlet, Scope, LatchBlock, LatchOutletVisitor, OnVarChangedResult, Inlet};
+use super::{LatchingOutlet, PulsedOutlet, Scope, LatchBlock, LatchOutletVisitor, OnVarChangedResult, Inlet, ImpulseOutletVisitor};
 
 // A no-op, always-active after power-on latch
 pub struct Latch
@@ -11,18 +11,23 @@ impl LatchBlock for Latch
 {
     fn power_on(&self, _scope: Scope, mut pulse_outlets: LatchOutletVisitor)
     {
-        pulse_outlets.visit_latching(&self.powered_outlet, Inlet::Pulse);
+        pulse_outlets.visit_latching(&self.powered_outlet);
     }
     fn power_off(&self, _scope: Scope) { }
     fn on_var_changed(&self, _change: VarChange, _scope: Scope , _pulse_outlets: LatchOutletVisitor) -> OnVarChangedResult
     {
         OnVarChangedResult::NoChange
     }
+
+    fn visit_all_outlets(&self, mut visitor: LatchOutletVisitor)
+    {
+        visitor.visit_latching(&self.powered_outlet);
+    }
 }
 
-pub struct BoolSwitch
+pub struct ConditionLatch
 {
-    pub test: bool, // TODO: expression
+    pub condition: bool, // TODO: expression
 
     on_true_outlet: PulsedOutlet,
     true_outlet: LatchingOutlet,
@@ -32,24 +37,24 @@ pub struct BoolSwitch
 
     powered_outlet: LatchingOutlet,
 }
-impl LatchBlock for BoolSwitch
+impl LatchBlock for ConditionLatch
 {
     fn power_on(&self, _scope: Scope, mut pulse_outlets: LatchOutletVisitor)
     {
         /* TODO:
             dependency change enqueues power-off then power-on (if bool flipped)
          */
-        if self.test
+        if self.condition
         {
             pulse_outlets.visit_pulsed(&self.on_true_outlet);
-            pulse_outlets.visit_latching(&self.true_outlet, Inlet::Pulse);
-            pulse_outlets.visit_latching(&self.powered_outlet, Inlet::Pulse);
+            pulse_outlets.visit_latching(&self.true_outlet);
+            pulse_outlets.visit_latching(&self.powered_outlet);
         }
         else
         {
             pulse_outlets.visit_pulsed(&self.on_false_outlet);
-            pulse_outlets.visit_latching(&self.false_outlet, Inlet::Pulse);
-            pulse_outlets.visit_latching(&self.powered_outlet, Inlet::Pulse);
+            pulse_outlets.visit_latching(&self.false_outlet);
+            pulse_outlets.visit_latching(&self.powered_outlet);
         }
     }
 
@@ -62,6 +67,15 @@ impl LatchBlock for BoolSwitch
     {
         todo!();
         OnVarChangedResult::NoChange
+    }
+
+    fn visit_all_outlets(&self, mut visitor: LatchOutletVisitor)
+    {
+        visitor.visit_pulsed(&self.on_true_outlet);
+        visitor.visit_pulsed(&self.on_false_outlet);
+        visitor.visit_latching(&self.true_outlet);
+        visitor.visit_latching(&self.false_outlet);
+        visitor.visit_latching(&self.powered_outlet);
     }
 }
 

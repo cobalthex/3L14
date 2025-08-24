@@ -1,3 +1,4 @@
+// Symbols are unique values that act as sentinels in code or data
 pub trait Symbol { const INVALID: Self; }
 
 macro_rules! define_symbol {
@@ -10,7 +11,7 @@ macro_rules! define_symbol {
         {
             // cfg(test) doesn't work
             #[inline] #[must_use]
-            pub const fn test(n: char) -> Self { Self(0xBe577e57 + n as u32) }
+            pub const fn test(n: char) -> Self { Self(0xbe577e57 + n as u32) }
         }
         impl Symbol for $name
         {

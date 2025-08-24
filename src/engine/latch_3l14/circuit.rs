@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Formatter};
 use smallvec::SmallVec;
-use asset_3l14::Signal;
+use nab_3l14::Signal;
 use crate::Scope;
 use crate::vars::VarChange;
 
@@ -105,7 +105,10 @@ pub struct LatchingOutlet
     pub plugs: Box<[Plug]>,
 }
 
-pub trait Block { }
+pub trait Block
+{
+    fn name(&self) -> &'static str { "TODO?" }
+}
 
 pub(super) type PlugList = SmallVec<[Plug; 2]>; // todo: re-eval count
 
@@ -125,6 +128,8 @@ impl ImpulseOutletVisitor<'_>
 pub trait ImpulseBlock
 {
     fn pulse(&self, scope: Scope, pulse_outlets: ImpulseOutletVisitor);
+
+    fn visit_all_outlets(&self, visitor: ImpulseOutletVisitor);
 }
 impl Block for dyn ImpulseBlock { }
 
@@ -139,12 +144,13 @@ impl LatchOutletVisitor<'_>
     {
         self.pulses.extend_from_slice(&outlet.plugs);
     }
-    pub fn visit_latching(&mut self, outlet: &LatchingOutlet, inlet: Inlet)
+    // visit a latching outlet. Inlet can be used to override the outlet (specific use cases)
+    pub fn visit_latching(&mut self, outlet: &LatchingOutlet)
     {
         self.latches.reserve(outlet.plugs.len());
         for plug in outlet.plugs.iter()
         {
-            self.latches.push(plug.poison(inlet));
+            self.latches.push(*plug);
         }
     }
 }
@@ -163,18 +169,22 @@ pub trait LatchBlock
     fn power_off(&self, scope: Scope);
 
     fn on_var_changed(&self, change: VarChange, scope: Scope, pulse_outlets: LatchOutletVisitor) -> OnVarChangedResult;
+
+    fn visit_all_outlets(&self, visitor: LatchOutletVisitor);
 }
 impl Block for dyn LatchBlock { }
 
 pub type EntryPoints = Box<[BlockId]>;
 
-pub struct Graph
+pub struct Circuit
 {
-    pub(super) auto_entries: EntryPoints,
-    pub(super) signaled_entries: Box<[(Signal, EntryPoints)]>,
-    pub(super) impulses: Box<[Box<dyn ImpulseBlock>]>,
-    pub(super) latches: Box<[Box<dyn LatchBlock>]>,
-    pub(super) num_local_vars: u32,
+    // todo: make pub(crate)
+
+    pub auto_entries: EntryPoints,
+    pub signaled_entries: Box<[(Signal, EntryPoints)]>,
+    pub impulses: Box<[Box<dyn ImpulseBlock>]>,
+    pub latches: Box<[Box<dyn LatchBlock>]>,
+    pub num_local_vars: u32,
 }
 
 #[cfg(test)]

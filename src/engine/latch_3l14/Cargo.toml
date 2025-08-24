@@ -11,8 +11,6 @@ path = "lib.rs"
 action_history = []
 
 [dependencies]
-asset_3l14.workspace = true
-containers_3l14.workspace = true
 nab_3l14.workspace = true
 
 puffin.workspace = true

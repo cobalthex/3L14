@@ -12,12 +12,10 @@ proc_macros_3l14.workspace = true
 chrono.workspace = true
 clap.workspace = true
 log.workspace = true
-is-root.workspace = true
 colog.workspace = true
 metrohash.workspace = true
-serde.workspace = true
 parking_lot.workspace = true
-approx.workspace = true
-glam.workspace = true
 bitcode.workspace = true
-directories.workspace = true
+
+[target.'cfg(not(target_arch="wasm32"))'.dependencies]
+is-root = "0.1.3"

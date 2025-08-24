@@ -2,6 +2,7 @@ use std::fmt::{Debug, Formatter};
 use super::{BlockId, InstRunId, Instance};
 use smallvec::SmallVec;
 use nab_3l14::utils::alloc_slice::alloc_slice_default;
+use crate::runtime::BlockRef;
 
 #[repr(u8)]
 pub enum VarScope
@@ -45,14 +46,12 @@ impl Debug for VarId
     }
 }
 
-pub(super) type VarListener = (InstRunId, BlockId);
-
 #[derive(Default, PartialEq, Clone)]
 pub struct Var
 {
     // TODO: should vars be fixed types? (would be tricky w/ shared vars)
     pub value: VarValue,
-    pub(super) listeners: SmallVec<[VarListener; 2]>,
+    pub(super) listeners: SmallVec<[BlockRef; 2]>,
 }
 
 #[derive(Default, Debug, PartialEq, Clone)]
@@ -99,7 +98,7 @@ pub struct SharedScope
 pub(crate) struct VarChange
 {
     pub var: VarId,
-    pub target: VarListener,
+    pub target: BlockRef,
     pub new_value: VarValue,
 }
 

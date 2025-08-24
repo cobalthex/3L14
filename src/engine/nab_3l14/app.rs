@@ -1,12 +1,10 @@
-use std::env::current_dir;
+use proc_macros_3l14::FancyEnum;
 use std::fmt::Debug;
-use std::io::Read;
 use std::panic::PanicHookInfo;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{LazyLock, OnceLock};
-use proc_macros_3l14::FancyEnum;
 
 pub enum AppFolder
 {
@@ -122,8 +120,11 @@ impl<TCliArgs: CliArgs> AppRun<TCliArgs>
             start_time: chrono::Local::now(),
             args: TCliArgs::parse(),
             pid: std::process::id(),
+            #[cfg(not(target_arch="wasm32"))]
             is_elevated: is_root::is_root(),
-            app_dir: app_dir,
+            #[cfg(target_arch="wasm32")]
+            is_elevated: false,
+            app_dir,
             exit_reason: AtomicI32::new(ExitReason::NormalExit as i32),
         };
 

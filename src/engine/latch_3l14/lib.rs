@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use std::u32::MAX;
 use smallvec::{smallvec, SmallVec};
 
-mod graph;
-pub use graph::*;
+mod circuit;
+pub use circuit::*;
 
 mod instance;
 pub use instance::*;
