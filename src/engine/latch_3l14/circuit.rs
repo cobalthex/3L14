@@ -1,8 +1,10 @@
 use std::fmt::{Debug, Formatter};
-use smallvec::SmallVec;
+use crossbeam::channel::Sender;
+use smallvec::{ExtendFromSlice, SmallVec};
 use nab_3l14::Signal;
 use crate::Scope;
 use crate::vars::VarChange;
+use crate::runtime::Action as RuntimeAction;
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 pub struct BlockId(u32);
@@ -112,9 +114,9 @@ pub trait Block
 
 pub(super) type PlugList = SmallVec<[Plug; 2]>; // todo: re-eval count
 
-pub struct ImpulseOutletVisitor<'s>
+pub struct ImpulseOutletVisitor<'i>
 {
-    pub(super) pulses: &'s mut PlugList,
+    pub(super) pulses: &'i mut PlugList,
 }
 impl ImpulseOutletVisitor<'_>
 {
@@ -124,53 +126,84 @@ impl ImpulseOutletVisitor<'_>
     }
 }
 
+pub struct ImpulseActions<'i>
+{
+    pub(super) pulse_outlets: &'i mut PlugList,
+    pub(super) action_sender: Sender<RuntimeAction>,
+    // scope?
+}
+impl ImpulseActions<'_>
+{
+    #[inline]
+    pub fn pulse(&mut self, outlet: &PulsedOutlet) { self.pulse_outlets.extend_from_slice(&outlet.plugs); }
+    #[inline]
+    pub fn enqueue_action(&mut self, action: RuntimeAction) { let _ = self.action_sender.send(action); } // TODO: error handling
+}
+
 // A block that can perform an action whenever they are pulsed
 pub trait ImpulseBlock
 {
-    fn pulse(&self, scope: Scope, pulse_outlets: ImpulseOutletVisitor);
-
+    // Called when this block is pulsed
+    fn pulse(&self, scope: Scope, actions: ImpulseActions);
+    // iterate through all outlets in this block (Primarily used by diagnostics/etc)
     fn visit_all_outlets(&self, visitor: ImpulseOutletVisitor);
 }
 impl Block for dyn ImpulseBlock { }
 
-pub struct LatchOutletVisitor<'s>
+pub struct LatchOutletVisitor<'l>
 {
-    pub(super) pulses: &'s mut PlugList,
-    pub(super) latches: &'s mut PlugList,
+    pub(super) pulses: &'l mut PlugList,
+    pub(super) latches: &'l mut PlugList,
 }
 impl LatchOutletVisitor<'_>
 {
+    #[inline]
     pub fn visit_pulsed(&mut self, outlet: &PulsedOutlet)
     {
         self.pulses.extend_from_slice(&outlet.plugs);
     }
-    // visit a latching outlet. Inlet can be used to override the outlet (specific use cases)
+    #[inline]
     pub fn visit_latching(&mut self, outlet: &LatchingOutlet)
     {
-        self.latches.reserve(outlet.plugs.len());
-        for plug in outlet.plugs.iter()
-        {
-            self.latches.push(*plug);
-        }
+        self.latches.extend_from_slice(&outlet.plugs);
     }
 }
 
-pub enum OnVarChangedResult
+// TODO: ability to send actions to runtime
+
+pub struct LatchActions<'l>
 {
-    NoChange,
-    PowerOff,
+    pub(super) pulse_outlets: &'l mut PlugList,
+    pub(super) latch_outlets: &'l mut PlugList,
+    pub(super) action_sender: Sender<RuntimeAction>,
+    // scope?
+}
+impl LatchActions<'_>
+{
+    #[inline]
+    pub fn pulse(&mut self, outlet: &PulsedOutlet) { self.pulse_outlets.extend_from_slice(&outlet.plugs); }
+    #[inline]
+    pub fn latch(&mut self, outlet: &LatchingOutlet) { self.latch_outlets.extend_from_slice(&outlet.plugs); }
+    #[inline]
+    pub fn enqueue_action(&mut self, action: RuntimeAction) { let _ = self.action_sender.send(action); } // TODO: error handling
 }
 
 // A block that can be powered on/off, performing an action upon on/off.
 // Will turn off any downstream blocks when turned off
 pub trait LatchBlock
 {
-    fn power_on(&self, scope: Scope, pulse_outlets: LatchOutletVisitor);
+    // Called when this latch gets powered-on
+    fn power_on(&self, scope: Scope, actions: LatchActions);
+    // Called as this latch is being powered off
     fn power_off(&self, scope: Scope);
-
-    fn on_var_changed(&self, change: VarChange, scope: Scope, pulse_outlets: LatchOutletVisitor) -> OnVarChangedResult;
-
+    // Re-enter an already powered-on latch.
+    // This is typically used for code-backed wake-ups
+    fn re_enter(&self, _scope: Scope, _actions: LatchActions) { }
+    // Called when a variable this block is listening to, changes
+    fn on_var_changed(&self, _change: VarChange, _scope: Scope, _actions: LatchActions) { }
+    // iterate through all outlets in this block (Primarily used by diagnostics/etc)
     fn visit_all_outlets(&self, visitor: LatchOutletVisitor);
+
 }
 impl Block for dyn LatchBlock { }
 

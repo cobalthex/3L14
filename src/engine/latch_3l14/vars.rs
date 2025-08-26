@@ -95,7 +95,7 @@ pub struct SharedScope
     // TODO
 }
 
-pub(crate) struct VarChange
+pub struct VarChange
 {
     pub var: VarId,
     pub target: BlockRef,
