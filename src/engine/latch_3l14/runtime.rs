@@ -1,82 +1,70 @@
-use std::collections::HashMap;
-use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicU32, Ordering};
-use crossbeam::channel::{Receiver, Sender};
-use smallvec::SmallVec;
-use crossbeam::queue::SegQueue;
-use super::{BlockId, Circuit, Instance, VarId, VarValue};
-use nab_3l14::Signal;
-use crate::instance::Action as InstanceAction;
-use crate::{RunContext, SharedScope};
+use super::{BlockId, Circuit, Instance, VarChange, VarId, VarValue};
 use crate::VarScope::Shared;
+use crate::{RunContext, SharedScope};
+use crossbeam::channel::{Receiver, Sender};
+use crossbeam::queue::SegQueue;
+use dashmap::DashMap;
+use nab_3l14::Signal;
+use smallvec::SmallVec;
+use std::cell::UnsafeCell;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use parking_lot::Mutex;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct InstRunId(u32);
 impl InstRunId
 {
-    #[cfg(test)]
-    pub(crate) const TEST: Self = Self(1);
+    pub(super) const TEST: Self = Self(1);
 }
 
 pub type BlockRef = (InstRunId, BlockId);
 
-pub enum Action
+pub(crate) enum InstanceAction
 {
-    Spawn // spawn a new instance
-    {
-        circuit: Circuit,
-        parent: Option<BlockRef>, // is blockID always necessary? (notify code-backed locations?)
-    },
-    PowerOn(InstRunId), // power-on a new instance  -- TODO: This should be private
-    PowerOff(InstRunId), // terminate a running instance
-    Signal(Signal), // power-on any graphs listening to this signal
-    #[cfg(debug_assertions)]
-    DebugSetVar(InstRunId, VarId, VarValue), // for testing only, set a variable value
+    PowerOn,
+    Signal(u32),
+    PowerOff,
+    ReEnter(BlockId),
 }
 
 struct RunningInstance
 {
-    instance: UnsafeCell<Instance>,
+    instance: Mutex<Instance>,
+    pending_actions: SegQueue<InstanceAction>,
     parent: Option<BlockRef>,
-}
-impl RunningInstance
-{
-    fn inst_mut(&self) -> &mut Instance
-    {
-        unsafe { &mut* self.instance.get() }
-    }
 }
 
 pub struct Runtime
 {
-    instances: HashMap<InstRunId, RunningInstance>, // TODO: thread-safe/lock free (dashmap?)
+    instances: DashMap<InstRunId, RunningInstance>,
     instance_id_counter: AtomicU32,
-    signals: HashMap<Signal, SmallVec<[(InstRunId, u32); 4]>>,
+    signals: DashMap<Signal, SmallVec<[(InstRunId, u32); 4]>>,
 
     // shared scopes
-
-    action_queue_send: Sender<Action>,
-    action_queue_recv: Receiver<Action>,
 }
 impl Runtime
 {
     #[must_use]
-    pub fn new() -> Self
+    pub fn new() -> Arc<Self>
     {
-        let (sender, receiver) = crossbeam::channel::unbounded();
-
-        Self
+        Arc::new(Self
         {
-            instances: HashMap::new(),
+            instances: DashMap::new(),
             instance_id_counter: AtomicU32::new(1),
-            signals: HashMap::new(),
-            action_queue_send: sender,
-            action_queue_recv: receiver,
-        }
+            signals: DashMap::new(),
+        })
+    }
+
+    #[must_use]
+    pub fn dump_graphviz(&self, inst_id: InstRunId) -> String
+    {
+        let inst = self.instances.get(&inst_id).expect("Instance not found");
+        inst.instance.lock().as_graphviz()
     }
 
     // spawn a new instance of the specified circuit (async)
-    pub fn spawn(&mut self, circuit: Circuit, parent: Option<BlockRef>) -> InstRunId
+    pub fn spawn(self: &Arc<Self>, circuit: Circuit, parent: Option<BlockRef>) -> InstRunId
     {
         let signals: SmallVec<[_; 8]> = circuit.signaled_entries
             .iter().enumerate()
@@ -86,114 +74,75 @@ impl Runtime
         // maybe can generate ID from token in the future (need generation probably)
         let inst_id = InstRunId(self.instance_id_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
         let instance = Instance::new(circuit);
-        self.instances.insert(inst_id,RunningInstance
+
+        let pending_actions = SegQueue::new();
+        pending_actions.push(InstanceAction::PowerOn);
+
+        let new_inst = self.instances.entry(inst_id).insert(RunningInstance
         {
-            instance: UnsafeCell::new(instance),
+            instance: Mutex::new(instance),
+            pending_actions,
             parent,
         });
 
         // todo: error handling
-        let _ = self.action_queue_send.send(Action::PowerOn(inst_id));
 
         for (slot, signal) in signals
         {
             self.signals.entry(signal).or_default().push((inst_id, slot));
         }
 
+        self.clone().run_instance(inst_id, &new_inst);
+
         inst_id
     }
 
-    fn request_action(&mut self, action: Action)
+    pub fn power_off(self: &Arc<Self>, run_id: InstRunId)
     {
-        // TODO: error handling
-        let _ = self.action_queue_send.send(action);
+        let running_inst = self.instances.get(&run_id)
+            .expect("There should never be a power-off before power-on");
+        running_inst.pending_actions.push(InstanceAction::PowerOff);
+        self.clone().run_instance(run_id, &running_inst);
+
+        // TODO: wake up parent (instance should probably send this?)
     }
 
-    // drain the event queue
-    pub fn process_actions(&mut self)
+    pub fn signal(self: &Arc<Self>, signal: Signal)
+    {
+        let Some(signals) = self.signals.get(&signal) else { return; };
+        for (run_id, slot) in signals.iter()
+        {
+            let Some(running_inst) = self.instances.get(run_id) else { continue; };
+            running_inst.pending_actions.push(InstanceAction::Signal(*slot));
+            self.clone().run_instance(*run_id, &running_inst);
+        }
+    }
+
+    fn run_instance(self: Arc<Self>, run_id: InstRunId, instance: &RunningInstance) // better name?
     {
         puffin::profile_function!();
 
-        fn process_instance_actions(
-            instance: &mut Instance, // mutability is verified in this function
-            run_context: RunContext)
-        {
-            if !instance.is_processing_actions.swap(true, Ordering::AcqRel)
-            {
-                // TODO: enqueue job
-                instance.process_actions(run_context);
-            }
-        }
+        let Some(mut inst_mut) = instance.instance.try_lock() else { return; };
 
-        // todo: Error handling?
-        'queue_recv:
-        while let Ok(action) = self.action_queue_recv.recv()
+        let shared_scope = SharedScope::default(); // TODO
+        let context = RunContext
+        {
+            run_id,
+            shared_scope: &shared_scope,
+            runtime: self,
+        };
+
+        while let Some(action) = instance.pending_actions.pop()
         {
             match action
             {
-                Action::Spawn { circuit, parent } =>
-                {
-                    let _ = self.spawn(circuit, parent);
-                    continue 'queue_recv;
-                }
-                Action::PowerOn(run_id) =>
-                {
-                    let running_inst = self.instances.get(&run_id)
-                        .expect("There should never be a power-off before power-on");
-
-                    let shared_scope = SharedScope::default();
-                    let inst = running_inst.inst_mut();
-                    inst.enqueue_action(InstanceAction::PowerOn);
-                    process_instance_actions(inst, RunContext
-                    {
-                        run_id,
-                        shared_scope: &shared_scope,
-                        action_sender: self.action_queue_send.clone(),
-                    });
-                }
-                Action::PowerOff(run_id) =>
-                {
-                    let running_inst = self.instances.get(&run_id)
-                        .expect("There should never be a power-off before power-on");
-
-                    let shared_scope = SharedScope::default();
-                    let inst = running_inst.inst_mut();
-                    inst.enqueue_action(InstanceAction::PowerOff);
-                    process_instance_actions(inst, RunContext
-                    {
-                        run_id,
-                        shared_scope: &shared_scope,
-                        action_sender: self.action_queue_send.clone(),
-                    });
-                    
-                    // TODO: wake up parent
-                }
-                Action::Signal(signal) =>
-                {
-                    let Some(signals) = self.signals.get(&signal) else { continue 'queue_recv; };
-                    for (run_id, slot) in signals
-                    {
-                        let Some(running_inst) = self.instances.get(&run_id) else { continue; };
-
-                        let shared_scope = SharedScope::default();
-                        let inst = running_inst.inst_mut();
-                        inst.enqueue_action(InstanceAction::Signal(*slot as u32));
-                        process_instance_actions(inst, RunContext
-                        {
-                            run_id: *run_id,
-                            shared_scope: &shared_scope,
-                            action_sender: self.action_queue_send.clone(),
-                        });
-                    }
-                }
-                Action::DebugSetVar(run_id, var, value) =>
-                {
-                    todo!();
-                }
-            };
+                InstanceAction::PowerOn => inst_mut.power_on(context.clone()),
+                InstanceAction::PowerOff => inst_mut.power_off(context.clone()),
+                InstanceAction::Signal(slot) => inst_mut.signal(slot as usize, context.clone()),
+                InstanceAction::ReEnter(block_id) => inst_mut.re_enter(block_id, context.clone()),
+                // InstanceAction::DebugSetVar(run_id, var_id, value) => inst_mut.asdf(),
+            }
         }
-
-        // signal to threads they can sleep then wait for all jobs to finish?
     }
 }
 
@@ -202,7 +151,6 @@ impl Drop for Runtime
     fn drop(&mut self)
     {
         // TODO: shutdown all instances
-        self.process_actions();
     }
 }
 
@@ -228,13 +176,4 @@ mod tests
     }
 }
 
-
-/*
-
-var changes:
-node/external var queues var change which then signals
-vars should update/signal immediately -- don't signal to downstream latches not yet powered on
-
-on_dependency_changed() -> [pulsing outlets]
-    - optionally power-off self
-*/
+// TODO: make sure subcircuits work

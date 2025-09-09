@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Formatter};
+use std::mem::swap;
 use super::{BlockId, InstRunId, Instance};
 use smallvec::SmallVec;
 use nab_3l14::utils::alloc_slice::alloc_slice_default;
@@ -15,6 +16,13 @@ pub enum VarScope
 pub struct VarId(u32);
 impl VarId
 {
+    // TODO: remove?
+    #[inline] #[must_use]
+    pub fn new(id: u32, scope: VarScope) -> Self
+    {
+        Self((id as u32) | (scope as u32) << (u32::BITS - 1))
+    }
+
     #[cfg(test)]
     #[inline] #[must_use]
     pub fn test(id: u8, scope: VarScope) -> Self
@@ -95,10 +103,12 @@ pub struct SharedScope
     // TODO
 }
 
+#[derive(Debug)]
 pub struct VarChange
 {
     pub var: VarId,
     pub target: BlockRef,
+    pub old_value: VarValue,
     pub new_value: VarValue,
 }
 
@@ -139,7 +149,10 @@ impl<'s> Scope<'s>
             VarScope::Local =>
             {
                 let var = &mut self.local_scope.vars[var_id.0 as usize];
-                var.value = value.clone();
+
+                // TODO: actually make sure variable has changed
+
+                let old_value = std::mem::replace(&mut var.value, value.clone());
 
                 for listener in var.listeners.iter()
                 {
@@ -147,6 +160,7 @@ impl<'s> Scope<'s>
                     {
                         var: var_id,
                         target: listener.clone(),
+                        old_value: old_value.clone(),
                         new_value: value.clone(),
                     });
                 }

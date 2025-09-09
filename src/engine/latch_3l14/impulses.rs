@@ -1,80 +1,159 @@
+use super::{BlockId, ImpulseActions, ImpulseBlock, ImpulseOutletVisitor, InstRunId, LatchActions, LatchBlock, LatchingOutlet, LocalScope, PulsedOutlet, Scope, SharedScope, Var, VarId, VarValue};
+use crate::circuit::PlugList;
+use crate::vars::ScopeChanges;
+use crossbeam::channel::{Receiver, Sender};
 use log::log;
+use nab_3l14::utils::alloc_slice::alloc_slice_default;
 use nab_3l14::Signal;
-use super::{ImpulseBlock, ImpulseOutletVisitor, PulsedOutlet, Scope, VarId, VarValue};
-//
-// struct NoOp
-// {
-//     pub outlet: PulsedOutlet,
-// }
-// impl ImpulseBlock for NoOp
-// {
-//     fn pulse(&self, _scope: Scope, mut pulse_outlets: ImpulseOutletVisitor)
-//     {
-//         pulse_outlets.visit_pulsed(&self.outlet);
-//     }
-//
-//     fn visit_all_outlets(&self, mut visitor: ImpulseOutletVisitor)
-//     {
-//         visitor.visit_pulsed(&self.outlet);
-//     }
-// }
-//
-// struct DebugPrint
-// {
-//     pub message: String,
-//     // todo: format strings
-//
-//     pub outlet: PulsedOutlet,
-// }
-// impl ImpulseBlock for DebugPrint
-// {
-//     fn pulse(&self, _scope: Scope, mut pulse_outlets: ImpulseOutletVisitor)
-//     {
-//         log::debug!("{}", self.message);
-//         pulse_outlets.visit_pulsed(&self.outlet);
-//     }
-//
-//     fn visit_all_outlets(&self, mut visitor: ImpulseOutletVisitor)
-//     {
-//         visitor.visit_pulsed(&self.outlet);
-//     }
-// }
-//
-// pub struct SetVars
-// {
-//     // TODO: multiple vars
-//     pub var: VarId,
-//     pub to_value: VarValue, // expression?
-//
-//     pub outlet: PulsedOutlet,
-// }
-// impl ImpulseBlock for SetVars
-// {
-//     fn pulse(&self, _scope: Scope, mut visitor: ImpulseOutletVisitor)
-//     {
-//         // todo: set vars
-//         visitor.visit_pulsed(&self.outlet);
-//     }
-//
-//     fn visit_all_outlets(&self, mut visitor: ImpulseOutletVisitor)
-//     {
-//         visitor.visit_pulsed(&self.outlet);
-//     }
-// }
-//
-// pub struct EmitSignal
-// {
-//     pub signal: Signal,
-//     pub outlet: PulsedOutlet,
-// }
-// impl ImpulseBlock for EmitSignal
-// {
-//     fn pulse(&self, scope: Scope, pulse_outlets: ImpulseOutletVisitor)
-//     {
-//         // todo: how?
-//     }
-//
-//     fn visit_all_outlets(&self, visitor: ImpulseOutletVisitor) {
-//         todo!()
-//     }
-// }
+
+pub struct NoOp
+{
+    pub outlet: PulsedOutlet,
+}
+impl ImpulseBlock for NoOp
+{
+    fn pulse(&self, _scope: Scope, mut actions: ImpulseActions)
+    {
+        actions.pulse(&self.outlet);
+    }
+
+    fn visit_all_outlets(&self, mut visitor: ImpulseOutletVisitor)
+    {
+        visitor.visit_pulsed(&self.outlet);
+    }
+}
+
+pub struct DebugPrint
+{
+    pub message: String,
+    // todo: format strings
+
+    pub outlet: PulsedOutlet,
+}
+impl ImpulseBlock for DebugPrint
+{
+    fn pulse(&self, _scope: Scope, mut actions: ImpulseActions)
+    {
+        log::debug!("{}", self.message);
+        actions.pulse(&self.outlet);
+    }
+
+    fn visit_all_outlets(&self, mut visitor: ImpulseOutletVisitor)
+    {
+        visitor.visit_pulsed(&self.outlet);
+    }
+}
+
+pub struct SetVars
+{
+    // TODO: multiple vars
+    pub var: VarId,
+    pub to_value: VarValue, // expression?
+
+    pub outlet: PulsedOutlet,
+}
+impl ImpulseBlock for SetVars
+{
+    fn pulse(&self, mut scope: Scope, mut actions: ImpulseActions)
+    {
+        scope.set(self.var, self.to_value.clone());
+        actions.pulse(&self.outlet);
+    }
+
+    fn visit_all_outlets(&self, mut visitor: ImpulseOutletVisitor)
+    {
+        visitor.visit_pulsed(&self.outlet);
+    }
+}
+
+pub struct EmitSignal
+{
+    pub signal: Signal,
+    pub outlet: PulsedOutlet,
+}
+impl ImpulseBlock for EmitSignal
+{
+    fn pulse(&self, scope: Scope, mut actions: ImpulseActions)
+    {
+        actions.runtime.signal(self.signal);
+        actions.pulse(&self.outlet);
+    }
+
+    fn visit_all_outlets(&self, mut visitor: ImpulseOutletVisitor)
+    {
+        visitor.visit_pulsed(&self.outlet);
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+    use crate::circuit::PlugList;
+    use crate::{BlockId, Inlet, Plug, TestContext};
+
+    #[test]
+    fn no_op()
+    {
+        let noop = NoOp
+        {
+            outlet: PulsedOutlet
+            {
+                plugs: Box::new([Plug { block: BlockId::impulse(1), inlet: Inlet::Pulse }]),
+            },
+        };
+
+        let mut outlets = PlugList::new();
+        noop.visit_all_outlets(ImpulseOutletVisitor { pulses: &mut outlets, });
+        assert_eq!(outlets.as_slice(), &[Plug::new(BlockId::impulse(1), Inlet::Pulse)]);
+
+        let mut tc = TestContext::default();
+        tc.pulse(noop);
+        assert_eq!(tc.pulse_outlets.as_slice(), &[Plug::new(BlockId::impulse(1), Inlet::Pulse)]);
+    }
+
+    #[test]
+    fn debug_print()
+    {
+        let debug_print = DebugPrint
+        {
+            message: "Hello, world!".to_string(),
+            outlet: PulsedOutlet
+            {
+                plugs: Box::new([Plug { block: BlockId::impulse(1), inlet: Inlet::Pulse }]),
+            },
+        };
+        let mut outlets = PlugList::new();
+        debug_print.visit_all_outlets(ImpulseOutletVisitor { pulses: &mut outlets, });
+        assert_eq!(outlets.as_slice(), &[Plug::new(BlockId::impulse(1), Inlet::Pulse)]);
+        
+        let mut tc = TestContext::default();
+        tc.pulse(debug_print);
+        assert_eq!(tc.pulse_outlets.as_slice(), &[Plug::new(BlockId::impulse(1), Inlet::Pulse)]);
+    }
+    
+    // todo: set vars
+    
+    #[test]
+    fn emit_signal()
+    {
+        let emit_signal = EmitSignal
+        {
+            signal: Signal::test('a'),
+            outlet: PulsedOutlet
+            {
+                plugs: Box::new([Plug { block: BlockId::impulse(1), inlet: Inlet::Pulse }]),
+            },
+        };
+
+        let mut outlets = PlugList::new();
+        emit_signal.visit_all_outlets(ImpulseOutletVisitor { pulses: &mut outlets });
+        assert_eq!(outlets.as_slice(), &[Plug::new(BlockId::impulse(1), Inlet::Pulse)]);
+
+        let mut tc = TestContext::default();
+        tc.pulse(emit_signal);
+        assert_eq!(tc.pulse_outlets.as_slice(), &[Plug::new(BlockId::impulse(1), Inlet::Pulse)]);
+        // TODO: check for signal sent
+        // assert_eq!(sig, Signal::test('a'));
+    }
+}

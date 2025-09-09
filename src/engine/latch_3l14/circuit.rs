@@ -1,10 +1,9 @@
-use std::fmt::{Debug, Formatter};
-use crossbeam::channel::Sender;
-use smallvec::{ExtendFromSlice, SmallVec};
+use crate::vars::{ScopeChanges, VarChange};
+use crate::{InstRunId, LocalScope, Runtime, Scope, SharedScope};
 use nab_3l14::Signal;
-use crate::Scope;
-use crate::vars::VarChange;
-use crate::runtime::Action as RuntimeAction;
+use smallvec::SmallVec;
+use std::fmt::{Debug, Formatter};
+use std::sync::Arc;
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 pub struct BlockId(u32);
@@ -68,7 +67,7 @@ pub enum Inlet
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Plug
 {
-    pub target: BlockId,
+    pub block: BlockId,
     pub inlet: Inlet,
 }
 impl Plug
@@ -76,7 +75,7 @@ impl Plug
     #[inline] #[must_use]
     pub fn new(target: BlockId, inlet: Inlet) -> Self
     {
-        Self { target, inlet }
+        Self { block: target, inlet }
     }
 
     // TODO: better design
@@ -85,7 +84,7 @@ impl Plug
     {
         if let Inlet::PowerOff = poison
         {
-            Self { target: self.target, inlet: poison }
+            Self { block: self.block, inlet: poison }
         }
         else
         {
@@ -112,14 +111,15 @@ pub trait Block
     fn name(&self) -> &'static str { "TODO?" }
 }
 
-pub(super) type PlugList = SmallVec<[Plug; 2]>; // todo: re-eval count
+pub(super) type PlugList = SmallVec<[Plug; 2]>; // todo: re-eval count (visitor probably needs more than actions)
 
 pub struct ImpulseOutletVisitor<'i>
 {
     pub(super) pulses: &'i mut PlugList,
 }
-impl ImpulseOutletVisitor<'_>
+impl<'i> ImpulseOutletVisitor<'i>
 {
+    #[inline]
     pub fn visit_pulsed(&mut self, outlet: &PulsedOutlet)
     {
         self.pulses.extend_from_slice(&outlet.plugs);
@@ -129,15 +129,13 @@ impl ImpulseOutletVisitor<'_>
 pub struct ImpulseActions<'i>
 {
     pub(super) pulse_outlets: &'i mut PlugList,
-    pub(super) action_sender: Sender<RuntimeAction>,
+    pub runtime: Arc<Runtime>,
     // scope?
 }
 impl ImpulseActions<'_>
 {
     #[inline]
     pub fn pulse(&mut self, outlet: &PulsedOutlet) { self.pulse_outlets.extend_from_slice(&outlet.plugs); }
-    #[inline]
-    pub fn enqueue_action(&mut self, action: RuntimeAction) { let _ = self.action_sender.send(action); } // TODO: error handling
 }
 
 // A block that can perform an action whenever they are pulsed
@@ -155,7 +153,7 @@ pub struct LatchOutletVisitor<'l>
     pub(super) pulses: &'l mut PlugList,
     pub(super) latches: &'l mut PlugList,
 }
-impl LatchOutletVisitor<'_>
+impl<'l> LatchOutletVisitor<'l>
 {
     #[inline]
     pub fn visit_pulsed(&mut self, outlet: &PulsedOutlet)
@@ -173,19 +171,26 @@ impl LatchOutletVisitor<'_>
 
 pub struct LatchActions<'l>
 {
-    pub(super) pulse_outlets: &'l mut PlugList,
-    pub(super) latch_outlets: &'l mut PlugList,
-    pub(super) action_sender: Sender<RuntimeAction>,
+    pub(super) pulse_plugs: &'l mut PlugList,
+    pub(super) latch_plugs: &'l mut PlugList,
+    pub runtime: Arc<Runtime>,
     // scope?
 }
 impl LatchActions<'_>
 {
     #[inline]
-    pub fn pulse(&mut self, outlet: &PulsedOutlet) { self.pulse_outlets.extend_from_slice(&outlet.plugs); }
+    pub fn pulse(&mut self, outlet: &PulsedOutlet) { self.pulse_plugs.extend_from_slice(&outlet.plugs); }
+    // Attempt to power-on an outlet
     #[inline]
-    pub fn latch(&mut self, outlet: &LatchingOutlet) { self.latch_outlets.extend_from_slice(&outlet.plugs); }
-    #[inline]
-    pub fn enqueue_action(&mut self, action: RuntimeAction) { let _ = self.action_sender.send(action); } // TODO: error handling
+    pub fn latch(&mut self, outlet: &LatchingOutlet) { self.latch_plugs.extend_from_slice(&outlet.plugs); }
+    // Attempt to power-off an outlet
+    pub fn unlatch(&mut self, outlet: &LatchingOutlet)
+    {
+        for plug in outlet.plugs.iter()
+        {
+            self.latch_plugs.push(Plug::new(plug.block, Inlet::PowerOff));
+        }
+    }
 }
 
 // A block that can be powered on/off, performing an action upon on/off.
@@ -218,6 +223,88 @@ pub struct Circuit
     pub impulses: Box<[Box<dyn ImpulseBlock>]>,
     pub latches: Box<[Box<dyn LatchBlock>]>,
     pub num_local_vars: u32,
+}
+
+// A helper struct that contains all of the types required to test circuit blocks
+pub struct TestContext
+{
+    pub local_scope: LocalScope,
+    pub local_changes: ScopeChanges,
+    pub shared_scope: SharedScope,
+    pub shared_changes: ScopeChanges,
+
+    pub pulse_outlets: PlugList,
+    pub latch_outlets: PlugList,
+    pub runtime: Arc<Runtime>,
+}
+impl Default for TestContext
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            local_scope: LocalScope::new(2), // todo: re-eval?
+            local_changes: Default::default(),
+            shared_scope: Default::default(),
+            shared_changes: Default::default(),
+
+            pulse_outlets: Default::default(),
+            latch_outlets: Default::default(),
+            runtime: Runtime::new(),
+        }
+    }
+}
+impl TestContext
+{
+    pub fn pulse(&mut self, impulse: impl ImpulseBlock)
+    {
+        impulse.pulse(Scope
+        {
+            run_id: InstRunId::TEST,
+            block_id: BlockId::impulse(0),
+            local_scope: &mut self.local_scope,
+            local_changes: &mut self.local_changes,
+            shared_scope: &self.shared_scope,
+            shared_changes: &mut self.shared_changes,
+        }, ImpulseActions
+        {
+            pulse_outlets: &mut self.pulse_outlets,
+            runtime: self.runtime.clone(),
+        });
+    }
+
+    pub fn latch(&mut self, latch: impl LatchBlock)
+    {
+        latch.power_on(Scope
+        {
+            run_id: InstRunId::TEST,
+            block_id: BlockId::latch(0),
+            local_scope: &mut self.local_scope,
+            local_changes: &mut self.local_changes,
+            shared_scope: &self.shared_scope,
+            shared_changes: &mut self.shared_changes,
+        }, LatchActions
+        {
+            pulse_plugs: &mut self.pulse_outlets,
+            latch_plugs: &mut self.latch_outlets,
+            runtime: self.runtime.clone(),
+        });
+    }
+
+    pub fn unloatch(&mut self, latch: impl LatchBlock)
+    {
+        latch.power_off(Scope
+        {
+            run_id: InstRunId::TEST,
+            block_id: BlockId::latch(0),
+            local_scope: &mut self.local_scope,
+            local_changes: &mut self.local_changes,
+            shared_scope: &self.shared_scope,
+            shared_changes: &mut self.shared_changes,
+        });
+    }
+
+    // todo: var change, re-enter
 }
 
 #[cfg(test)]

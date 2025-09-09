@@ -13,7 +13,9 @@ action_history = []
 [dependencies]
 nab_3l14.workspace = true
 
+crossbeam.workspace = true
+dashmap.workspace = true
+log.workspace = true
+parking_lot.workspace = true
 puffin.workspace = true
 smallvec.workspace = true
-log.workspace = true
-crossbeam.workspace = true
