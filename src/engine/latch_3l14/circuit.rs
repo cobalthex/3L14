@@ -111,20 +111,32 @@ pub trait Block
     fn name(&self) -> &'static str { "TODO?" }
 }
 
-pub(super) type PlugList = SmallVec<[Plug; 2]>; // todo: re-eval count (visitor probably needs more than actions)
+pub(super) type VisitList<'b> = SmallVec<[(&'b str, SmallVec<[Plug; 2]>); 4]>;
 
-pub struct ImpulseOutletVisitor<'i>
+pub struct BlockVisitor<'b, 'v>
 {
-    pub(super) pulses: &'i mut PlugList,
+    pub(super) name: &'b str,
+    pub(super) pulses: &'v mut VisitList<'b>,
+    pub(super) latches: &'v mut VisitList<'b>,
 }
-impl<'i> ImpulseOutletVisitor<'i>
+impl<'b> BlockVisitor<'b, '_>
 {
-    #[inline]
-    pub fn visit_pulsed(&mut self, outlet: &PulsedOutlet)
+    pub fn set_name(&mut self, name: &'b str)
     {
-        self.pulses.extend_from_slice(&outlet.plugs);
+        self.name = name.as_ref();
+    }
+
+    pub fn visit_pulses(&mut self, outlet_name: &'b str, outlet: &PulsedOutlet)
+    {
+        self.pulses.push((outlet_name.as_ref(), SmallVec::from_slice(&outlet.plugs)));
+    }
+    pub fn visit_latches(&mut self, outlet_name: &'b str, outlet: &LatchingOutlet)
+    {
+        self.latches.push((outlet_name.as_ref(), SmallVec::from_slice(&outlet.plugs)));
     }
 }
+
+pub(super) type PlugList = SmallVec<[Plug; 2]>;
 
 pub struct ImpulseActions<'i>
 {
@@ -143,31 +155,11 @@ pub trait ImpulseBlock
 {
     // Called when this block is pulsed
     fn pulse(&self, scope: Scope, actions: ImpulseActions);
-    // iterate through all outlets in this block (Primarily used by diagnostics/etc)
-    fn visit_all_outlets(&self, visitor: ImpulseOutletVisitor);
+
+    // Return some basic information about this block, useful for diagnostics/etc
+    fn inspect(&self, visit: BlockVisitor);
 }
 impl Block for dyn ImpulseBlock { }
-
-pub struct LatchOutletVisitor<'l>
-{
-    pub(super) pulses: &'l mut PlugList,
-    pub(super) latches: &'l mut PlugList,
-}
-impl<'l> LatchOutletVisitor<'l>
-{
-    #[inline]
-    pub fn visit_pulsed(&mut self, outlet: &PulsedOutlet)
-    {
-        self.pulses.extend_from_slice(&outlet.plugs);
-    }
-    #[inline]
-    pub fn visit_latching(&mut self, outlet: &LatchingOutlet)
-    {
-        self.latches.extend_from_slice(&outlet.plugs);
-    }
-}
-
-// TODO: ability to send actions to runtime
 
 pub struct LatchActions<'l>
 {
@@ -206,8 +198,9 @@ pub trait LatchBlock
     fn re_enter(&self, _scope: Scope, _actions: LatchActions) { }
     // Called when a variable this block is listening to, changes
     fn on_var_changed(&self, _change: VarChange, _scope: Scope, _actions: LatchActions) { }
-    // iterate through all outlets in this block (Primarily used by diagnostics/etc)
-    fn visit_all_outlets(&self, visitor: LatchOutletVisitor);
+
+    // Return some basic information about this block, useful for diagnostics/etc
+    fn inspect(&self, visit: BlockVisitor);
 
 }
 impl Block for dyn LatchBlock { }

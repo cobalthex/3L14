@@ -1,10 +1,11 @@
-use super::{BlockId, ImpulseActions, ImpulseBlock, ImpulseOutletVisitor, InstRunId, LatchActions, LatchBlock, LatchingOutlet, LocalScope, PulsedOutlet, Scope, SharedScope, Var, VarId, VarValue};
+use super::{BlockId, BlockVisitor, ImpulseActions, ImpulseBlock, InstRunId, LatchActions, LatchBlock, LatchingOutlet, LocalScope, PulsedOutlet, Scope, SharedScope, Var, VarId, VarValue};
 use crate::circuit::PlugList;
 use crate::vars::ScopeChanges;
 use crossbeam::channel::{Receiver, Sender};
 use log::log;
 use nab_3l14::utils::alloc_slice::alloc_slice_default;
 use nab_3l14::Signal;
+use nab_3l14::utils::ShortTypeName;
 
 pub struct NoOp
 {
@@ -17,9 +18,10 @@ impl ImpulseBlock for NoOp
         actions.pulse(&self.outlet);
     }
 
-    fn visit_all_outlets(&self, mut visitor: ImpulseOutletVisitor)
+    fn inspect(&self, mut visit: BlockVisitor)
     {
-        visitor.visit_pulsed(&self.outlet);
+        visit.set_name(Self::short_type_name());
+        visit.visit_pulses("Outlet", &self.outlet);
     }
 }
 
@@ -38,9 +40,10 @@ impl ImpulseBlock for DebugPrint
         actions.pulse(&self.outlet);
     }
 
-    fn visit_all_outlets(&self, mut visitor: ImpulseOutletVisitor)
+    fn inspect(&self, mut visit: BlockVisitor)
     {
-        visitor.visit_pulsed(&self.outlet);
+        visit.set_name(Self::short_type_name());
+        visit.visit_pulses("Outlet", &self.outlet);
     }
 }
 
@@ -60,9 +63,10 @@ impl ImpulseBlock for SetVars
         actions.pulse(&self.outlet);
     }
 
-    fn visit_all_outlets(&self, mut visitor: ImpulseOutletVisitor)
+    fn inspect(&self, mut visit: BlockVisitor)
     {
-        visitor.visit_pulsed(&self.outlet);
+        visit.set_name(Self::short_type_name());
+        visit.visit_pulses("Outlet", &self.outlet);
     }
 }
 
@@ -79,9 +83,10 @@ impl ImpulseBlock for EmitSignal
         actions.pulse(&self.outlet);
     }
 
-    fn visit_all_outlets(&self, mut visitor: ImpulseOutletVisitor)
+    fn inspect(&self, mut visit: BlockVisitor)
     {
-        visitor.visit_pulsed(&self.outlet);
+        visit.set_name(Self::short_type_name());
+        visit.visit_pulses("Outlet", &self.outlet);
     }
 }
 
@@ -89,7 +94,7 @@ impl ImpulseBlock for EmitSignal
 mod tests
 {
     use super::*;
-    use crate::circuit::PlugList;
+    use crate::circuit::{PlugList, VisitList};
     use crate::{BlockId, Inlet, Plug, TestContext};
 
     #[test]
@@ -103,9 +108,7 @@ mod tests
             },
         };
 
-        let mut outlets = PlugList::new();
-        noop.visit_all_outlets(ImpulseOutletVisitor { pulses: &mut outlets, });
-        assert_eq!(outlets.as_slice(), &[Plug::new(BlockId::impulse(1), Inlet::Pulse)]);
+        // TODO: test inspect()
 
         let mut tc = TestContext::default();
         tc.pulse(noop);
@@ -123,9 +126,8 @@ mod tests
                 plugs: Box::new([Plug { block: BlockId::impulse(1), inlet: Inlet::Pulse }]),
             },
         };
-        let mut outlets = PlugList::new();
-        debug_print.visit_all_outlets(ImpulseOutletVisitor { pulses: &mut outlets, });
-        assert_eq!(outlets.as_slice(), &[Plug::new(BlockId::impulse(1), Inlet::Pulse)]);
+
+        // TODO: test inspect()
         
         let mut tc = TestContext::default();
         tc.pulse(debug_print);
@@ -146,9 +148,7 @@ mod tests
             },
         };
 
-        let mut outlets = PlugList::new();
-        emit_signal.visit_all_outlets(ImpulseOutletVisitor { pulses: &mut outlets });
-        assert_eq!(outlets.as_slice(), &[Plug::new(BlockId::impulse(1), Inlet::Pulse)]);
+        // TODO: test inspect()
 
         let mut tc = TestContext::default();
         tc.pulse(emit_signal);

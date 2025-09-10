@@ -4,13 +4,22 @@
     <meta charset="UTF-8">
     <title>Webshit</title>
     <link rel="stylesheet" href="app.css">
+    <script src="https://github.com/mdaines/viz-js/releases/download/release-viz-3.16.0/viz-global.js"></script>
 </head>
 <body>
 <script type="module">
-    import init,{greet} from "./webshit_3l14.js";
+    import init,{run_app} from "./webshit_3l14.js";
+    let viz = Viz.instance();
     init().then(() =>
     {
-        greet();
+        let app = run_app();
+        window.asdf = app;
+        viz.then(vizi =>
+        {
+            let gviz = app.as_graphviz();
+            document.getElementById("log").textContent = gviz;
+            document.getElementById("gviz").appendChild(vizi.renderSVGElement(gviz));
+        });
     });
 </script>
 
@@ -18,10 +27,8 @@
     <button type="button" id="reset">Reset</button>
 </div>
 
-<h2 style="grid-row: 1">Graph</h2>
-<div id="graph">
-
-</div>
+<h2 style="grid-row: 1">Circuit</h2>
+<div id="gviz"></div>
 
 <h2 style="grid-row: 1;grid-column:3">Log</h2>
 <div id="log"></div>

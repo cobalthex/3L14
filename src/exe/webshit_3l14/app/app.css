@@ -1,0 +1,76 @@
+:root {
+    --fg-color: #aab;
+}
+
+html {
+    font-family: sans-serif;
+    background: #223;
+    color: var(--fg-color);
+}
+h1,h2,h3 {
+    margin: 5px 0;
+}
+button {
+    border: 1px solid #446;
+    border-radius: 4px;
+    background: transparent;
+    color: #aab;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: 0.2s all;
+}
+button:hover {
+    box-shadow: 0 0 0 2px #88a;
+}
+button:focus {
+    border-color: #88a;
+}
+button:active {
+    box-shadow: inset 0 0 5px 3px #445;
+}
+body {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 10px;
+
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+}
+#buttons {
+    grid-row: 1;
+    grid-column: 2;
+    align-self: center;
+    justify-self: center;
+    margin-right: 10px;
+}
+#gviz {
+    padding: 10px;
+    border: 1px solid #446;
+    border-radius: 4px;
+    grid-row: 2;
+    grid-column: 1 / 3;
+    overflow: hidden;
+    resize: horizontal;
+}
+#log {
+    white-space: pre;
+    font-family: monospace;
+    padding: 10px;
+    border: 1px solid #446;
+    border-radius: 4px;
+    overflow: hidden;
+    grid-row: 2 / 3;
+    grid-column: 3;
+}
+
+svg path, svg polygon, svg polyline {
+    stroke: var(--fg-color) !important;
+}
+svg text {
+    font-family: sans-serif;
+    fill: var(--fg-color);
+}

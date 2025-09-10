@@ -1,5 +1,6 @@
+use nab_3l14::utils::ShortTypeName;
 use crate::vars::VarChange;
-use super::{LatchingOutlet, PulsedOutlet, Scope, LatchBlock, LatchOutletVisitor, LatchActions, VarValue, VarId};
+use super::{LatchingOutlet, PulsedOutlet, Scope, LatchBlock, BlockVisitor, LatchActions, VarValue, VarId};
 
 // A no-op, always-active after power-on latch
 pub struct Latch
@@ -15,9 +16,10 @@ impl LatchBlock for Latch
     }
     fn power_off(&self, _scope: Scope) { }
 
-    fn visit_all_outlets(&self, mut visitor: LatchOutletVisitor)
+    fn inspect(&self, mut visit: BlockVisitor)
     {
-        visitor.visit_latching(&self.powered_outlet);
+        visit.set_name(Self::short_type_name());
+        visit.visit_latches("Powered", &self.powered_outlet);
     }
 }
 
@@ -97,13 +99,14 @@ impl LatchBlock for ConditionLatch
         };
     }
 
-    fn visit_all_outlets(&self, mut visitor: LatchOutletVisitor)
+    fn inspect(&self, mut visit: BlockVisitor)
     {
-        visitor.visit_pulsed(&self.on_true_outlet);
-        visitor.visit_pulsed(&self.on_false_outlet);
-        visitor.visit_latching(&self.true_outlet);
-        visitor.visit_latching(&self.false_outlet);
-        visitor.visit_latching(&self.powered_outlet);
+        visit.set_name(Self::short_type_name());
+        visit.visit_pulses("On True", &self.on_true_outlet);
+        visit.visit_pulses("On True", &self.on_false_outlet);
+        visit.visit_latches("True", &self.true_outlet);
+        visit.visit_latches("False", &self.false_outlet);
+        visit.visit_latches("Powered", &self.powered_outlet);
     }
 }
 

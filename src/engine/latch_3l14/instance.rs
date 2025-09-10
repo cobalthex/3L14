@@ -431,34 +431,54 @@ impl Instance
     {
         let mut out_str = String::new();
 
-        write!(out_str, "digraph {{\n  rankdir=LR\n  splines=ortho\n").unwrap(); // todo: name?
+        write!(out_str, "digraph {{\n  rankdir=LR\n  splines=ortho\n  bgcolor=transparent\n").unwrap(); // todo: name?
 
         let mut stack: SmallVec<[BlockId; 16]> = SmallVec::new();
-        write!(out_str, "  \"auto_entry\" [label=\"Automatic entry\" shape=\"box\"]\n").unwrap();
+        write!(out_str, "  \"auto_entry\" [label=\"Automatic entry\" class=\"entry\" shape=\"cds\"]\n").unwrap();
         for outlet in &self.circuit.auto_entries
         {
             stack.push(*outlet);
-            write!(out_str, "  \"auto_entry\" -> \"{:?}\" [minlen=3]\n", outlet).unwrap();
+            write!(out_str, "  \"auto_entry\" -> \"{:?}\":IN [minlen=3]\n", outlet).unwrap();
         }
-
-        let mut pulsed_plugs = PlugList::default();
-        let mut latching_plugs = PlugList::default();
-
-        // TODO: broken
 
         while let Some(block) = stack.pop()
         {
+            let block_name: &str = "";
+            let mut pulses = VisitList::default();
+            let mut latches = VisitList::default();
+
             if block.is_impulse()
             {
                 let impulse = self.circuit.impulses[block.value() as usize].as_ref();
-                write!(out_str, "  \"{:?}\" [label=\"{}\\n\\N\" shape=\"box\"]\n",
-                    block,
-                    "impulse").unwrap(); // TODO: type name
 
-                impulse.visit_all_outlets(ImpulseOutletVisitor
+                impulse.inspect(BlockVisitor
                 {
-                    pulses: &mut pulsed_plugs,
+                    name: &block_name,
+                    pulses: &mut pulses,
+                    latches: &mut latches,
                 });
+                debug_assert!(latches.is_empty(), "Impulse blocks cannot have latches");
+
+                write!(out_str, "  \"{:?}\" [class=impulse shape=record label=\"{{ <IN> ∿ | {}\\n\\N",
+                    block,
+                    block_name).unwrap();
+
+                if !pulses.is_empty()
+                {
+                    out_str.push_str(" | { ");
+                }
+
+                for (i, outlet) in pulses.iter().enumerate()
+                {
+                    if i > 0 { out_str.push_str(" | "); }
+                    write!(out_str, "<P{}> {}", i, outlet.0).unwrap();
+                }
+
+                if !pulses.is_empty()
+                {
+                    out_str.push_str(" }");
+                }
+                out_str.push_str(" }\"]\n");
             }
             else
             {
@@ -466,39 +486,66 @@ impl Instance
                 let latch = self.circuit.latches[block.value() as usize].as_ref();
 
                 let is_powered = hydrated.map(|h| h.is_powered).unwrap_or(false);
-                write!(out_str, "  \"{:?}\" [label=\"{}\\n\\N\" shape=\"{}\"]\n",
-                    block,
-                    "latch", // TODO: type name
-                    if is_powered { "doubleoctagon" } else { "octagon" }).unwrap();
 
-                latch.visit_all_outlets(LatchOutletVisitor
+                latch.inspect(BlockVisitor
                 {
-                    pulses: &mut pulsed_plugs,
-                    latches: &mut latching_plugs,
-                })
+                    name: &block_name,
+                    pulses: &mut pulses,
+                    latches: &mut latches,
+                });
+
+                write!(out_str, "  \"{:?}\" [class=latch shape=record label=\"{{ {{ <IN> ∿ | <OFF> ◯ }} | {}\\n\\N",
+                       block,
+                       block_name).unwrap();
+
+                if !pulses.is_empty() || !latches.is_empty()
+                {
+                    out_str.push_str(" | { ");
+                }
+
+                for (i, outlet) in pulses.iter().enumerate()
+                {
+                    if i > 0 { out_str.push_str(" | "); }
+                    write!(out_str, "<P{}> {}", i, outlet.0).unwrap();
+                }
+
+                for (i, outlet) in latches.iter().enumerate()
+                {
+                    if i > 0 { out_str.push_str(" | "); }
+                    write!(out_str, "<L{}> {}", i, outlet.0).unwrap();
+                }
+
+                if !pulses.is_empty() || !latches.is_empty()
+                {
+                    out_str.push_str(" }");
+                }
+                out_str.push_str(" }\"]\n");
             }
 
-            for pulse in &pulsed_plugs
+            for pulse in pulses.iter()
             {
-                stack.push(pulse.block);
-                write!(out_str, "  \"{:?}\" -> \"{:?}\" [minlen=3 taillabel=\"{}\" headlabel=\"{:?}\"]\n",
-                       block,
-                       pulse.block,
-                       "Pulsed (TODO NAME)",
-                       pulse.inlet).unwrap();
+                for (i, plug) in pulse.1.iter().enumerate()
+                {
+                    stack.push(plug.block);
+                    write!(out_str, "  \"{:?}\":\"P{}\" -> \"{:?}\":\"{}\" [minlen=3 class=\"pulse-plug\"]\n",
+                           block,
+                           i,
+                           plug.block,
+                           "IN").unwrap();
+                }
             }
-            for latch in &latching_plugs
+            for latch in latches.iter()
             {
-                stack.push(latch.block);
-                write!(out_str, "  \"{:?}\" -> \"{:?}\" [color=\"black:invis:black\" minlen=3 taillabel=\"{}\" headlabel=\"{:?}\"]\n",
-                       block,
-                       latch.block,
-                       "Latching (TODO NAME)",
-                       latch.inlet).unwrap();
+                for (i, plug) in latch.1.iter().enumerate()
+                {
+                    stack.push(plug.block);
+                    write!(out_str, "  \"{:?}\":\"L{}\" -> \"{:?}\":\"{}\" [color=\"black:invis:black\" class=\"latch-plug\" minlen=3]\n",
+                           block,
+                           i,
+                           plug.block,
+                           "IN").unwrap();
+                }
             }
-
-            pulsed_plugs.clear();
-            latching_plugs.clear();
         }
 
         write!(out_str, "}}").unwrap();
@@ -543,6 +590,7 @@ fn gen_run_cxt(shared_scope: &SharedScope) -> RunContext
 #[cfg(test)]
 mod traversal_tests
 {
+    use nab_3l14::utils::ShortTypeName;
     use super::*;
 
     #[derive(Default)]
@@ -558,9 +606,10 @@ mod traversal_tests
             actions.pulse(&self.outlet);
         }
 
-        fn visit_all_outlets(&self, mut visitor: ImpulseOutletVisitor)
+        fn inspect(&self, mut visit: BlockVisitor)
         {
-            visitor.visit_pulsed(&self.outlet);
+            visit.set_name(Self::short_type_name());
+            visit.visit_pulses("Outlet", &self.outlet);
         }
     }
 
@@ -598,13 +647,14 @@ mod traversal_tests
 
         fn power_off(&self, _scope: Scope) { }
 
-        fn visit_all_outlets(&self, mut visitor: LatchOutletVisitor)
+        fn inspect(&self, mut visit: BlockVisitor)
         {
-            visitor.visit_pulsed(&self.on_true_outlet);
-            visitor.visit_pulsed(&self.on_false_outlet);
-            visitor.visit_latching(&self.true_outlet);
-            visitor.visit_latching(&self.false_outlet);
-            visitor.visit_latching(&self.powered_outlet);
+            visit.set_name(Self::short_type_name());
+            visit.visit_pulses("On True", &self.on_true_outlet);
+            visit.visit_pulses("On True", &self.on_false_outlet);
+            visit.visit_latches("True", &self.true_outlet);
+            visit.visit_latches("False", &self.false_outlet);
+            visit.visit_latches("Powered", &self.powered_outlet);
         }
     }
 
@@ -1081,13 +1131,14 @@ mod traversal_tests
 #[cfg(test)]
 mod var_tests
 {
+    use nab_3l14::utils::ShortTypeName;
     use super::*;
 
     struct TestImpulse;
     impl ImpulseBlock for TestImpulse
     {
         fn pulse(&self, _scope: Scope, _actions: ImpulseActions) { println!("pulsed TestImpulse"); }
-        fn visit_all_outlets(&self, _visitor: ImpulseOutletVisitor) { }
+        fn inspect(&self, mut visit: BlockVisitor) { }
     }
 
     struct WriteLatch
@@ -1102,7 +1153,7 @@ mod var_tests
             scope.set(self.var, VarValue::Bool(true));
         }
         fn power_off(&self, _scope: Scope) { }
-        fn visit_all_outlets(&self, _visitor: LatchOutletVisitor) { }
+        fn inspect(&self, visit_outlets: BlockVisitor) { }
     }
 
     struct ReadLatch
@@ -1126,9 +1177,10 @@ mod var_tests
             println!("read {:?} = {:?} -> {:?}", change.var, change.old_value, change.new_value);
             actions.pulse(&self.on_read);
         }
-        fn visit_all_outlets(&self, mut visitor: LatchOutletVisitor)
+        fn inspect(&self, mut visit: BlockVisitor)
         {
-            visitor.visit_pulsed(&self.on_read);
+            visit.set_name(Self::short_type_name());
+            visit.visit_pulses("On Read", &self.on_read);
         }
     }
 
