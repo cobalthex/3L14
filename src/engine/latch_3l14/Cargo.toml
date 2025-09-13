@@ -19,3 +19,4 @@ log.workspace = true
 parking_lot.workspace = true
 puffin.workspace = true
 smallvec.workspace = true
+regex = "1.10.6"

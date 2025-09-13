@@ -66,6 +66,7 @@ impl ImpulseBlock for SetVars
     fn inspect(&self, mut visit: BlockVisitor)
     {
         visit.set_name(Self::short_type_name());
+        visit.annotate(&format!("{:?} := {:?}", self.var, self.to_value));
         visit.visit_pulses("Outlet", &self.outlet);
     }
 }

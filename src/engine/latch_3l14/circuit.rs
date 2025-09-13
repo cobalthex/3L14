@@ -113,17 +113,26 @@ pub trait Block
 
 pub(super) type VisitList<'b> = SmallVec<[(&'b str, SmallVec<[Plug; 2]>); 4]>;
 
+// todo: convert to return object rather than mut?
 pub struct BlockVisitor<'b, 'v>
 {
-    pub(super) name: &'b str,
+    pub(super) name: &'v mut &'b str,
+    pub(super) annotation: &'v mut String,
     pub(super) pulses: &'v mut VisitList<'b>,
     pub(super) latches: &'v mut VisitList<'b>,
 }
 impl<'b> BlockVisitor<'b, '_>
 {
+    // Define a colloquial name for this block (usually the type name)
     pub fn set_name(&mut self, name: &'b str)
     {
-        self.name = name.as_ref();
+        *self.name = name.as_ref();
+    }
+
+    // Optionally provide a comment/note/context for this block
+    pub fn annotate(&mut self, annotation: impl AsRef<str>)
+    {
+        self.annotation.push_str(annotation.as_ref());
     }
 
     pub fn visit_pulses(&mut self, outlet_name: &'b str, outlet: &PulsedOutlet)

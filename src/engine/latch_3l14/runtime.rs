@@ -57,10 +57,35 @@ impl Runtime
     }
 
     #[must_use]
-    pub fn dump_graphviz(&self, inst_id: InstRunId) -> String
+    pub fn dump_graphviz(&self, inst_run_id: InstRunId) -> String
     {
-        let inst = self.instances.get(&inst_id).expect("Instance not found");
+        let inst = self.instances.get(&inst_run_id).expect("Instance not found");
         inst.instance.lock().as_graphviz()
+    }
+
+    // Get a log of all actions taken. returns an empty string if feature(action_history) is not enabled
+    #[must_use]
+    pub fn dump_action_history(&self, inst_run_id: InstRunId, clear: bool) -> String
+    {
+        let inst = self.instances.get(&inst_run_id).expect("Instance not found");
+        let mut locked = inst.instance.lock();
+        let mut history = String::new();
+        for hist in locked.get_action_history()
+        {
+            history.push_str(&format!("{:?}\n", hist));
+        }
+        if clear
+        {
+            locked.clear_action_history();
+        }
+        history
+    }
+    
+    #[must_use]
+    pub fn dump_scope(&self, inst_run_id: InstRunId) -> String
+    {
+        let inst = self.instances.get(&inst_run_id).expect("Instance not found");
+        format!("{:#?}", inst.instance.lock().local_scope())
     }
 
     // spawn a new instance of the specified circuit (async)

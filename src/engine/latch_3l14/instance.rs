@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crossbeam::queue::SegQueue;
 use smallvec::SmallVec;
 use nab_3l14::{debug_panic, Signal};
+use regex::Regex;
 use super::*;
 
 const MAX_VISIT_DEPTH: u32 = 100; // smaller number?
@@ -20,7 +21,7 @@ const MAX_VISIT_DEPTH: u32 = 100; // smaller number?
 
 #[derive(Debug, PartialEq)]
 #[allow(dead_code)]
-enum History
+pub(super) enum History
 {
     InstancePowerOn,
     Signal(Signal),
@@ -91,6 +92,9 @@ impl Instance
 
     #[inline] #[must_use]
     pub fn circuit(&self) -> &Circuit { &self.circuit }
+
+    #[inline] #[must_use]
+    pub fn local_scope(&self) -> &LocalScope { &self.scope }
 
     // power-on all the auto-entry blocks
     pub fn power_on(&mut self, context: RunContext)
@@ -399,13 +403,13 @@ impl Instance
         self.action_history.push(action);
     }
     #[inline]
-    fn clear_action_history(&mut self)
+    pub(super) fn clear_action_history(&mut self)
     {
         #[cfg(any(test, feature = "action_history"))]
         self.action_history.clear();
     }
     #[inline] #[must_use]
-    fn get_action_history(&self) -> &[History]
+    pub(super) fn get_action_history(&self) -> &[History]
     {
         #[cfg(any(test, feature = "action_history"))]
         { &self.action_history }
@@ -434,16 +438,55 @@ impl Instance
         write!(out_str, "digraph {{\n  rankdir=LR\n  splines=ortho\n  bgcolor=transparent\n").unwrap(); // todo: name?
 
         let mut stack: SmallVec<[BlockId; 16]> = SmallVec::new();
-        write!(out_str, "  \"auto_entry\" [label=\"Automatic entry\" class=\"entry\" shape=\"cds\"]\n").unwrap();
+        write!(out_str, "  \"auto_entry\" [label=\"Automatic entry  \" class=\"entry\" shape=\"cds\"]\n").unwrap();
         for outlet in &self.circuit.auto_entries
         {
             stack.push(*outlet);
-            write!(out_str, "  \"auto_entry\" -> \"{:?}\":IN [minlen=3]\n", outlet).unwrap();
+            write!(out_str, "  \"auto_entry\" -> \"{:?}\":\"IN\"\n", outlet).unwrap();
         }
 
+        for (i, (signal, entries)) in self.circuit.signaled_entries.iter().enumerate()
+        {
+            write!(out_str, "  \"signal_{}\" [label=\" {:?}  \" class=\"signal entry\" shape=\"rpromoter\"]\n", i, signal).unwrap();
+            for entry in entries
+            {
+                stack.push(*entry);
+                write!(out_str, "  \"signal_{}\" -> \"{:?}\":\"IN\"\n", i, entry).unwrap();
+            }
+        }
+
+        fn escape_string(input: &str) -> String
+        {
+            let mut result = String::with_capacity(input.len() * 2); // Pre-allocate for worst case
+            for ch in input.chars()
+            {
+                match ch
+                {
+                    '{' | '}' | '|' | '"' | '<' | '>' =>
+                    {
+                        result.push('\\');
+                        result.push(ch);
+                    }
+                    _ => result.push(ch),
+                }
+            }
+            result
+        }
+
+        for i in 0..self.circuit.impulses.len()
+        {
+            stack.push(BlockId::impulse(i as u32));
+        }
+        for i in 0..self.circuit.latches.len()
+        {
+            stack.push(BlockId::latch(i as u32));
+        }
+
+        // todo: rework to not need stack
         while let Some(block) = stack.pop()
         {
-            let block_name: &str = "";
+            let mut block_name: &str = "";
+            let mut annotation = String::new();
             let mut pulses = VisitList::default();
             let mut latches = VisitList::default();
 
@@ -453,15 +496,16 @@ impl Instance
 
                 impulse.inspect(BlockVisitor
                 {
-                    name: &block_name,
+                    name: &mut block_name,
+                    annotation: &mut annotation,
                     pulses: &mut pulses,
                     latches: &mut latches,
                 });
                 debug_assert!(latches.is_empty(), "Impulse blocks cannot have latches");
 
-                write!(out_str, "  \"{:?}\" [class=impulse shape=record label=\"{{ <IN> ∿ | {}\\n\\N",
+                write!(out_str, "  \"{:?}\" [class=impulse shape=record style=rounded label=\"{{ <IN> ∿ | {}",
                     block,
-                    block_name).unwrap();
+                    if annotation.is_empty() { block_name } else { &format!("{{ {block_name} | {} }}", escape_string(&annotation)) }).unwrap();
 
                 if !pulses.is_empty()
                 {
@@ -478,6 +522,7 @@ impl Instance
                 {
                     out_str.push_str(" }");
                 }
+
                 out_str.push_str(" }\"]\n");
             }
             else
@@ -489,14 +534,16 @@ impl Instance
 
                 latch.inspect(BlockVisitor
                 {
-                    name: &block_name,
+                    name: &mut block_name,
+                    annotation: &mut annotation,
                     pulses: &mut pulses,
                     latches: &mut latches,
                 });
 
-                write!(out_str, "  \"{:?}\" [class=latch shape=record label=\"{{ {{ <IN> ∿ | <OFF> ◯ }} | {}\\n\\N",
+                write!(out_str, "  \"{:?}\" [class=\"{} latch\" shape=record label=\"{{ {{ <IN> ∿ | <OFF> ◯ }} | {}",
                        block,
-                       block_name).unwrap();
+                       if is_powered { "powered" } else { "" },
+                       if annotation.is_empty() { block_name } else { &format!("{{ {block_name} | {} }}", escape_string(&annotation)) }).unwrap();
 
                 if !pulses.is_empty() || !latches.is_empty()
                 {
@@ -511,7 +558,7 @@ impl Instance
 
                 for (i, outlet) in latches.iter().enumerate()
                 {
-                    if i > 0 { out_str.push_str(" | "); }
+                    if !pulses.is_empty() || i > 0 { out_str.push_str(" | "); }
                     write!(out_str, "<L{}> {}", i, outlet.0).unwrap();
                 }
 
@@ -526,8 +573,8 @@ impl Instance
             {
                 for (i, plug) in pulse.1.iter().enumerate()
                 {
-                    stack.push(plug.block);
-                    write!(out_str, "  \"{:?}\":\"P{}\" -> \"{:?}\":\"{}\" [minlen=3 class=\"pulse-plug\"]\n",
+                    // stack.push(plug.block);
+                    write!(out_str, "  \"{:?}\":\"P{}\" -> \"{:?}\":\"{}\" [class=\"pulse-plug\"]\n",
                            block,
                            i,
                            plug.block,
@@ -538,8 +585,8 @@ impl Instance
             {
                 for (i, plug) in latch.1.iter().enumerate()
                 {
-                    stack.push(plug.block);
-                    write!(out_str, "  \"{:?}\":\"L{}\" -> \"{:?}\":\"{}\" [color=\"black:invis:black\" class=\"latch-plug\" minlen=3]\n",
+                    // stack.push(plug.block);
+                    write!(out_str, "  \"{:?}\":\"L{}\" -> \"{:?}\":\"{}\" [color=\"black:invis:black\" class=\"latch-plug\"]\n",
                            block,
                            i,
                            plug.block,
@@ -1134,23 +1181,27 @@ mod var_tests
     use nab_3l14::utils::ShortTypeName;
     use super::*;
 
-    struct TestImpulse;
+    struct TestImpulse
+    {
+        pub var: VarId,
+    }
     impl ImpulseBlock for TestImpulse
     {
-        fn pulse(&self, _scope: Scope, _actions: ImpulseActions) { println!("pulsed TestImpulse"); }
+        fn pulse(&self, scope: Scope, _actions: ImpulseActions) { println!("Var {:?} = {:?}", self.var, scope.get(self.var)); }
         fn inspect(&self, mut visit: BlockVisitor) { }
     }
 
     struct WriteLatch
     {
         pub var: VarId,
+        pub to_value: bool,
     }
     impl LatchBlock for WriteLatch
     {
         fn power_on(&self, mut scope: Scope, _actions: LatchActions)
         {
             println!("powered on WriteLatch");
-            scope.set(self.var, VarValue::Bool(true));
+            scope.set(self.var, VarValue::Bool(self.to_value));
         }
         fn power_off(&self, _scope: Scope) { }
         fn inspect(&self, visit_outlets: BlockVisitor) { }
@@ -1197,13 +1248,14 @@ mod var_tests
             signaled_entries: Box::new([]),
 
             impulses: Box::new([
-                Box::new(TestImpulse),
+                Box::new(TestImpulse { var: VarId::test(0, VarScope::Local) }),
             ]),
 
             latches: Box::new([
                 Box::new(WriteLatch
                 {
                     var: VarId::test(0, VarScope::Local),
+                    to_value: true,
                 }),
                 Box::new(ReadLatch
                 {
@@ -1242,20 +1294,23 @@ mod var_tests
         let circuit = Circuit
         {
             auto_entries: Box::new([
-                BlockId::latch(1),
                 BlockId::latch(0),
+                BlockId::impulse(0),
+                BlockId::latch(1),
+                BlockId::latch(2),
             ]),
 
             signaled_entries: Box::new([]),
 
             impulses: Box::new([
-                Box::new(TestImpulse),
+                Box::new(TestImpulse { var: VarId::test(0, VarScope::Local) }),
             ]),
 
             latches: Box::new([
                 Box::new(WriteLatch
                 {
                     var: VarId::test(0, VarScope::Local),
+                    to_value: false,
                 }),
                 Box::new(ReadLatch
                 {
@@ -1264,6 +1319,11 @@ mod var_tests
                     {
                         plugs: Box::new([Plug { block: BlockId::impulse(0), inlet: Inlet::Pulse }]),
                     },
+                }),
+                Box::new(WriteLatch
+                {
+                    var: VarId::test(0, VarScope::Local),
+                    to_value: true,
                 }),
             ]),
 
@@ -1276,12 +1336,17 @@ mod var_tests
 
         instance.power_on(run_cxt.clone());
 
+        println!("{:?}", instance.get_action_history());
         assert_eq!(instance.get_action_history(), &[
             History::InstancePowerOn,
-            History::Visit(BlockId::latch(1)),
-            History::PowerOn(BlockId::latch(1)),
             History::Visit(BlockId::latch(0)),
             History::PowerOn(BlockId::latch(0)),
+            History::Visit(BlockId::impulse(0)),
+            History::Pulse(BlockId::impulse(0)),
+            History::Visit(BlockId::latch(1)),
+            History::PowerOn(BlockId::latch(1)),
+            History::Visit(BlockId::latch(2)),
+            History::PowerOn(BlockId::latch(2)),
             History::Visit(BlockId::latch(1)),
             History::VarChanged(VarId::test(0, VarScope::Local), VarValue::Bool(true)),
             History::Visit(BlockId::impulse(0)),

@@ -41,9 +41,6 @@ impl LatchBlock for ConditionLatch
     {
         scope.subscribe(self.condition);
 
-        /* TODO:
-            dependency change enqueues power-off then power-on (if bool flipped)
-         */
         if scope.get(self.condition).unwrap_or(VarValue::Bool(false)) == VarValue::Bool(true)
         {
             actions.pulse(&self.on_true_outlet);
@@ -58,8 +55,9 @@ impl LatchBlock for ConditionLatch
         }
     }
 
-    fn power_off(&self, _scope: Scope)
+    fn power_off(&self, mut scope: Scope)
     {
+        scope.unsubscribe(self.condition);
     }
 
     fn on_var_changed(&self, change: VarChange, scope: Scope, mut actions: LatchActions)
@@ -102,8 +100,9 @@ impl LatchBlock for ConditionLatch
     fn inspect(&self, mut visit: BlockVisitor)
     {
         visit.set_name(Self::short_type_name());
+        visit.annotate(&format!("👂 {:?}", self.condition));
         visit.visit_pulses("On True", &self.on_true_outlet);
-        visit.visit_pulses("On True", &self.on_false_outlet);
+        visit.visit_pulses("On False", &self.on_false_outlet);
         visit.visit_latches("True", &self.true_outlet);
         visit.visit_latches("False", &self.false_outlet);
         visit.visit_latches("Powered", &self.powered_outlet);

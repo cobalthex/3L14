@@ -54,7 +54,7 @@ impl Debug for VarId
     }
 }
 
-#[derive(Default, PartialEq, Clone)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct Var
 {
     // TODO: should vars be fixed types? (would be tricky w/ shared vars)
@@ -94,6 +94,18 @@ impl LocalScope
         {
             vars: alloc_slice_default(count as usize)
         }
+    }
+}
+impl Debug for LocalScope
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    {
+        let mut dbg = f.debug_struct("LocalScope");
+        for (i, var) in self.vars.iter().enumerate()
+        {
+            dbg.field(&format!("{}", i), var);
+        }
+        dbg.finish()
     }
 }
 
