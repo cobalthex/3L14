@@ -77,8 +77,7 @@ impl AssetLoadRequest
     // }
 }
 
-// TODO: make DebugGui optional
-pub trait AssetLifecycler: Sync + Send + DebugGui
+pub trait AssetLifecycler: Sync + Send
 {
     type Asset: Asset;
 
@@ -88,7 +87,7 @@ pub trait AssetLifecycler: Sync + Send + DebugGui
 }
 
 
-pub trait TrivialAssetLifecycler: Sync + Send + DebugGui { type Asset: Asset + DecodeOwned; }
+pub trait TrivialAssetLifecycler: Sync + Send { type Asset: Asset + DecodeOwned; }
 impl<L: TrivialAssetLifecycler> AssetLifecycler for L
 {
     type Asset = L::Asset;
@@ -99,7 +98,7 @@ impl<L: TrivialAssetLifecycler> AssetLifecycler for L
 }
 
 // only for use internally in the asset system, mostly just utility methods for interacting with generics
-pub(super) trait UntypedAssetLifecycler: Sync + Send + DebugGui
+pub(super) trait UntypedAssetLifecycler: Sync + Send
 {
     fn load_untyped(
         &self,
@@ -112,8 +111,10 @@ pub(super) trait UntypedAssetLifecycler: Sync + Send + DebugGui
         &self,
         untyped_handle: UntypedAssetHandle,
         error: AssetLoadError);
+
+    fn display_name(&self) -> &str;
 }
-impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler for L
+impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
 {
     fn load_untyped(
         &self,
@@ -169,14 +170,18 @@ impl<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui> UntypedAssetLifecycler fo
 
         retyped.store_payload(AssetPayload::Unavailable(error));
     }
+
+    fn display_name(&self) -> &str
+    {
+        A::short_type_name()
+    }
 }
 
 #[derive(Flags)]
 #[repr(u8)]
 pub(super) enum AssetLifecyclerFeatures
 {
-    TODO = 0b0000_0001,
-    // todo: likely requires specialization
+    HasDebugGui = 0b0000_0001,
 }
 
 pub(super) struct RegisteredAssetLifecycler
@@ -185,6 +190,7 @@ pub(super) struct RegisteredAssetLifecycler
     #[cfg(debug_assertions)]
     pub type_id: TypeId,
     pub features: AssetLifecyclerFeatures,
+    pub debug_gui_fn: Option<usize>, // TODO: use *mut () instead of usize
 }
 
 pub(super) struct RegisteredAssetType
@@ -194,7 +200,6 @@ pub(super) struct RegisteredAssetType
     pub dealloc_fn: fn(UntypedAssetHandle),
 }
 
-// TODO: allow one lifecycler to own multiple asset types?
 #[derive(Default)]
 pub struct AssetLifecyclers
 {
@@ -203,7 +208,7 @@ pub struct AssetLifecyclers
 }
 impl AssetLifecyclers
 {
-    pub fn add_lifecycler<A: Asset, L: AssetLifecycler<Asset=A> + UntypedAssetLifecycler + DebugGui + 'static>(mut self, lifecycler: L) -> Self
+    pub fn add_lifecycler<A: Asset, L: AssetLifecycler<Asset=A> + UntypedAssetLifecycler + 'static>(mut self, lifecycler: L) -> Self
     {
         // warn/fail on duplicates?
         self.lifecyclers.insert(A::asset_type(), RegisteredAssetLifecycler
@@ -211,7 +216,33 @@ impl AssetLifecyclers
             lifecycler: Box::new(lifecycler),
             #[cfg(debug_assertions)]
             type_id: TypeId::of::<L>(),
-            features: AssetLifecyclerFeatures::none(), // TODO: some day
+            features: AssetLifecyclerFeatures::none(),
+            debug_gui_fn: None,
+        });
+        self.registered_asset_types.insert(A::asset_type(), RegisteredAssetType
+        {
+            type_id: TypeId::of::<A>(),
+            type_name: A::short_type_name(),
+            dealloc_fn: |h| unsafe { h.dealloc::<A>() },
+        });
+        self
+    }
+
+    // todo: specialization would be better here
+    pub fn add_lifecycler_with_gui<A: Asset, L: AssetLifecycler<Asset=A> + DebugGui + 'static>(mut self, lifecycler: L) -> Self
+    {
+        // todo: dedupe
+
+        let debug_gui_fn = L::debug_gui as usize;
+
+        // warn/fail on duplicates?
+        self.lifecyclers.insert(A::asset_type(), RegisteredAssetLifecycler
+        {
+            lifecycler: Box::new(lifecycler),
+            #[cfg(debug_assertions)]
+            type_id: TypeId::of::<L>(),
+            features: AssetLifecyclerFeatures::HasDebugGui,
+            debug_gui_fn: Some(debug_gui_fn),
         });
         self.registered_asset_types.insert(A::asset_type(), RegisteredAssetType
         {
@@ -233,7 +264,6 @@ pub(super) enum AssetLifecycleRequest
     LoadFileBacked(UntypedAssetHandle), // loads the file pointed by the asset path
     LoadFromMemory(UntypedAssetHandle, Box<dyn AssetRead>),
 }
-
 
 
 /* TODO

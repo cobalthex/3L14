@@ -1,22 +1,19 @@
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use dashmap::DashMap;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use latch_3l14::{BlockId, BlockVisitor, Circuit, ImpulseBlock, Inlet, InstRunId, Instance, LatchingOutlet, Plug, PulsedOutlet, Runtime, SharedScope, VarId, VarScope, VarValue};
+use latch_3l14::{BlockId, BlockVisitor, Circuit, ImpulseBlock, Inlet, InstRunId, LatchActions, LatchBlock, LatchingOutlet, Plug, PulsedOutlet, Runtime, Scope, SharedScope, VarId, VarScope, VarValue};
 use latch_3l14::impulses::{DebugPrint, NoOp, SetVars};
-use latch_3l14::Inlet::Pulse;
 use latch_3l14::latches::{ConditionLatch, Latch};
 use nab_3l14::Signal;
 use nab_3l14::utils::ShortTypeName;
 
 #[wasm_bindgen]
-extern
-{
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
-}
-
-#[wasm_bindgen]
 pub fn run_app() -> App
 {
+    let _ = console_log::init_with_level(log::Level::Debug);
     App::new()
 }
 
@@ -67,6 +64,59 @@ impl ImpulseBlock for LogPrint
         visit.set_name(Self::short_type_name());
         visit.annotate(format!("\"{:?}\"", self.log));
         visit.visit_pulses("Outlet", &self.outlet);
+    }
+}
+
+fn defer<TFn: Fn() + Send + 'static>(duration: Duration, f: TFn)
+{
+    #[wasm_bindgen]
+    extern "C"
+    {
+        #[wasm_bindgen(js_name = setTimeout)]
+        fn set_timeout(closure: &Closure<dyn Fn()>, time: u32) -> i32;
+    }
+
+    let id = Box::new(0);
+    let closure = Closure::new(f);
+    set_timeout(&closure, duration.as_millis() as u32);
+    closure.forget();
+}
+
+struct Wait
+{
+    duration: Duration,
+    waiting_outlet: LatchingOutlet,
+    finished_outlet: LatchingOutlet,
+}
+impl LatchBlock for Wait
+{
+    fn power_on(&self, scope: Scope, mut actions: LatchActions)
+    {
+        actions.latch(&self.waiting_outlet);
+        let block_ref = scope.get_block_ref();
+        let rt = actions.runtime.clone();
+        defer(self.duration, move ||
+        {
+            log::debug!("Wait finished");
+            rt.re_enter(block_ref.clone());
+        });
+    }
+
+    fn power_off(&self, _scope: Scope)
+    {
+    }
+
+    fn re_enter(&self, _scope: Scope, mut actions: LatchActions)
+    {
+        actions.unlatch(&self.waiting_outlet);
+        actions.latch(&self.finished_outlet);
+    }
+
+    fn inspect(&self, mut visit: BlockVisitor)
+    {
+        visit.set_name(Self::short_type_name());
+        visit.visit_latches("Waiting", &self.waiting_outlet);
+        visit.visit_latches("Finished", &self.finished_outlet);
     }
 }
 
@@ -136,8 +186,15 @@ impl App
                 {
                     outlet: PulsedOutlet
                     {
-                        plugs: Box::new([Plug::new(BlockId::latch(0), Inlet::PowerOff)]),
+                        plugs: Box::new([
+                            Plug::new(BlockId::latch(0), Inlet::PowerOff),
+                        ]),
                     },
+                }),
+                Box::new(DebugPrint
+                {
+                    message: "DEFERRED".to_string(),
+                    outlet: Default::default(),
                 })
             ]),
             latches: Box::new([
@@ -161,8 +218,20 @@ impl App
                         plugs: Box::new([Plug::new(BlockId::impulse(0), Inlet::Pulse)]),
                     },
                     false_outlet: Default::default(),
-                    powered_outlet: Default::default(),
+                    powered_outlet: LatchingOutlet
+                    {
+                        plugs: Box::new([Plug::new(BlockId::latch(2), Inlet::Pulse)]),
+                    }
                 }),
+                Box::new(Wait
+                {
+                    duration: Duration::from_secs(3),
+                    waiting_outlet: Default::default(),
+                    finished_outlet: LatchingOutlet
+                    {
+                        plugs: Box::new([Plug::new(BlockId::impulse(7), Inlet::Pulse)]),
+                    },
+                })
             ]),
             num_local_vars: 1,
         };

@@ -2,7 +2,7 @@ use std::error::Error;
 use arc_swap::ArcSwapOption;
 use debug_3l14::debug_gui::DebugGui;
 use egui::epaint::Shadow;
-use egui::{CornerRadius, FontDefinitions, Pos2, Rect, Stroke, Ui, Visuals};
+use egui::{CornerRadius, Pos2, Rect, Stroke, Ui, Visuals};
 use parking_lot::{Mutex, RwLock};
 use sdl2::video::Window;
 use std::sync::Arc;

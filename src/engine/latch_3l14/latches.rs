@@ -1,6 +1,6 @@
 use nab_3l14::utils::ShortTypeName;
 use crate::vars::VarChange;
-use super::{LatchingOutlet, PulsedOutlet, Scope, LatchBlock, BlockVisitor, LatchActions, VarValue, VarId};
+use super::{LatchingOutlet, PulsedOutlet, Scope, LatchBlock, BlockVisitor, LatchActions, VarValue, VarId, ContextfulLatchBlock};
 
 // A no-op, always-active after power-on latch
 pub struct Latch
@@ -35,13 +35,26 @@ pub struct ConditionLatch
 
     pub powered_outlet: LatchingOutlet,
 }
-impl LatchBlock for ConditionLatch
+#[derive(Debug, Default)]
+pub struct ConditionLatchContext
 {
-    fn power_on(&self, mut scope: Scope, mut actions: LatchActions)
-    {
-        scope.subscribe(self.condition);
+    known_value: bool,
+}
+impl ContextfulLatchBlock for ConditionLatch
+{
+    type Context = ConditionLatchContext;
 
-        if scope.get(self.condition).unwrap_or(VarValue::Bool(false)) == VarValue::Bool(true)
+    fn power_on(&self, context: &mut Self::Context, mut scope: Scope, mut actions: LatchActions)
+    {
+        let curr_val = scope.subscribe(self.condition);
+
+        context.known_value = match curr_val
+        {
+            VarValue::Bool(v) => v,
+            _ => false,
+        };
+
+        if context.known_value
         {
             actions.pulse(&self.on_true_outlet);
             actions.latch(&self.true_outlet);
@@ -55,12 +68,12 @@ impl LatchBlock for ConditionLatch
         }
     }
 
-    fn power_off(&self, mut scope: Scope)
+    fn power_off(&self, _context: &mut Self::Context, mut scope: Scope)
     {
         scope.unsubscribe(self.condition);
     }
 
-    fn on_var_changed(&self, change: VarChange, scope: Scope, mut actions: LatchActions)
+    fn on_var_changed(&self, context: &mut Self::Context, change: VarChange, _scope: Scope, mut actions: LatchActions)
     {
         // TODO: evaluate condition
         // TODO: use runtime data here instead of old/new
@@ -69,16 +82,12 @@ impl LatchBlock for ConditionLatch
         {
             VarValue::Bool(new) =>
             {
-                let old = match change.old_value
-                {
-                    VarValue::Bool(v) => v,
-                    _ => false,
-                };
-                if old == new
+                if context.known_value == new
                 {
                     return;
                 }
 
+                context.known_value = new;
                 if new
                 {
                     actions.unlatch(&self.false_outlet);
@@ -117,6 +126,4 @@ impl LatchBlock for ConditionLatch
 #[cfg(test)]
 mod tests
 {
-    use super::*;
-
 }

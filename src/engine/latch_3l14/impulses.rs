@@ -1,11 +1,6 @@
-use super::{BlockId, BlockVisitor, ImpulseActions, ImpulseBlock, InstRunId, LatchActions, LatchBlock, LatchingOutlet, LocalScope, PulsedOutlet, Scope, SharedScope, Var, VarId, VarValue};
-use crate::circuit::PlugList;
-use crate::vars::ScopeChanges;
-use crossbeam::channel::{Receiver, Sender};
-use log::log;
-use nab_3l14::utils::alloc_slice::alloc_slice_default;
-use nab_3l14::Signal;
+use super::{BlockVisitor, ImpulseActions, ImpulseBlock, PulsedOutlet, Scope, VarId, VarValue};
 use nab_3l14::utils::ShortTypeName;
+use nab_3l14::Signal;
 
 pub struct NoOp
 {
@@ -36,7 +31,7 @@ impl ImpulseBlock for DebugPrint
 {
     fn pulse(&self, _scope: Scope, mut actions: ImpulseActions)
     {
-        log::debug!("{}", self.message);
+        log::debug!("LATCH> {}", self.message);
         actions.pulse(&self.outlet);
     }
 
@@ -78,7 +73,7 @@ pub struct EmitSignal
 }
 impl ImpulseBlock for EmitSignal
 {
-    fn pulse(&self, scope: Scope, mut actions: ImpulseActions)
+    fn pulse(&self, _scope: Scope, mut actions: ImpulseActions)
     {
         actions.runtime.signal(self.signal);
         actions.pulse(&self.outlet);
@@ -91,11 +86,25 @@ impl ImpulseBlock for EmitSignal
     }
 }
 
+pub struct PowerOff;
+impl ImpulseBlock for PowerOff
+{
+    fn pulse(&self, scope: Scope, actions: ImpulseActions)
+    {
+        // directly send to instance?
+        actions.runtime.power_off(scope.run_id());
+    }
+
+    fn inspect(&self, mut visit: BlockVisitor)
+    {
+        visit.set_name(Self::short_type_name());
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
     use super::*;
-    use crate::circuit::{PlugList, VisitList};
     use crate::{BlockId, Inlet, Plug, TestContext};
 
     #[test]

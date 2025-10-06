@@ -3,9 +3,6 @@ use crossbeam::channel::{unbounded, Receiver, Sender};
 use debug_3l14::debug_gui::DebugGui;
 use egui::Ui;
 use nab_3l14::utils::array::init_array;
-use notify::event::ModifyKind;
-use notify::{EventKind, RecommendedWatcher, RecursiveMode};
-use notify_debouncer_full::{Debouncer, RecommendedCache};
 use parking_lot::Mutex;
 use std::any::TypeId;
 use std::collections::HashMap;
@@ -14,6 +11,11 @@ use std::sync::Arc;
 use std::thread::{Builder, JoinHandle};
 use std::time::Duration;
 // TODO: probably don't pass around UniCase publicly
+
+#[cfg(feature = "hot_reloading")]
+use notify::{event::ModifyKind, EventKind, RecommendedWatcher, RecursiveMode};
+#[cfg(feature = "hot_reloading")]
+use notify_debouncer_full::{Debouncer, RecommendedCache};
 
 type AssetHandleBank = HashMap<AssetKey, UntypedAssetHandle>;
 
@@ -319,6 +321,7 @@ const NUM_ASSET_JOB_THREADS: usize = 1;
 pub struct Assets
 {
     storage: Arc<AssetsStorage>,
+    #[cfg(feature = "hot_reloading")]
     fs_watcher: Option<Debouncer<RecommendedWatcher, RecommendedCache>>,
     worker_threads: [Option<JoinHandle<()>>; NUM_ASSET_JOB_THREADS],
 
@@ -347,7 +350,7 @@ impl Assets
             assets_root: config.assets_root,
         });
 
-
+        #[cfg(feature = "hot_reloading")]
         let fs_watcher = if config.enable_fs_watcher { Self::try_fs_watch(storage.clone()).inspect_err(|err|
         {
             // TODO: print message on successful startup
@@ -384,6 +387,7 @@ impl Assets
         Self
         {
             storage,
+            #[cfg(feature = "hot_reloading")]
             fs_watcher,
             worker_threads,
 
@@ -396,6 +400,7 @@ impl Assets
         self.storage.notification_channel.1.clone()
     }
 
+    #[cfg(feature = "hot_reloading")]
     fn try_fs_watch(assets_storage: Arc<AssetsStorage>) -> notify::Result<Debouncer<RecommendedWatcher, RecommendedCache>>
     {
         let assets_storage_clone = assets_storage.clone();
@@ -513,17 +518,22 @@ impl DebugGui for Assets
             {
                 for (asset_type, lifecycler) in &self.storage.lifecyclers
                 {
+                    if lifecycler.debug_gui_fn.is_none() { continue; }
                     cui.selectable_value(&mut debug_state.inspected_lifecycler, *asset_type, lifecycler.lifecycler.display_name());
                 }
             });
 
         if let Some(lifecycler) = inspected_lifecycler
         {
-            ui.group(|gui| { lifecycler.lifecycler.debug_gui(gui) });
+            // TODO
+            // ui.group(|gui| { lifecycler.lifecycler.debug_gui(gui) });
         }
 
-        let mut has_fswatcher = self.fs_watcher.is_some();
-        ui.checkbox(&mut has_fswatcher, "FS watcher enabled");
+        #[cfg(feature = "hot_reloading")]
+        {
+            let mut has_fswatcher = self.fs_watcher.is_some();
+            ui.checkbox(&mut has_fswatcher, "FS watcher enabled");
+        }
 
         ui.separator();
 
@@ -564,7 +574,11 @@ impl Drop for Assets
 {
     fn drop(&mut self)
     {
-        self.fs_watcher = None;
+        #[cfg(feature = "hot_reloading")]
+        {
+            self.fs_watcher = None;
+        }
+        
         self.shutdown();
 
         for thread in &mut self.worker_threads
@@ -680,11 +694,6 @@ mod tests
             self.passthru.lock().as_ref().map(|p| p.call_count)
         }
     }
-    impl DebugGui for TestAssetLifecycler
-    {
-        fn display_name(&self) -> &str { "TestAssetLifecycle" }
-        fn debug_gui(&self, ui: &mut Ui) { }
-    }
 
     #[derive(Default)]
     struct NestedAssetLifecycler
@@ -719,11 +728,6 @@ mod tests
         {
             self.passthru.lock().as_ref().map(|p| p.call_count)
         }
-    }
-    impl DebugGui for NestedAssetLifecycler
-    {
-        fn display_name(&self) -> &str { "NestedAssetLifecycle" }
-        fn debug_gui(&self, ui: &mut Ui) { }
     }
 
     fn set_passthru<A: Asset, L: TestLifecycler<Asset = A> + 'static>(assets: &Assets, passthru_fn: Option<fn(AssetLoadRequest) -> Result<A, Box<dyn Error>>>)

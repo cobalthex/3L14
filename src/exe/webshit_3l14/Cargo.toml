@@ -11,4 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 latch_3l14 = { workspace = true, features = ["action_history"] }
 nab_3l14.workspace = true
-wasm-bindgen = "0.2.101"
+wasm-bindgen = "0.2.103"
+console_log = "1.0.0"
+log.workspace = true
+dashmap.workspace = true

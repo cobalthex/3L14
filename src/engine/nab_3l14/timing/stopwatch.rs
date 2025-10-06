@@ -1,21 +1,21 @@
 use std::fmt::{Debug, Formatter};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use crate::timing::FSeconds;
 
-pub type TIME_NANOS = u64; // nanoseconds
+pub type TimeNanos = u64; // nanoseconds
 
 #[derive(Default, Copy, Clone, PartialEq)]
 pub struct Stopwatch
 {
-    start: TIME_NANOS, // if high bit is clear, stopwatch is not running
-    elapsed: TIME_NANOS,
+    start: TimeNanos, // if high bit is clear, stopwatch is not running
+    elapsed: TimeNanos,
 }
 impl Stopwatch
 {
-    const ACTIVE_TEST_BIT: TIME_NANOS = 1 << 63;
+    const ACTIVE_TEST_BIT: TimeNanos = 1 << 63;
 
     #[inline]
-    pub fn restart(&mut self, now: TIME_NANOS)
+    pub fn restart(&mut self, now: TimeNanos)
     {
         self.start = now | Self::ACTIVE_TEST_BIT;
         self.elapsed = 0;
@@ -36,7 +36,7 @@ impl Stopwatch
     }
 
     #[inline] #[must_use]
-    pub fn elapsed(&self, now: TIME_NANOS) -> Duration
+    pub fn elapsed(&self, now: TimeNanos) -> Duration
     {
         debug_assert!(now < Self::ACTIVE_TEST_BIT);
 
@@ -47,7 +47,7 @@ impl Stopwatch
         }
     }
     #[inline] #[must_use]
-    pub fn elapsed_secs(&self, now: TIME_NANOS) -> FSeconds
+    pub fn elapsed_secs(&self, now: TimeNanos) -> FSeconds
     {
         // faster but introduces more error: FSeconds((self.elapsed / 1_000_000_000) as f32)
         FSeconds(self.elapsed(now).as_secs_f32())
@@ -55,17 +55,17 @@ impl Stopwatch
     // elapsed_secs_fast vs precise?
 
     #[inline]
-    pub fn start(&mut self, now: TIME_NANOS)
+    pub fn start(&mut self, now: TimeNanos)
     {
         debug_assert!(now < Self::ACTIVE_TEST_BIT);
         self.start = now | Self::ACTIVE_TEST_BIT;
     }
     #[inline]
-    pub fn stop(&mut self, now: TIME_NANOS)
+    pub fn stop(&mut self, now: TimeNanos)
     {
         if self.is_running()
         {
-            self.elapsed += (now - self.start);
+            self.elapsed += now - self.start;
             self.start &= !Self::ACTIVE_TEST_BIT;
         }
     }

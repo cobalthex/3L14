@@ -4,34 +4,94 @@
     <meta charset="UTF-8">
     <title>Webshit</title>
     <link rel="stylesheet" href="app.css">
+    <link rel="icon" href="dev.ico">
     <script src="https://github.com/mdaines/viz-js/releases/download/release-viz-3.16.0/viz-global.js"></script>
 </head>
 <body>
 <script type="module">
     import init,{run_app} from "./webshit_3l14.js";
-    let viz = Viz.instance();
     init().then(() =>
     {
         let app = run_app();
         window.asdf = app;
+
+        let $gviz = document.getElementById("gviz");
+        let $log = document.getElementById("log");
+        $log.textContent = app.get_action_history() + '\n' + app.get_log();
+
+        let viz = Viz.instance();
         viz.then(vizi =>
         {
             let gviz = app.as_graphviz();
-            document.getElementById("log").textContent = gviz;
-            document.getElementById("gviz").appendChild(vizi.renderSVGElement(gviz));
+            window.gviz = gviz;
+            $gviz.appendChild(vizi.renderSVGElement(gviz));
+        });
+
+        document.getElementById('signal').addEventListener('click', function(ev)
+        {
+            ev.preventDefault();
+            app.signal();
+
+            $log.textContent = app.get_action_history() + '\n' + app.get_log();
+            viz.then(vizi =>
+            {
+                let gviz = app.as_graphviz();
+                window.gviz = gviz;
+                $gviz.replaceChildren(vizi.renderSVGElement(gviz));
+            });
+        });
+
+        document.getElementById('on').addEventListener('click', function(ev)
+        {
+            ev.preventDefault();
+            app.signal_on();
+
+            $log.textContent = app.get_action_history() + '\n' + app.get_log();
+            viz.then(vizi =>
+            {
+                let gviz = app.as_graphviz();
+                window.gviz = gviz;
+                $gviz.replaceChildren(vizi.renderSVGElement(gviz));
+            });
+        });
+        document.getElementById('off').addEventListener('click', function(ev)
+        {
+            ev.preventDefault();
+            app.signal_off();
+
+            $log.textContent = app.get_action_history() + '\n' + app.get_log();
+            viz.then(vizi =>
+            {
+                let gviz = app.as_graphviz();
+                window.gviz = gviz;
+                $gviz.replaceChildren(vizi.renderSVGElement(gviz));
+            });
+        });
+
+        document.getElementById('raw').addEventListener('click', function(ev)
+        {
+            ev.preventDefault();
+            let $output = document.createElement('div');
+            $output.classList.add('log');
+            $output.textContent = app.as_graphviz();
+            $gviz.replaceChildren($output);
         });
     });
 </script>
 
 <div id="buttons">
-    <button type="button" id="reset">Reset</button>
+    <button type="button" id="signal">Signal</button>
+    <button type="button" id="on">On</button>
+    <button type="button" id="off">Off</button>
+    |
+    <button type="button" id="raw">Raw output</button>
 </div>
 
 <h2 style="grid-row: 1">Circuit</h2>
 <div id="gviz"></div>
 
 <h2 style="grid-row: 1;grid-column:3">Log</h2>
-<div id="log"></div>
+<div id="log" class="log"></div>
 
 </body>
 </html>

@@ -3,7 +3,6 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use bitcode::{Decode, Encode};
 use metrohash::MetroHash64;
-use rand::RngCore;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::Error;
 use nab_3l14::const_assert;
@@ -44,10 +43,11 @@ impl Debug for AssetKeyDerivedId
 pub struct AssetKeySourceId(AssetKeySourceIdRepr); // only 100 bits are used.
 impl AssetKeySourceId
 {
+    #[cfg(not(target_family="wasm"))] // tpdp?
     pub fn generate() -> Self
     {
         let mut bytes = [0u8; size_of::<Self>()];
-        rand::rng().fill_bytes(&mut bytes[0..((AssetKey::SOURCE_ID_BITS / 8) as usize)]);
+        rand::RngCore::fill_bytes(&mut rand::rng(), &mut bytes[0..((AssetKey::SOURCE_ID_BITS / 8) as usize)]);
         Self(AssetKeySourceIdRepr::from_le_bytes(bytes))
     }
 

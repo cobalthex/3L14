@@ -1,10 +1,11 @@
 use proc_macros_3l14::FancyEnum;
 use std::fmt::Debug;
+use std::io::Read;
 use std::panic::PanicHookInfo;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::{LazyLock, OnceLock};
+use std::sync::OnceLock;
 
 pub enum AppFolder
 {
@@ -26,6 +27,8 @@ macro_rules! iif_debug {
         }
     };
 }
+#[cfg(debug_assertions)]
+const TEST_VAL: u32 = iif_debug!(10, 0);
 
 #[macro_export]
 macro_rules! const_assert
@@ -36,8 +39,6 @@ macro_rules! const_assert
     ($cond:expr) => { const _: () = { assert!($cond); }; };
     ($cond:expr, $($arg:tt)+) => { const _: () = { assert!($cond, $($arg)+); }; };
 }
-
-pub const TEST_VAL: u32 = iif_debug!(10, 0);
 
 fn shitty_join<I>(separator: &str, iter: I) -> String
 where I: Iterator,
@@ -207,11 +208,11 @@ impl Debug for Panic<'_>
         // TODO: payload_as_str()
         if let Some(payload_str) = self.0.payload().downcast_ref::<&str>()
         {
-            f.write_fmt(format_args!("{payload_str}\n"));
+            f.write_fmt(format_args!("{payload_str}\n"))?;
         }
         else if let Some(payload_str) = self.0.payload().downcast_ref::<String>()
         {
-            f.write_fmt(format_args!("{payload_str}\n"));
+            f.write_fmt(format_args!("{payload_str}\n"))?;
         }
 
         if let Some(location) = self.0.location()
@@ -230,6 +231,13 @@ pub fn set_panic_hook(wait_for_exit: bool)
     std::panic::set_hook(Box::new(move |panic|
     {
         default_panic_hook(panic);
+
+        if wait_for_exit
+        {
+            print!("Press any key to exit... ");
+            let mut input = [0u8];
+            let _ = std::io::stdin().read(&mut input);
+        }
 
         // todo: proper panic value?
         fatal_error(FatalError::Panic, Panic(panic))

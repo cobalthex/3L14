@@ -11,12 +11,15 @@ path = "lib.rs"
 action_history = []
 
 [dependencies]
+asset_3l14.workspace = true
+debug_3l14.workspace = true
 nab_3l14.workspace = true
+proc_macros_3l14.workspace = true
 
 crossbeam.workspace = true
 dashmap.workspace = true
+egui.workspace = true
 log.workspace = true
 parking_lot.workspace = true
 puffin.workspace = true
 smallvec.workspace = true
-regex = "1.10.6"

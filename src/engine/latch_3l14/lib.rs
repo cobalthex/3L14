@@ -1,8 +1,3 @@
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::u32::MAX;
-use smallvec::{smallvec, SmallVec};
-
 mod circuit;
 pub use circuit::*;
 
@@ -15,5 +10,9 @@ pub use runtime::*;
 mod vars;
 pub use vars::*;
 
+mod blocks;
+pub use blocks::*;
+
 pub mod latches;
 pub mod impulses;
+

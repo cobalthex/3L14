@@ -1,5 +1,6 @@
 :root {
     --fg-color: #aab;
+    --powered-color: gold;
 }
 
 html {
@@ -31,7 +32,7 @@ button:active {
 body {
     display: grid;
     grid-template-rows: auto 1fr auto;
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: 1fr auto 300px;
     gap: 10px;
 
     position: absolute;
@@ -53,18 +54,20 @@ body {
     border-radius: 4px;
     grid-row: 2;
     grid-column: 1 / 3;
-    overflow: hidden;
+    overflow: auto;
     resize: horizontal;
 }
 #log {
-    white-space: pre;
-    font-family: monospace;
     padding: 10px;
     border: 1px solid #446;
     border-radius: 4px;
-    overflow: hidden;
     grid-row: 2 / 3;
     grid-column: 3;
+}
+.log {
+    white-space: pre-wrap;
+    font-family: monospace;
+    overflow: auto;
 }
 
 svg path, svg polygon, svg polyline {
@@ -73,4 +76,9 @@ svg path, svg polygon, svg polyline {
 svg text {
     font-family: sans-serif;
     fill: var(--fg-color);
+}
+
+svg g.latch-plug, g.powered polygon, g.powered polyline {
+    stroke: var(--powered-color) !important;
+    stroke-width: 3;
 }

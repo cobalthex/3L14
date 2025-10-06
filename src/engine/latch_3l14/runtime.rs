@@ -1,15 +1,18 @@
-use super::{BlockId, Circuit, Instance, VarChange, VarId, VarValue};
-use crate::VarScope::Shared;
+use std::fmt::{Debug, Formatter};
+use super::{BlockId, Circuit, Instance};
 use crate::{RunContext, SharedScope};
-use crossbeam::channel::{Receiver, Sender};
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
 use nab_3l14::Signal;
 use smallvec::SmallVec;
-use std::cell::UnsafeCell;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use parking_lot::Mutex;
+
+/* TODO
+- ability to set initial scope
+- scope and state serialization/deserialization
+ */
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct InstRunId(u32);
@@ -18,9 +21,17 @@ impl InstRunId
     pub(super) const TEST: Self = Self(1);
 }
 
-pub type BlockRef = (InstRunId, BlockId);
+#[derive(PartialEq, Eq, Clone)]
+pub struct BlockRef(pub(super) InstRunId, pub(super) BlockId);
+impl Debug for BlockRef
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    {
+        f.write_fmt(format_args!("Ⅱ{}{:?}", self.0.0, self.1))
+    }
+}
 
-pub(crate) enum InstanceAction
+enum InstanceAction
 {
     PowerOn,
     Signal(u32),
@@ -80,7 +91,7 @@ impl Runtime
         }
         history
     }
-    
+
     #[must_use]
     pub fn dump_scope(&self, inst_run_id: InstRunId) -> String
     {
@@ -122,6 +133,31 @@ impl Runtime
         inst_id
     }
 
+    // Power-off and remove a running instance
+    pub fn destroy(self: &Arc<Self>, run_id: InstRunId)
+    {
+        puffin::profile_function!();
+
+        let Some((_, running_inst)) = self.instances.remove(&run_id) else { return; };
+
+        // it is ok if signals go to instances that don't exist anymore
+        // TODO: this can supposedly deadlock if also iterating elsewhere
+        for mut sig in self.signals.iter_mut()
+        {
+            sig.retain(|(inst, _)| *inst != run_id);
+        }
+
+        running_inst.pending_actions.push(InstanceAction::PowerOff);
+        self.clone().run_instance(run_id, &running_inst); // TODO: once threaded, this will need to take ownership of running_inst
+
+        // this must run after ^ finishes
+        if let Some(parent) = running_inst.parent
+        {
+            self.re_enter(parent);
+        }
+    }
+
+    // Power-off a running instance. It can be restarted via signals
     pub fn power_off(self: &Arc<Self>, run_id: InstRunId)
     {
         let running_inst = self.instances.get(&run_id)
@@ -132,6 +168,7 @@ impl Runtime
         // TODO: wake up parent (instance should probably send this?)
     }
 
+    // Emit a signal and wake up all listening circuits
     pub fn signal(self: &Arc<Self>, signal: Signal)
     {
         let Some(signals) = self.signals.get(&signal) else { return; };
@@ -143,6 +180,18 @@ impl Runtime
         }
     }
 
+    // Re-enter a powered block (in a specific circuit). Used by both super-circuits and code-backed listeners
+    pub fn re_enter(self: &Arc<Self>, block_ref: BlockRef)
+    {
+        // re-enter reason?
+
+        let running_inst = self.instances.get(&block_ref.0)
+            .expect("There should never be a power-off before power-on");
+        running_inst.pending_actions.push(InstanceAction::ReEnter(block_ref.1));
+        self.clone().run_instance(block_ref.0, &running_inst);
+    }
+
+    // drain the action queue for a running instance
     fn run_instance(self: Arc<Self>, run_id: InstRunId, instance: &RunningInstance) // better name?
     {
         puffin::profile_function!();
@@ -196,7 +245,7 @@ mod tests
             num_local_vars: 0,
         };
 
-        let mut runtime = Runtime::new();
+        let runtime = Runtime::new();
         runtime.spawn(circuit, None);
     }
 }

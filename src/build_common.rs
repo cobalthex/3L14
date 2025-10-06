@@ -1,8 +1,8 @@
-use std::{env, fs, io};
+use build_3l14::ProjectDirs;
 use std::ffi::OsStr;
 use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
-use build_3l14::ProjectDirs;
+use std::path::Path;
+use std::{fs, io};
 
 fn main()
 {

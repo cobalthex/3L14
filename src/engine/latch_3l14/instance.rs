@@ -1,12 +1,11 @@
-use std::collections::HashMap;
-use std::fmt::{Debug, Write};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use crossbeam::queue::SegQueue;
-use smallvec::SmallVec;
-use nab_3l14::{debug_panic, Signal};
-use regex::Regex;
 use super::*;
+use nab_3l14::{append_file, debug_panic, Signal};
+use smallvec::SmallVec;
+use std::collections::HashMap;
+use std::fmt::{Debug, Formatter, Write};
+use std::sync::Arc;
+use nab_3l14::utils::ShortTypeName;
+use crate::latches::Latch;
 
 const MAX_VISIT_DEPTH: u32 = 100; // smaller number?
 
@@ -34,15 +33,18 @@ pub(super) enum History
     VarChanged(VarId, VarValue)
 }
 
+pub(super) type LatchContextStorage = Option<Box<dyn Debug + Send>>;
+
 #[derive(Debug)]
 struct HydratedLatch
 {
     is_powered: bool, // flags?
     powered_outlets: SmallVec<[BlockId; 4]>, // maybe powered
+    latch_context: LatchContextStorage,
 }
 
-#[derive(Clone)]
-pub(super) struct RunContext<'r>
+#[derive(Clone)] // not ideal pubicly
+pub struct RunContext<'r>
 {
     pub run_id: InstRunId,
     pub shared_scope: &'r SharedScope,
@@ -62,6 +64,7 @@ struct Visit
     block: BlockId,
     action: VisitAction,
 }
+
 
 pub struct Instance
 {
@@ -99,7 +102,9 @@ impl Instance
     // power-on all the auto-entry blocks
     pub fn power_on(&mut self, context: RunContext)
     {
-        self.push_action(History::InstancePowerOn);
+        #[cfg(any(test, feature = "action_history"))]
+        self.action_history.push(History::InstancePowerOn);
+
         let auto_blocks: SmallVec<[BlockId; 8]> = SmallVec::from_slice(&self.circuit.auto_entries);
         self.visit(
             auto_blocks.iter().rev().map(|b| Visit { block: *b, action: VisitAction::Pulse(Inlet::Pulse, None) }),
@@ -109,8 +114,10 @@ impl Instance
     // power-on the signaled entry blocks
     pub fn signal(&mut self, signal_slot: usize, context: RunContext)
     {
+        #[cfg(any(test, feature = "action_history"))]
+        self.action_history.push(History::Signal(self.circuit.signaled_entries[signal_slot].0));
+
         let mut outlets = SmallVec::<[_; 2]>::new();
-        self.push_action(History::Signal(self.circuit.signaled_entries[signal_slot].0));
         outlets.extend_from_slice(&self.circuit.signaled_entries[signal_slot].1);
         self.visit(
             outlets.iter().rev().map(|b| Visit { block: *b, action: VisitAction::Pulse(Inlet::Pulse, None) }),
@@ -123,7 +130,8 @@ impl Instance
         puffin::profile_function!();
 
         // free memory?
-        self.push_action(History::InstancePowerOff);
+        #[cfg(any(test, feature = "action_history"))]
+        self.action_history.push(History::InstancePowerOff);
 
         // iter all powered latches and power-off
         let mut powered_latches = Vec::new();
@@ -175,71 +183,72 @@ impl Instance
         let mut local_changes = ScopeChanges::new();
         let mut shared_changes = ScopeChanges::new();
 
-        macro_rules! scope { ($block_id:expr) =>
-        {
-            Scope
-            {
-                run_id: context.run_id,
-                block_id: $block_id,
-                local_scope: &mut self.scope,
-                local_changes: &mut local_changes,
-                shared_scope: context.shared_scope,
-                shared_changes: &mut shared_changes
-            }
-        } }
-
-        // macros not ideal here
-        macro_rules! process_pulses { ($curr_depth:expr, $parent_latch:expr) =>
-        {
-            stack.reserve(pulsed_plugs.len() + latched_plugs.len());
-            for pulse in pulsed_plugs.drain(..).rev()
-            {
-                // non-latching links
-                stack.push(VisitBlock
-                {
-                    visit: Visit
-                    {
-                        block: pulse.block,
-                        action: VisitAction::Pulse(pulse.inlet, None), // non-latching links ignore power-off propagation
-                    },
-                    depth: $curr_depth + 1
-                });
-            }
-            for latch in latched_plugs.drain(..).rev()
-            {
-                stack.push(VisitBlock
-                {
-                    visit: Visit
-                    {
-                        block: latch.block,
-                        action: VisitAction::Pulse(latch.inlet, Some($parent_latch)),
-                    },
-                    depth: $curr_depth + 1
-                });
-            }
-        } }
-        macro_rules! process_var_changes { ($curr_depth:expr) =>
-        {
-            for change in local_changes.drain(..).rev()
-            {
-                stack.push(VisitBlock
-                {
-                    visit: Visit
-                    {
-                        block: change.target.1,
-                        action: VisitAction::VarChanged(change),
-                    },
-                    depth: $curr_depth + 1,
-                })
-            }
-            // TODO: shared changes
-        } }
-
         while let Some(VisitBlock { visit: test_visit, depth }) = stack.pop()
         {
             debug_assert!(depth < MAX_VISIT_DEPTH, "Maximum visit depth exceeded");
 
-            self.push_action(History::Visit(test_visit.block));
+            macro_rules! scope { ($runtime_state:expr) =>
+            {
+                Scope
+                {
+                    run_id: context.run_id,
+                    block_id: test_visit.block,
+                    local_scope: &mut self.scope,
+                    local_changes: &mut local_changes,
+                    shared_scope: context.shared_scope,
+                    shared_changes: &mut shared_changes,
+                    latch_context: unsafe { $runtime_state as *mut _ },
+                }
+            } }
+            macro_rules! process_pulses { ($option_parent_latch:expr) =>
+            {
+                stack.reserve(pulsed_plugs.len() + latched_plugs.len());
+                for pulse in pulsed_plugs.drain(..).rev()
+                {
+                    // non-latching links
+                    stack.push(VisitBlock
+                    {
+                        visit: Visit
+                        {
+                            block: pulse.block,
+                            // only propagate upstream latch pulses through impulses (downstream latches 'reset' propagation)
+                            action: VisitAction::Pulse(pulse.inlet, if test_visit.block.is_latch() { None } else { $option_parent_latch }),
+                        },
+                        depth: depth + 1
+                    });
+                }
+                for latch in latched_plugs.drain(..).rev()
+                {
+                    stack.push(VisitBlock
+                    {
+                        visit: Visit
+                        {
+                            block: latch.block,
+                            action: VisitAction::Pulse(latch.inlet, $option_parent_latch),
+                        },
+                        depth: depth + 1
+                    });
+                }
+            } }
+            macro_rules! process_var_changes { () =>
+            {
+                for change in local_changes.drain(..).rev()
+                {
+                    stack.push(VisitBlock
+                    {
+                        visit: Visit
+                        {
+                            block: change.target.1,
+                            action: VisitAction::VarChanged(change),
+                        },
+                        depth: depth + 1,
+                    })
+                }
+                // TODO: shared changes
+            } }
+
+            #[cfg(any(test, feature = "action_history"))]
+            self.action_history.push(History::Visit(test_visit.block));
 
             match test_visit.action
             {
@@ -256,7 +265,7 @@ impl Instance
                             self.action_history.push(History::Pulse(test_visit.block));
 
                             impulse.pulse(
-                                scope!(test_visit.block),
+                                scope!(std::ptr::null_mut()), // impulses cannot use tracked data
                                 ImpulseActions
                                 {
                                     pulse_outlets: &mut pulsed_plugs,
@@ -264,25 +273,19 @@ impl Instance
                                 }
                             );
 
-                            stack.reserve(pulsed_plugs.len());
-                            for pulse in pulsed_plugs.drain(..).rev()
-                            {
-                                stack.push(VisitBlock
-                                {
-                                    visit: Visit
-                                    {
-                                        block: pulse.block,
-                                        action: VisitAction::Pulse(pulse.inlet, parent_latch /* forward through */),
-                                    },
-                                    depth: depth + 1
-                                });
-                            }
+                            process_pulses!(parent_latch); // pass-thru parent latch
+                            process_var_changes!();
                         }
-                    }
+                        }
                     else
                     {
                         let hydrated = self.hydrated_latches.entry(test_visit.block.value())
-                            .or_insert_with(|| HydratedLatch { is_powered: false, powered_outlets: SmallVec::new(), });
+                            .or_insert_with(|| HydratedLatch
+                            {
+                                is_powered: false,
+                                powered_outlets: SmallVec::new(),
+                                latch_context: None,
+                            });
                         match inlet
                         {
                             Inlet::Pulse =>
@@ -290,20 +293,13 @@ impl Instance
                                 if hydrated.is_powered { continue; }
                                 hydrated.is_powered = true;
 
-                                self.push_action(History::PowerOn(test_visit.block));
-
-                                // link the parent directly to this state for when powering-off
-                                // todo: can downstream latches be stored statically?
-                                if let Some(parent_latch) = parent_latch
-                                {
-                                    let hydrated_parent = self.hydrated_latches.get_mut(&parent_latch.value())
-                                        .expect("Parent latch set but no hydrated state exists for it??");
-                                    hydrated_parent.powered_outlets.push(test_visit.block);
-                                }
+                                #[cfg(any(test, feature = "action_history"))]
+                                self.action_history.push(History::PowerOn(test_visit.block));
 
                                 let latch = self.circuit.latches[test_visit.block.value() as usize].as_ref();
+
                                 latch.power_on(
-                                    scope!(test_visit.block),
+                                    scope!(&mut hydrated.latch_context),
                                     LatchActions
                                     {
                                         pulse_plugs: &mut pulsed_plugs,
@@ -312,8 +308,18 @@ impl Instance
                                     }
                                 );
 
-                                process_pulses!(depth, test_visit.block);
-                                process_var_changes!(depth);
+                                // link the parent directly to this state for when powering-off
+                                // todo: can downstream latches be stored statically?
+                                if let Some(parent_latch) = parent_latch
+                                {
+                                    append_file!("D:\\latch_test.txt", "%%% {parent_latch:?}");
+                                    let hydrated_parent = self.hydrated_latches.get_mut(&parent_latch.value())
+                                        .expect("Parent latch set but no hydrated state exists for it??");
+                                    hydrated_parent.powered_outlets.push(test_visit.block);
+                                }
+
+                                process_pulses!(Some(test_visit.block));
+                                process_var_changes!();
                             }
                             Inlet::PowerOff =>
                             {
@@ -325,12 +331,13 @@ impl Instance
                                 {
                                     hydrated.is_powered = false;
 
-                                    self.push_action(History::PowerOff(test_visit.block));
+                                    #[cfg(any(test, feature = "action_history"))]
+                                    self.action_history.push(History::PowerOff(test_visit.block));
 
                                     let latch = &self.circuit.latches[test_visit.block.value() as usize];
-                                    latch.power_off(scope!(test_visit.block));
+                                    latch.power_off(scope!(&mut hydrated.latch_context));
 
-                                    process_var_changes!(depth);
+                                    process_var_changes!();
                                 }
                                 else
                                 {
@@ -362,46 +369,62 @@ impl Instance
                 {
                     // should be verified earlier
                     debug_assert!(test_visit.block.is_latch(), "Only latch blocks can be re-entered");
-                    self.push_action(History::ReEnter(test_visit.block));
+
+                    #[cfg(any(test, feature = "action_history"))]
+                    self.action_history.push(History::ReEnter(test_visit.block));
+
+                    // only powered latches can be re-entered
+                    let Some(hydrated) = self.hydrated_latches.get_mut(&test_visit.block.value())
+                        else { debug_panic!("No hydrated state for latch"); return; };
+
+                    if !hydrated.is_powered
+                    {
+                        continue;
+                    }
 
                     let latch = &self.circuit.latches[test_visit.block.value() as usize];
-                    latch.re_enter(scope!(test_visit.block), LatchActions
-                    {
-                        pulse_plugs: &mut pulsed_plugs,
-                        latch_plugs: &mut latched_plugs,
-                        runtime: context.runtime.clone(),
-                    });
+                    latch.re_enter(scope!(&mut hydrated.latch_context),
+                                   LatchActions
+                        {
+                            pulse_plugs: &mut pulsed_plugs,
+                            latch_plugs: &mut latched_plugs,
+                            runtime: context.runtime.clone(),
+                        });
 
-                    process_pulses!(depth, test_visit.block);
-                    process_var_changes!(depth);
+                    process_pulses!(Some(test_visit.block));
+                    process_var_changes!();
                 }
                 VisitAction::VarChanged(change) =>
                 {
                     // should be verified earlier
                     debug_assert!(test_visit.block.is_latch(), "Only latch blocks can be re-entered");
-                    self.push_action(History::VarChanged(change.var, change.new_value.clone()));
+                    #[cfg(any(test, feature = "action_history"))]
+                    self.action_history.push(History::VarChanged(change.var, change.new_value.clone()));
+
+                    let Some(hydrated) = self.hydrated_latches.get_mut(&test_visit.block.value())
+                        else { debug_panic!("No hydrated state for latch"); return; };
+
+                    if !hydrated.is_powered
+                    {
+                        continue;
+                    }
 
                     let latch = &self.circuit.latches[test_visit.block.value() as usize];
-                    latch.on_var_changed(change, scope!(test_visit.block), LatchActions
+                    latch.on_var_changed(change, scope!(&mut hydrated.latch_context),
+                                         LatchActions
                     {
                         pulse_plugs: &mut pulsed_plugs,
                         latch_plugs: &mut latched_plugs,
                         runtime: context.runtime.clone(),
                     });
 
-                    process_pulses!(depth, test_visit.block);
-                    process_var_changes!(depth);
+                    process_pulses!(Some(test_visit.block));
+                    process_var_changes!();
                 }
             }
         }
     }
 
-    #[inline] #[allow(unused_variables)]
-    fn push_action(&mut self, action: History)
-    {
-        #[cfg(any(test, feature = "action_history"))]
-        self.action_history.push(action);
-    }
     #[inline]
     pub(super) fn clear_action_history(&mut self)
     {
@@ -418,7 +441,7 @@ impl Instance
     }
 
     #[inline] #[must_use]
-    pub fn latch_has_power(&self, latch: u32) -> bool
+    pub fn is_latch_powered(&self, latch: u32) -> bool
     {
         debug_assert!((latch as usize) < self.circuit.latches.len());
         self.hydrated_latches.get(&latch).map_or(false, |latch| latch.is_powered)
@@ -623,7 +646,7 @@ impl Drop for Instance
 }
 
 #[cfg(test)]
-fn gen_run_cxt(shared_scope: &SharedScope) -> RunContext
+fn gen_run_cxt(shared_scope: &SharedScope) -> RunContext<'_>
 {
     let run_cxt = RunContext
     {
@@ -637,18 +660,19 @@ fn gen_run_cxt(shared_scope: &SharedScope) -> RunContext
 #[cfg(test)]
 mod traversal_tests
 {
-    use nab_3l14::utils::ShortTypeName;
     use super::*;
+    use nab_3l14::utils::ShortTypeName;
 
     #[derive(Default)]
     struct TestImpulse
     {
+        #[allow(dead_code)]
         name: &'static str,
         outlet: PulsedOutlet,
     }
     impl ImpulseBlock for TestImpulse
     {
-        fn pulse(&self, scope: Scope, mut actions: ImpulseActions)
+        fn pulse(&self, _scope: Scope, mut actions: ImpulseActions)
         {
             actions.pulse(&self.outlet);
         }
@@ -660,9 +684,16 @@ mod traversal_tests
         }
     }
 
+    #[derive(Default, Debug)]
+    struct TestLatchContext
+    {
+        test: usize,
+    }
+
     #[derive(Default)]
     struct TestLatch
     {
+        #[allow(dead_code)]
         name: &'static str,
         value: bool,
 
@@ -674,10 +705,13 @@ mod traversal_tests
 
         powered_outlet: LatchingOutlet,
     }
-    impl LatchBlock for TestLatch
+    impl ContextfulLatchBlock for TestLatch
     {
-        fn power_on(&self, _scope: Scope, mut actions: LatchActions)
+        type Context = TestLatchContext;
+        fn power_on(&self, c: &mut Self::Context, _scope: Scope, mut actions: LatchActions)
         {
+            c.test = 5; // testing contextful latch state pointer arithmetic
+
             if self.value
             {
                 actions.pulse(&self.on_true_outlet);
@@ -692,7 +726,11 @@ mod traversal_tests
             }
         }
 
-        fn power_off(&self, _scope: Scope) { }
+        fn power_off(&self, c: &mut Self::Context, _scope: Scope)
+        {
+            assert_eq!(c.test, 5);
+            c.test = 0;
+        }
 
         fn inspect(&self, mut visit: BlockVisitor)
         {
@@ -802,13 +840,13 @@ mod traversal_tests
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
 
-        assert_eq!(instance.latch_has_power(0), false);
-        assert_eq!(instance.latch_has_power(1), false);
+        assert_eq!(instance.is_latch_powered(0), false);
+        assert_eq!(instance.is_latch_powered(1), false);
 
         instance.power_on(run_cxt.clone());
 
-        assert_eq!(instance.latch_has_power(0), true);
-        assert_eq!(instance.latch_has_power(1), true);
+        assert_eq!(instance.is_latch_powered(0), true);
+        assert_eq!(instance.is_latch_powered(1), true);
 
         assert_eq!(instance.get_action_history(), &[
             History::InstancePowerOn,
@@ -828,10 +866,12 @@ mod traversal_tests
 
         instance.clear_action_history();
 
+        append_file!("D:\\latch_test.txt", "!!! {:#?}", instance.hydrated_latches);
         instance.visit([Visit { block: BlockId::latch(0), action: VisitAction::Pulse(Inlet::PowerOff, None) }], run_cxt.clone());
 
-        assert_eq!(instance.latch_has_power(0), false);
-        assert_eq!(instance.latch_has_power(1), false);
+        append_file!("D:\\latch_test.txt", "$$$ {:#?}", instance.hydrated_latches);
+        assert_eq!(instance.is_latch_powered(0), false);
+        assert_eq!(instance.is_latch_powered(1), false);
 
         assert_eq!(instance.get_action_history(), &[
             History::Visit(BlockId::latch(0)), // Inlet::PowerOff
@@ -905,7 +945,7 @@ mod traversal_tests
 
         instance.power_on(run_cxt.clone());
 
-        assert_eq!(instance.latch_has_power(0), false);
+        assert_eq!(instance.is_latch_powered(0), false);
 
         assert_eq!(instance.get_action_history(), &[
             History::InstancePowerOn,
@@ -962,13 +1002,13 @@ mod traversal_tests
 
         instance.power_on(run_cxt.clone());
 
-        assert_eq!(instance.latch_has_power(0), true);
-        assert_eq!(instance.latch_has_power(1), true);
+        assert_eq!(instance.is_latch_powered(0), true);
+        assert_eq!(instance.is_latch_powered(1), true);
 
         instance.visit([Visit { block: BlockId::latch(0), action: VisitAction::Pulse(Inlet::PowerOff, None) }], run_cxt.clone());
 
-        assert_eq!(instance.latch_has_power(0), false);
-        assert_eq!(instance.latch_has_power(1), true);
+        assert_eq!(instance.is_latch_powered(0), false);
+        assert_eq!(instance.is_latch_powered(1), true);
 
         instance.power_off(run_cxt.clone());
 
@@ -1031,14 +1071,14 @@ mod traversal_tests
 
         instance.power_on(run_cxt.clone());
 
-        assert_eq!(instance.latch_has_power(0), false);
+        assert_eq!(instance.is_latch_powered(0), false);
         assert_eq!(instance.get_action_history(), &[
             History::InstancePowerOn,
         ]);
         instance.clear_action_history();
 
         instance.signal(0, run_cxt.clone());
-        assert_eq!(instance.latch_has_power(0), true);
+        assert_eq!(instance.is_latch_powered(0), true);
 
         instance.power_off(run_cxt.clone());
 
@@ -1171,6 +1211,42 @@ mod traversal_tests
             History::Visit(BlockId::latch(2)),
         ]);
     }
+
+    #[test]
+    #[should_panic]
+    fn recursion_assertion()
+    {
+        let circuit = Circuit
+        {
+            auto_entries: Box::new([BlockId::impulse(0)]),
+            signaled_entries: Box::new([]),
+            impulses: Box::new([
+                Box::new(TestImpulse
+                {
+                    name: "first",
+                    outlet: PulsedOutlet
+                    {
+                        plugs: Box::new([Plug::new(BlockId::impulse(1), Inlet::Pulse)]),
+                    },
+                }),
+                Box::new(TestImpulse
+                {
+                    name: "second",
+                    outlet: PulsedOutlet
+                    {
+                        plugs: Box::new([Plug::new(BlockId::impulse(0), Inlet::Pulse)]),
+                    }
+                })
+            ]),
+            latches: Box::new([]),
+            num_local_vars: 0,
+        };
+        
+        let mut instance = Instance::new(circuit);
+        let shared_scope = SharedScope::default();
+        let run_cxt = gen_run_cxt(&shared_scope);
+        instance.power_on(run_cxt.clone());
+    }
 }
 
 // TODO: re-entrance tests
@@ -1178,8 +1254,8 @@ mod traversal_tests
 #[cfg(test)]
 mod var_tests
 {
-    use nab_3l14::utils::ShortTypeName;
     use super::*;
+    use nab_3l14::utils::ShortTypeName;
 
     struct TestImpulse
     {
@@ -1188,7 +1264,7 @@ mod var_tests
     impl ImpulseBlock for TestImpulse
     {
         fn pulse(&self, scope: Scope, _actions: ImpulseActions) { println!("Var {:?} = {:?}", self.var, scope.get(self.var)); }
-        fn inspect(&self, mut visit: BlockVisitor) { }
+        fn inspect(&self, _visit: BlockVisitor) { }
     }
 
     struct WriteLatch
@@ -1204,7 +1280,7 @@ mod var_tests
             scope.set(self.var, VarValue::Bool(self.to_value));
         }
         fn power_off(&self, _scope: Scope) { }
-        fn inspect(&self, visit_outlets: BlockVisitor) { }
+        fn inspect(&self, _visit: BlockVisitor) { }
     }
 
     struct ReadLatch
@@ -1225,7 +1301,6 @@ mod var_tests
         }
         fn on_var_changed(&self, change: VarChange, _scope: Scope, mut actions: LatchActions)
         {
-            println!("read {:?} = {:?} -> {:?}", change.var, change.old_value, change.new_value);
             actions.pulse(&self.on_read);
         }
         fn inspect(&self, mut visit: BlockVisitor)
@@ -1358,4 +1433,5 @@ mod var_tests
 
     // TODO: change that kicks off another change
     // TODO: change that kicks off propagation (that kicks off another change?)
+    // TODO: verify pulses also propagate
 }

@@ -1,8 +1,8 @@
 use std::fmt::{Debug, Formatter};
-use std::mem::swap;
-use super::{BlockId, InstRunId, Instance};
+use super::{BlockId, InstRunId, ContextfulLatchBlock};
 use smallvec::SmallVec;
 use nab_3l14::utils::alloc_slice::alloc_slice_default;
+use crate::instance::LatchContextStorage;
 use crate::runtime::BlockRef;
 
 #[repr(u8)]
@@ -70,6 +70,12 @@ pub enum VarValue
     Bool(bool),
     Int(i32),
     Float(f32),
+    // use glam types?
+    Vec2 { x: f32, y: f32 },
+    Vec3 { x: f32, y: f32, z: f32 },
+    Vec4 { x: f32, y: f32, z: f32, w: f32 },
+
+    List(Vec<VarValue>), // TODO: this needs to not be copied
     // Vec2, Vec3, Vec4
     // Entity
     // Asset?
@@ -133,9 +139,15 @@ pub struct Scope<'s>
     pub(super) local_changes: &'s mut ScopeChanges,
     pub(super) shared_scope: &'s SharedScope,
     pub(super) shared_changes: &'s mut ScopeChanges,
+
+    pub(super) latch_context: *mut LatchContextStorage, // pointer to pointer, dirty dirty hax
 }
 impl<'s> Scope<'s>
 {
+    pub fn run_id(&self) -> InstRunId { self.run_id }
+    pub fn block_id(&self) -> BlockId { self.block_id }
+    pub fn get_block_ref(&self) -> BlockRef { BlockRef(self.run_id, self.block_id) }
+
     #[must_use]
     pub fn get(&self, var_id: VarId) -> Option<VarValue>
     {
@@ -186,7 +198,8 @@ impl<'s> Scope<'s>
 
     // TODO: automate sub/unsub in latches?
 
-    pub fn subscribe(&mut self, var_id: VarId)
+    // Wake-up the calling block whenever this var changes. Returns the current value of the var
+    pub fn subscribe(&mut self, var_id: VarId) -> VarValue
     {
         // statically restrict this?
         debug_assert!(self.block_id.is_latch());
@@ -196,8 +209,10 @@ impl<'s> Scope<'s>
             VarScope::Local =>
             {
                 let var = self.local_scope.vars.get_mut(var_id.value() as usize).expect("Invalid var ID");
-                var.listeners.push((self.run_id, self.block_id));
+                var.listeners.push(BlockRef(self.run_id, self.block_id));
                 // assert unique?
+                log::trace!("{:?} subscribed to {var:?}", self.block_id);
+                var.value.clone()
             }
             VarScope::Shared =>
             {
@@ -215,9 +230,10 @@ impl<'s> Scope<'s>
             VarScope::Local =>
             {
                 let var = self.local_scope.vars.get_mut(var_id.value() as usize).expect("Invalid var ID");
-                if let Some(idx) = var.listeners.iter().position(|l| *l == (self.run_id, self.block_id))
+                if let Some(idx) = var.listeners.iter().position(|l| *l == BlockRef(self.run_id, self.block_id))
                 {
                     var.listeners.remove(idx);
+                    log::trace!("{:?} unsubscribed from {var:?}", self.block_id);
                 }
                 // assert unique?
             }
@@ -227,14 +243,59 @@ impl<'s> Scope<'s>
             }
         }
     }
+
+    // Get runtime data (internally used by tracked latch blocks)
+    #[inline] #[must_use]
+    pub(super) fn unpack_context<L: ContextfulLatchBlock>(self) -> (&'s mut L::Context, Scope<'s>)
+    {
+        let Self
+        {
+            run_id,
+            block_id,
+            local_scope,
+            local_changes,
+            shared_scope,
+            shared_changes,
+            mut latch_context
+        } = self;
+
+        // TODO: method to call to create context?
+        unsafe
+        {
+            if (*latch_context).is_none()
+            {
+                let outbox = Box::new(L::Context::default());
+                *latch_context = Some(outbox);
+            }
+        }
+
+        let unboxed =
+        unsafe {
+            let deref = &mut *latch_context;
+            let inbox = deref.as_mut().unwrap();
+            &mut *(inbox.as_mut() as *mut _ as *mut L::Context)
+        };
+
+        (
+            unboxed,
+            Self
+            {
+                run_id,
+                block_id,
+                local_scope,
+                local_changes,
+                shared_scope,
+                shared_changes,
+                latch_context: std::ptr::null_mut(), // dirty hax, but this should not be used again
+            }
+        )
+    }
 }
 
 
 #[cfg(test)]
 mod tests
 {
-    use super::*;
-
     #[test]
      fn set_get()
     {

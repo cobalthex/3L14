@@ -39,7 +39,7 @@ impl DebugGuiBase for FrameProfiler
 {
     fn display_name(&self) -> &str { "Frame Profiler" }
 
-    fn debug_gui_base(&self, is_active: &mut bool, debug_gui: &Context)
+    fn debug_gui_base(&self, is_active: &mut bool, _debug_gui: &Context)
     {
         if *is_active
         {

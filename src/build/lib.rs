@@ -1,4 +1,4 @@
-use std::{env, fs};
+use std::env;
 use std::path::PathBuf;
 
 pub mod winres;

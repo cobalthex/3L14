@@ -21,6 +21,8 @@ pub enum AssetTypeId
     SkeletalAnimation = 10,
 
     Scene = 11,
+
+    Circuit = 12,
     
     // ComputePipeline
 

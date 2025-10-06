@@ -103,7 +103,7 @@ pub fn asset_attrib(attrib_input: TokenStream, input: TokenStream) -> TokenStrea
                 }
             }
         },
-        Fields::Unnamed(members) =>
+        Fields::Unnamed(_members) =>
         {
             // TODO
         },
