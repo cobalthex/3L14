@@ -2,7 +2,7 @@ use crate::pipeline_sorter::PipelineSorter;
 use crate::{debug_label, pipeline_sorter, render_passes, Renderer};
 use arrayvec::ArrayVec;
 use glam::{Mat3, Mat4, Vec2, Vec3, Vec4Swizzles};
-use std::sync::Arc;
+use triomphe::Arc;
 use std::time::Duration;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, Extent3d, QueueWriteBufferView, RenderPass, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView};
 use wgpu::util::{DeviceExt, TextureDataOrder};

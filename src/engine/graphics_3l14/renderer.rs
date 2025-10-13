@@ -1,11 +1,10 @@
 use std::error::Error;
-use arc_swap::ArcSwapOption;
 use debug_3l14::debug_gui::DebugGui;
 use egui::epaint::Shadow;
 use egui::{CornerRadius, Pos2, Rect, Stroke, Ui, Visuals};
 use parking_lot::{Mutex, RwLock};
 use sdl2::video::Window;
-use std::sync::Arc;
+use triomphe::Arc;
 use egui_wgpu::ScreenDescriptor;
 use glam::UVec2;
 #[allow(deprecated)]
@@ -13,6 +12,8 @@ use wgpu::rwh::{HasRawDisplayHandle, HasRawWindowHandle};
 use wgpu::*;
 use input_3l14::Input;
 use nab_3l14::RenderFrameNumber;
+
+type ArcSwapOpt<T> = arc_swap::ArcSwapAny<Option<Arc<T>>>;
 
 pub const MAX_CONSECUTIVE_FRAMES: usize = 3;
 
@@ -48,7 +49,7 @@ pub struct Renderer
     surface_config: RwLock<SurfaceConfiguration>,
 
     max_sample_count: u32,
-    msaa_config: ArcSwapOption<MSAAConfiguration>,
+    msaa_config: ArcSwapOpt<MSAAConfiguration>,
 
     debug_gui: egui::Context,
     //debug_gui_renderer: Mutex<egui_wgpu_backend::RenderPass>,
@@ -227,7 +228,7 @@ impl Renderer
             surface,
             surface_config: RwLock::new(surface_config),
             max_sample_count,
-            msaa_config: ArcSwapOption::from_pointee(msaa_config),
+            msaa_config: ArcSwapOpt::from(msaa_config.map(|c| Arc::new(c))),
             debug_gui,
             debug_gui_renderer: Mutex::new(debug_gui_renderer),
             render_frames: RwLock::new(render_frames),

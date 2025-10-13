@@ -4,11 +4,11 @@ use std::any::TypeId;
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::{Read, Seek};
-use std::sync::Arc;
 use debug_3l14::debug_gui::DebugGui;
 use nab_3l14::utils::alloc_slice::alloc_slice_uninit;
 use nab_3l14::utils::{varint, ShortTypeName};
 use proc_macros_3l14::Flags;
+use triomphe::Arc;
 
 pub struct AssetLoadRequest
 {
@@ -60,7 +60,7 @@ impl AssetLoadRequest
     pub fn load_dependency<A: Asset>(&self, asset_key: AssetKey) -> Ash<A>
     {
         // pattern matches Assets::load()
-        self.storage.enqueue_load(asset_key, |h| AssetLifecycleRequest::LoadFileBacked(h))
+        AssetsStorage::enqueue_load(&self.storage, asset_key, |h| AssetLifecycleRequest::LoadFileBacked(h))
     }
     //
     // // Load a reference from a specified source
@@ -85,7 +85,6 @@ pub trait AssetLifecycler: Sync + Send
     fn load(&self, request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>;
     // reload ?
 }
-
 
 pub trait TrivialAssetLifecycler: Sync + Send { type Asset: Asset + DecodeOwned; }
 impl<L: TrivialAssetLifecycler> AssetLifecycler for L

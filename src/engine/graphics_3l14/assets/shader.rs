@@ -4,7 +4,7 @@ use proc_macros_3l14::{asset, FancyEnum};
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::error::Error;
-use std::sync::Arc;
+use triomphe::Arc;
 use wgpu::util::{make_spirv, make_spirv_raw};
 use wgpu::{ShaderModuleDescriptor, ShaderModuleDescriptorPassthrough};
 use wgpu::wgt::ShaderModuleDescriptorSpirV;

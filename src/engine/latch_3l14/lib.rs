@@ -13,6 +13,8 @@ pub use vars::*;
 mod blocks;
 pub use blocks::*;
 
+pub mod block_meta;
+
 pub mod latches;
 pub mod impulses;
 

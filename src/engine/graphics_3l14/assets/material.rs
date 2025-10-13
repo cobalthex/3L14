@@ -4,7 +4,7 @@ use bitcode::{Decode, Encode};
 use proc_macros_3l14::{asset, FancyEnum};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
-use std::sync::Arc;
+use triomphe::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, Buffer, BufferBindingType, BufferSize, BufferUsages, SamplerBindingType, ShaderStages, TextureSampleType, TextureViewDimension};
 use asset_3l14::{Ash, Asset, AssetKey, AssetLifecycler, AssetLoadRequest, AssetTypeId};

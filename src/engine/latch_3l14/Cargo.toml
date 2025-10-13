@@ -16,10 +16,14 @@ debug_3l14.workspace = true
 nab_3l14.workspace = true
 proc_macros_3l14.workspace = true
 
+bitcode.workspace = true
 crossbeam.workspace = true
 dashmap.workspace = true
 egui.workspace = true
+inventory.workspace = true
 log.workspace = true
+metrohash.workspace = true
 parking_lot.workspace = true
 puffin.workspace = true
 smallvec.workspace = true
+triomphe.workspace = true

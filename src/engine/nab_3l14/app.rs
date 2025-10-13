@@ -121,9 +121,9 @@ impl<TCliArgs: CliArgs> AppRun<TCliArgs>
             start_time: chrono::Local::now(),
             args: TCliArgs::parse(),
             pid: std::process::id(),
-            #[cfg(not(target_arch="wasm32"))]
+            #[cfg(not(target_family="wasm"))]
             is_elevated: is_root::is_root(),
-            #[cfg(target_arch="wasm32")]
+            #[cfg(target_family="wasm")]
             is_elevated: false,
             app_dir,
             exit_reason: AtomicI32::new(ExitReason::NormalExit as i32),

@@ -1,8 +1,10 @@
 use nab_3l14::utils::ShortTypeName;
+use proc_macros_3l14::CircuitBlock;
 use crate::vars::VarChange;
 use super::{LatchingOutlet, PulsedOutlet, Scope, LatchBlock, BlockVisitor, LatchActions, VarValue, VarId, ContextfulLatchBlock};
 
 // A no-op, always-active after power-on latch
+// #[derive(CircuitBlock)]
 pub struct Latch
 {
     // on_power?

@@ -32,6 +32,7 @@ metrohash.workspace = true
 puffin.workspace = true
 puffin_http.workspace = true
 sdl2.workspace = true
+triomphe.workspace = true
 wgpu.workspace = true
 
 [build-dependencies]

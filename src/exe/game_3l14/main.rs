@@ -25,7 +25,7 @@ use nab_3l14::{CompletionState, RenderFrameNumber, ToggleState};
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use sdl2::messagebox::MessageBoxFlag;
 use std::ops::Deref;
-use std::sync::Arc;
+use triomphe::Arc;
 use std::time::Duration;
 use wgpu::{BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
 

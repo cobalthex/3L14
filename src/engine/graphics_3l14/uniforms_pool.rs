@@ -1,6 +1,6 @@
 use debug_3l14::debug_gui::DebugGui;
 use crate::{debug_label, Renderer};
-use std::sync::Arc;
+use triomphe::Arc;
 use egui::Ui;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, QueueWriteBufferView, RenderPass, ShaderStages};
 use containers_3l14::{ReusePool, ObjectPoolEntryGuard};

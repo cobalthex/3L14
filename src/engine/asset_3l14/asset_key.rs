@@ -43,7 +43,7 @@ impl Debug for AssetKeyDerivedId
 pub struct AssetKeySourceId(AssetKeySourceIdRepr); // only 100 bits are used.
 impl AssetKeySourceId
 {
-    #[cfg(not(target_family="wasm"))] // tpdp?
+    #[cfg(not(target_family="wasm"))] // todo?
     pub fn generate() -> Self
     {
         let mut bytes = [0u8; size_of::<Self>()];

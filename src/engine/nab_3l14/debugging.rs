@@ -21,11 +21,16 @@ pub fn append_file(path: impl AsRef<std::path::Path>, data: impl AsRef<[u8]>) ->
     file.write_all(data.as_ref())?;
     Ok(())
 }
+
 #[macro_export]
 macro_rules! append_file
 {
     ($file_path:expr, $($arg:tt)*) =>
     (
+        #[cfg(target_family="wasm")]
+        compile_error!("append_file!() is not available on WASM");
+
+        #[cfg(not(target_family="wasm"))]
         $crate::debugging::append_file($file_path, format!($($arg)*)).unwrap()
     )
 }

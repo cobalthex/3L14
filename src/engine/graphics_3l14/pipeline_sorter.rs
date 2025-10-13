@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::hash_map::Drain;
 use std::collections::HashMap;
-use std::sync::Arc;
+use triomphe::Arc;
 use arrayvec::ArrayVec;
 use glam::Mat4;
 use crate::assets::{Geometry, Material, Shader, Texture, MAX_MATERIAL_TEXTURE_BINDINGS};

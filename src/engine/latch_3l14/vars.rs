@@ -256,7 +256,7 @@ impl<'s> Scope<'s>
             local_changes,
             shared_scope,
             shared_changes,
-            mut latch_context
+            latch_context
         } = self;
 
         // TODO: method to call to create context?

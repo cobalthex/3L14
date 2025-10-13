@@ -62,7 +62,7 @@ fn main()
 
         let mut sdl_path = thirdparty_dir.join("sdl");
         sdl_path.push(arch_name);
-        println!(r"cargo:rustc-link-search={}", sdl_path.display());
+        println!(r"cargo:rustc-link-search=native={}", sdl_path.display());
         if let Err(e) = copy_dir_all(sdl_path, &out_dir, Some(&[OsStr::new("dll")]))
         {
             println!("cargo::warning=Failed to copy SDL: {e}");

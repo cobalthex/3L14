@@ -1,4 +1,4 @@
-use crate::core::{AssetBuilder, AssetBuilderMeta, BuildError, BuildOutputs, SourceInput, VersionStrings};
+use crate::core::{AssetBuilder, AssetBuilderMeta, BuildError, BuildOutputs, SourceInput, VersionBuilder};
 use crate::helpers::shader_compiler::{ShaderCompilation, ShaderCompileFlags, ShaderCompiler};
 use arrayvec::ArrayVec;
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
@@ -92,19 +92,19 @@ impl AssetBuilderMeta for ModelBuilder
         &["glb", "gltf"]
     }
 
-    fn builder_version() -> VersionStrings
+    fn builder_version(vb: &mut VersionBuilder)
     {
-        &[
+        vb.append(&[
             b"Initial"
-        ]
+        ]);
     }
 
-    fn format_version() -> VersionStrings
+    fn format_version(vb: &mut VersionBuilder)
     {
         // TODO: hash the serialized type layouts
-        &[
+        vb.append(&[
             b"Initial"
-        ]
+        ]);
     }
 }
 impl AssetBuilder for ModelBuilder

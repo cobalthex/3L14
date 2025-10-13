@@ -1,13 +1,13 @@
-use std::fmt::{Debug, Formatter};
 use super::{BlockId, Circuit, Instance};
 use crate::{RunContext, SharedScope};
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
 use nab_3l14::Signal;
-use smallvec::SmallVec;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32};
 use parking_lot::Mutex;
+use smallvec::SmallVec;
+use std::fmt::{Debug, Formatter};
+use std::sync::atomic::AtomicU32;
+use triomphe::Arc;
 
 /* TODO
 - ability to set initial scope
@@ -100,7 +100,7 @@ impl Runtime
     }
 
     // spawn a new instance of the specified circuit (async)
-    pub fn spawn(self: &Arc<Self>, circuit: Circuit, parent: Option<BlockRef>) -> InstRunId
+    pub fn spawn(runtime: &Arc<Self>, circuit: Circuit, parent: Option<BlockRef>) -> InstRunId
     {
         let signals: SmallVec<[_; 8]> = circuit.signaled_entries
             .iter().enumerate()
@@ -108,13 +108,13 @@ impl Runtime
             .collect();
 
         // maybe can generate ID from token in the future (need generation probably)
-        let inst_id = InstRunId(self.instance_id_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+        let inst_id = InstRunId(runtime.instance_id_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
         let instance = Instance::new(circuit);
 
         let pending_actions = SegQueue::new();
         pending_actions.push(InstanceAction::PowerOn);
 
-        let new_inst = self.instances.entry(inst_id).insert(RunningInstance
+        let new_inst = runtime.instances.entry(inst_id).insert(RunningInstance
         {
             instance: Mutex::new(instance),
             pending_actions,
@@ -125,74 +125,74 @@ impl Runtime
 
         for (slot, signal) in signals
         {
-            self.signals.entry(signal).or_default().push((inst_id, slot));
+            runtime.signals.entry(signal).or_default().push((inst_id, slot));
         }
 
-        self.clone().run_instance(inst_id, &new_inst);
+        Self::run_instance(runtime.clone(), inst_id, &new_inst);
 
         inst_id
     }
 
     // Power-off and remove a running instance
-    pub fn destroy(self: &Arc<Self>, run_id: InstRunId)
+    pub fn destroy(runtime: &Arc<Self>, run_id: InstRunId)
     {
         puffin::profile_function!();
 
-        let Some((_, running_inst)) = self.instances.remove(&run_id) else { return; };
+        let Some((_, running_inst)) = runtime.instances.remove(&run_id) else { return; };
 
         // it is ok if signals go to instances that don't exist anymore
         // TODO: this can supposedly deadlock if also iterating elsewhere
-        for mut sig in self.signals.iter_mut()
+        for mut sig in runtime.signals.iter_mut()
         {
             sig.retain(|(inst, _)| *inst != run_id);
         }
 
         running_inst.pending_actions.push(InstanceAction::PowerOff);
-        self.clone().run_instance(run_id, &running_inst); // TODO: once threaded, this will need to take ownership of running_inst
+        Self::run_instance(runtime.clone(), run_id, &running_inst); // TODO: once threaded, this will need to take ownership of running_inst
 
         // this must run after ^ finishes
         if let Some(parent) = running_inst.parent
         {
-            self.re_enter(parent);
+            Self::re_enter(runtime, parent);
         }
     }
 
     // Power-off a running instance. It can be restarted via signals
-    pub fn power_off(self: &Arc<Self>, run_id: InstRunId)
+    pub fn power_off(runtime: &Arc<Self>, run_id: InstRunId)
     {
-        let running_inst = self.instances.get(&run_id)
+        let running_inst = runtime.instances.get(&run_id)
             .expect("There should never be a power-off before power-on");
         running_inst.pending_actions.push(InstanceAction::PowerOff);
-        self.clone().run_instance(run_id, &running_inst);
+        Self::run_instance(runtime.clone(), run_id, &running_inst);
 
         // TODO: wake up parent (instance should probably send this?)
     }
 
     // Emit a signal and wake up all listening circuits
-    pub fn signal(self: &Arc<Self>, signal: Signal)
+    pub fn signal(runtime: &Arc<Self>, signal: Signal)
     {
-        let Some(signals) = self.signals.get(&signal) else { return; };
+        let Some(signals) = runtime.signals.get(&signal) else { return; };
         for (run_id, slot) in signals.iter()
         {
-            let Some(running_inst) = self.instances.get(run_id) else { continue; };
+            let Some(running_inst) = runtime.instances.get(run_id) else { continue; };
             running_inst.pending_actions.push(InstanceAction::Signal(*slot));
-            self.clone().run_instance(*run_id, &running_inst);
+            Self::run_instance(runtime.clone(), *run_id, &running_inst);
         }
     }
 
     // Re-enter a powered block (in a specific circuit). Used by both super-circuits and code-backed listeners
-    pub fn re_enter(self: &Arc<Self>, block_ref: BlockRef)
+    pub fn re_enter(runtime: &Arc<Self>, block_ref: BlockRef)
     {
         // re-enter reason?
 
-        let running_inst = self.instances.get(&block_ref.0)
+        let running_inst = runtime.instances.get(&block_ref.0)
             .expect("There should never be a power-off before power-on");
         running_inst.pending_actions.push(InstanceAction::ReEnter(block_ref.1));
-        self.clone().run_instance(block_ref.0, &running_inst);
+        Self::run_instance(runtime.clone(), block_ref.0, &running_inst);
     }
 
     // drain the action queue for a running instance
-    fn run_instance(self: Arc<Self>, run_id: InstRunId, instance: &RunningInstance) // better name?
+    fn run_instance(runtime: Arc<Self>, run_id: InstRunId, instance: &RunningInstance) // better name?
     {
         puffin::profile_function!();
 
@@ -203,7 +203,7 @@ impl Runtime
         {
             run_id,
             shared_scope: &shared_scope,
-            runtime: self,
+            runtime,
         };
 
         while let Some(action) = instance.pending_actions.pop()
@@ -245,8 +245,7 @@ mod tests
             num_local_vars: 0,
         };
 
-        let runtime = Runtime::new();
-        runtime.spawn(circuit, None);
+        Runtime::spawn(&Runtime::new(), circuit, None);
     }
 }
 

@@ -9,13 +9,15 @@ path = "lib.rs"
 
 [dependencies]
 proc_macros_3l14.workspace = true
+
+bitcode.workspace = true
 chrono.workspace = true
 clap.workspace = true
-log.workspace = true
 colog.workspace = true
+log.workspace = true
 metrohash.workspace = true
 parking_lot.workspace = true
-bitcode.workspace = true
+triomphe.workspace = true
 
 [target.'cfg(not(target_arch="wasm32"))'.dependencies]
 is-root = "0.1.3"

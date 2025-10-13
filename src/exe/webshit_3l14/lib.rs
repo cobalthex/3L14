@@ -13,6 +13,7 @@ use nab_3l14::utils::ShortTypeName;
 #[wasm_bindgen]
 pub fn run_app() -> App
 {
+    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     let _ = console_log::init_with_level(log::Level::Debug);
     App::new()
 }
@@ -95,6 +96,7 @@ impl LatchBlock for Wait
         actions.latch(&self.waiting_outlet);
         let block_ref = scope.get_block_ref();
         let rt = actions.runtime.clone();
+        log::debug!("Wait started");
         defer(self.duration, move ||
         {
             log::debug!("Wait finished");

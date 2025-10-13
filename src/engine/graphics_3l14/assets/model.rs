@@ -4,7 +4,7 @@ use asset_3l14::{Asset, Ash, AssetKey, AssetLifecycler, AssetLoadRequest, AssetT
 use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
 use std::error::Error;
-use std::sync::Arc;
+use triomphe::Arc;
 
 #[derive(Encode, Decode)]
 pub struct ModelFileSurface

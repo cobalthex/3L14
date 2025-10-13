@@ -57,7 +57,9 @@ fn main()
     let built_assets_root = assets_root.join("build");
 
     let mut builder_cfg = AssetsBuilderConfig::new(&src_assets_root, &built_assets_root);
+    // TODO: use inventory crate here for autodiscovery?
     builder_cfg.add_builder(builders::ModelBuilder::new(&assets_root));
+    builder_cfg.add_builder(builders::CircuitBuilder::new());
     let builder = AssetsBuilder::new(builder_cfg);
 
     match &app_run.args.command

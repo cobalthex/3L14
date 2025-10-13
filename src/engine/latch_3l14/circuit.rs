@@ -1,22 +1,23 @@
+use std::collections::HashMap;
 use std::error::Error;
 use crate::blocks::PlugList;
 use crate::vars::ScopeChanges;
 use crate::{BlockId, ImpulseActions, ImpulseBlock, InstRunId, LatchActions, LatchBlock, LocalScope, Runtime, Scope, SharedScope};
 use nab_3l14::Signal;
 use std::fmt::Debug;
-use std::sync::Arc;
+use std::hash::Hasher;
+use triomphe::Arc;
 use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use debug_3l14::debug_gui::DebugGui;
+use crate::block_meta::BlockRegistration;
 
 #[proc_macros_3l14::asset]
 pub struct Circuit
 {
-    // todo: make pub(crate)
-
     pub auto_entries: EntryPoints,
     pub signaled_entries: Box<[(Signal, EntryPoints)]>,
-    pub impulses: Box<[Box<dyn ImpulseBlock + Send>]>,
-    pub latches: Box<[Box<dyn LatchBlock + Send>]>,
+    pub impulses: Box<[Box<dyn ImpulseBlock>]>,
+    pub latches: Box<[Box<dyn LatchBlock>]>,
     pub num_local_vars: u32,
 }
 
@@ -24,18 +25,28 @@ pub type EntryPoints = Box<[BlockId]>;
 
 struct CircuitLifecycler
 {
-
+    known_block_types: HashMap<u64, &'static BlockRegistration>,
+}
+impl Default for CircuitLifecycler
+{
+    fn default() -> Self
+    {
+        let known_block_types = inventory::iter::<BlockRegistration>()
+            .map(|b| (b.name_hash, b)).collect();
+        Self { known_block_types }
+    }
 }
 impl AssetLifecycler for CircuitLifecycler
 {
     type Asset = Circuit;
 
-    fn load(&self, request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>> {
+    fn load(&self, request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
+    {
         todo!()
     }
 }
 
-// A helper struct that contains all of the types required to test circuit blocks
+// A helper struct that contains all the types required to test circuit blocks
 pub struct TestContext
 {
     pub local_scope: LocalScope,
@@ -126,6 +137,7 @@ impl TestContext
 #[cfg(test)]
 mod tests
 {
+    use std::fmt::Formatter;
     use super::*;
 
     #[test]
@@ -138,5 +150,89 @@ mod tests
         let block = BlockId::latch(0);
         assert!(block.is_latch());
         assert!(!block.is_impulse());
+    }
+
+    #[test]
+    fn yolo()
+    {
+        mod foo
+        {
+            use std::alloc::Layout;
+            use std::fmt::{Debug, Formatter};
+            use std::slice;
+            use triomphe::Arc;
+            use bitcode::Decode;
+
+            pub struct Mule<T: Sized>
+            {
+                value: T,
+                buffer: [u8],
+            }
+            impl<T: Debug> Debug for Mule<T>
+            {
+                fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { T::fmt(&self.value, f) }
+            }
+            impl<T> std::ops::Deref for Mule<T>
+            {
+                type Target = T;
+
+                fn deref(&self) -> &Self::Target
+                {
+                    &self.value
+                }
+            }
+            impl<'d, T: Decode<'d> + Sized> Mule<T>
+            {
+                pub fn new_arc(encoded: &'d [u8]) -> Arc<Mule<T>>
+                {
+                    let ns = size_of::<T>();
+                    unsafe
+                    {
+                        let layout = Layout::from_size_align_unchecked(ns + encoded.len(), align_of::<T>());
+                        let mut ptr = std::alloc::alloc(layout);
+                        std::ptr::copy_nonoverlapping(encoded.as_ptr().byte_add(ns), ptr, encoded.len());
+
+                        let mut mule = &mut *(ptr as *mut T);
+                        *mule = bitcode::decode(encoded).unwrap();
+                        // gross
+                        let fat = slice::from_raw_parts(mule, encoded.len()) as *const _ as *const [u8];
+                        Arc::from_raw(fat as *mut Self)
+                    }
+                }
+
+                pub fn new_box(encoded: &'d [u8]) -> Box<Mule<T>>
+                {
+                    let ns = size_of::<T>();
+                    unsafe
+                    {
+                        let layout = std::alloc::Layout::from_size_align_unchecked(ns + encoded.len(), align_of::<T>());
+                        let mut ptr = std::alloc::alloc(layout);
+                        std::ptr::copy_nonoverlapping(encoded.as_ptr().byte_add(ns), ptr, encoded.len());
+
+                        let mut mule = &mut *(ptr as *mut T);
+                        *mule = bitcode::decode(encoded).unwrap();
+                        // gross
+                        let fat = slice::from_raw_parts(mule, encoded.len()) as *const _ as *const [u8];
+                        Box::from_raw(fat as *mut Self)
+                    }
+                }
+            }
+        }
+        use foo::*;
+
+        #[derive(bitcode::Encode, bitcode::Decode, Debug)]
+        struct Names<'a>
+        {
+            pub names: [&'a str; 3],
+        }
+
+        let n = Names { names: ["Test 1", "Asdf asdf 2", "Bompu quelch 3"] };
+
+        let enc = bitcode::encode(&n);
+        let z = Mule::<Names>::new_arc(&enc);
+
+        println!("<<< {n:?}\n");
+        println!(">>> {z:?}\n");
+        println!("!!! {:?}\n", z.names);
     }
 }

@@ -7,9 +7,9 @@ use parking_lot::Mutex;
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::thread::{Builder, JoinHandle};
 use std::time::Duration;
+use triomphe::Arc;
 // TODO: probably don't pass around UniCase publicly
 
 #[cfg(feature = "hot_reloading")]
@@ -107,15 +107,15 @@ impl AssetsStorage
 
     #[must_use]
     pub fn enqueue_load<A: Asset, F: FnOnce(UntypedAssetHandle) -> AssetLifecycleRequest>(
-        self: &Arc<Self>,
+        this: &Arc<Self>, // ugly hack b/c Arc is triomphe::
         asset_key: AssetKey,
         input_fn: F) -> Ash<A>
     {
-        let (pre_existed, asset_handle) = self.create_or_update_handle(asset_key);
+        let (pre_existed, asset_handle) = this.create_or_update_handle(asset_key);
 
         // todo: what to do if already queued for load?
 
-        if self.lifecyclers.contains_key(&asset_key.asset_type())
+        if this.lifecyclers.contains_key(&asset_key.asset_type())
         {
             let request = input_fn(unsafe { asset_handle.clone().into_inner() });
 
@@ -123,10 +123,10 @@ impl AssetsStorage
             asset_handle.store_payload(AssetPayload::Pending);
             if pre_existed
             {
-                self.notification_channel.0.send(AssetNotification::Reload(asset_key)).unwrap(); // todo: error handling
+                this.notification_channel.0.send(AssetNotification::Reload(asset_key)).unwrap(); // todo: error handling
             }
 
-            if self.lifecycle_channel.send(request).is_err()
+            if this.lifecycle_channel.send(request).is_err()
             {
                 asset_handle.store_payload(AssetPayload::Unavailable(AssetLoadError::Shutdown));
             }
@@ -181,7 +181,7 @@ impl AssetsStorage
         std::fs::File::open(file_path)
     }
 
-    pub fn asset_worker_fn(self: Arc<Self>, request_recv: Receiver<AssetLifecycleRequest>) -> impl FnOnce()
+    fn asset_worker_fn(this: Arc<Self>, request_recv: Receiver<AssetLifecycleRequest>) -> impl FnOnce()
     {
         move ||
         {
@@ -210,13 +210,13 @@ impl AssetsStorage
                                         AssetLifecycleRequest::StopWorkers => {},
                                         AssetLifecycleRequest::Drop(untyped_handle) =>
                                         {
-                                            self.drop_handle(untyped_handle);
+                                            this.drop_handle(untyped_handle);
                                         }
                                         AssetLifecycleRequest::LoadFromMemory(untyped_handle, _) |
                                         AssetLifecycleRequest::LoadFileBacked(untyped_handle) =>
                                         {
                                             let asset_type = untyped_handle.as_ref().asset_type();
-                                            let lifecycler = &self.lifecyclers.get(&asset_type)
+                                            let lifecycler = &this.lifecyclers.get(&asset_type)
                                                 .expect("Unsupported asset type!").lifecycler; // this should fail in load()
 
                                             lifecycler.error_untyped(untyped_handle, AssetLoadError::Shutdown);
@@ -229,13 +229,13 @@ impl AssetsStorage
                             AssetLifecycleRequest::LoadFileBacked(untyped_handle) =>
                             {
                                 let inner = untyped_handle.as_ref();
-                                let lifecycler = &self.lifecyclers.get(&inner.asset_type())
+                                let lifecycler = &this.lifecyclers.get(&inner.asset_type())
                                     .expect("Unsupported asset type!").lifecycler; // this should fail in load()
 
                                 #[cfg(feature = "asset_debug_data")]
                                 let debug_asset_data: Option<Box<dyn AssetRead>> =
                                 {
-                                    let asset_debug_path = self.asset_key_to_file_path(inner.key(), AssetFileType::DebugData);
+                                    let asset_debug_path = this.asset_key_to_file_path(inner.key(), AssetFileType::DebugData);
                                     match Self::open_asset_from_file(asset_debug_path)
                                     {
                                         Ok(dbg_data) => Some(Box::new(dbg_data)),
@@ -243,11 +243,11 @@ impl AssetsStorage
                                     }
                                 };
 
-                                let asset_file_path = self.asset_key_to_file_path(inner.key(), AssetFileType::Asset);
+                                let asset_file_path = this.asset_key_to_file_path(inner.key(), AssetFileType::Asset);
                                 match Self::open_asset_from_file(asset_file_path)
                                 {
                                     Ok(read) => lifecycler.load_untyped(
-                                        self.clone(),
+                                        this.clone(),
                                         untyped_handle,
                                         Box::new(read),
                                         #[cfg(feature = "asset_debug_data")] debug_asset_data),
@@ -255,25 +255,25 @@ impl AssetsStorage
                                     {
                                         log::warn!("Failed to read {:?} asset file {:?}: {err}",
                                             inner.asset_type(),
-                                            self.asset_key_to_file_path(inner.key(), AssetFileType::Asset));
+                                            this.asset_key_to_file_path(inner.key(), AssetFileType::Asset));
                                         lifecycler.error_untyped(untyped_handle, AssetLoadError::Fetch);
                                     }
                                 };
                             },
                             AssetLifecycleRequest::LoadFromMemory(untyped_handle, reader) =>
                             {
-                                let lifecycler = &self.lifecyclers.get(&untyped_handle.as_ref().asset_type())
+                                let lifecycler = &this.lifecyclers.get(&untyped_handle.as_ref().asset_type())
                                     .expect("Unsupported asset type!").lifecycler; // this should fail in load()
 
                                 lifecycler.load_untyped(
-                                    self.clone(),
+                                    this.clone(),
                                     untyped_handle,
                                     reader,
                                     #[cfg(feature = "asset_debug_data")] None);
                             },
                             AssetLifecycleRequest::Drop(untyped_handle) =>
                             {
-                                self.drop_handle(untyped_handle);
+                                this.drop_handle(untyped_handle);
                             },
                         }
                     },
@@ -441,7 +441,7 @@ impl Assets
     #[must_use]
     pub fn load<A: Asset>(&self, asset_key: AssetKey) -> Ash<A>
     {
-        self.storage.enqueue_load(asset_key, AssetLifecycleRequest::LoadFileBacked)
+        AssetsStorage::enqueue_load(&self.storage, asset_key, AssetLifecycleRequest::LoadFileBacked)
     }
 
     #[must_use]
@@ -451,7 +451,7 @@ impl Assets
         input_data: impl AssetRead + 'static // static not ideal here
     ) -> Ash<A>
     {
-        self.storage.enqueue_load(asset_key, |h| AssetLifecycleRequest::LoadFromMemory(h, Box::new(input_data)))
+        AssetsStorage::enqueue_load(&self.storage, asset_key, |h| AssetLifecycleRequest::LoadFromMemory(h, Box::new(input_data)))
     }
 
     #[must_use]
@@ -755,7 +755,6 @@ mod tests
     {
         use super::*;
         use std::io::Cursor;
-        use parking_lot::Condvar;
         // TODO: disable threading and add 'loop_once' function for worker
 
         #[test]

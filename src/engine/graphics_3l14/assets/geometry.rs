@@ -4,7 +4,7 @@ use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
 use math_3l14::{Sphere, AABB};
 use proc_macros_3l14::{asset, Flags};
-use std::sync::Arc;
+use triomphe::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{Buffer, BufferUsages};
 use nab_3l14::FlagsEnum;

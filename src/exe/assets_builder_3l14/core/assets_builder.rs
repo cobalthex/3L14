@@ -25,8 +25,8 @@ struct AssetBuilderEntry
 {
     name: &'static str,
     builder: Box<dyn ErasedAssetBuilder>,
-    builder_hash: BuilderHash,
     format_hash: BuilderHash,
+    builder_hash: BuilderHash,
 }
 
 #[derive(Debug, Default, Clone, Copy, ValueEnum)]
@@ -56,9 +56,13 @@ impl AssetsBuilderConfig
         {
             sources_root: sources_root.into(),
             assets_root: assets_root.into(),
-            builders_version_hash: hash_bstrings(0, &[
-                b"Initial"
-            ]),
+            builders_version_hash: {
+                let mut vb = VersionBuilder::new(0);
+                vb.append(&[
+                    b"Initial"
+                ]);
+                vb.build_raw()
+            },
             asset_builders: Vec::new(),
             file_ext_to_builder: HashMap::new(),
         }
@@ -69,12 +73,18 @@ impl AssetsBuilderConfig
     // Register a builder for it's registered extensions. Will panic if a particular extension was already registered
     pub fn add_builder<B: AssetBuilder<BuildConfig=impl AssetBuildConfig> + AssetBuilderMeta + 'static>(&mut self, builder: B)
     {
+        let mut format_version = VersionBuilder::new(0);
+        let mut builder_version = VersionBuilder::new(self.builders_version_hash);
+
+        B::format_version(&mut format_version);
+        B::builder_version(&mut builder_version);
+
         let b_index = self.asset_builders.len();
         self.asset_builders.push(AssetBuilderEntry
         {
             name: B::short_type_name(),
-            builder_hash: BuilderHash(hash_bstrings(self.builders_version_hash, B::builder_version())),
-            format_hash: BuilderHash(hash_bstrings(0, B::format_version())),
+            format_hash: format_version.build(),
+            builder_hash: builder_version.build(),
             builder: Box::new(builder),
         });
 

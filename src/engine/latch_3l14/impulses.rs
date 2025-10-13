@@ -1,4 +1,4 @@
-use super::{BlockVisitor, ImpulseActions, ImpulseBlock, PulsedOutlet, Scope, VarId, VarValue};
+use super::{BlockVisitor, ImpulseActions, ImpulseBlock, PulsedOutlet, Runtime, Scope, VarId, VarValue};
 use nab_3l14::utils::ShortTypeName;
 use nab_3l14::Signal;
 
@@ -75,7 +75,7 @@ impl ImpulseBlock for EmitSignal
 {
     fn pulse(&self, _scope: Scope, mut actions: ImpulseActions)
     {
-        actions.runtime.signal(self.signal);
+        Runtime::signal(&actions.runtime, self.signal);
         actions.pulse(&self.outlet);
     }
 
@@ -92,7 +92,7 @@ impl ImpulseBlock for PowerOff
     fn pulse(&self, scope: Scope, actions: ImpulseActions)
     {
         // directly send to instance?
-        actions.runtime.power_off(scope.run_id());
+        Runtime::power_off(&actions.runtime, scope.run_id());
     }
 
     fn inspect(&self, mut visit: BlockVisitor)

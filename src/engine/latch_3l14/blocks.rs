@@ -1,8 +1,7 @@
 use std::fmt::{Debug, Formatter};
-use std::sync::Arc;
+use triomphe::Arc;
 use smallvec::SmallVec;
 use crate::{Runtime, Scope, VarChange};
-use crate::latches::Latch;
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 pub struct BlockId(u32);
@@ -143,28 +142,28 @@ pub trait ContextfulLatchBlock: Send // better name?
 impl<L: ContextfulLatchBlock> LatchBlock for L
 {
     #[inline]
-    fn power_on(&self, mut scope: Scope, actions: LatchActions)
+    fn power_on(&self, scope: Scope, actions: LatchActions)
     {
         let (context, scope) = scope.unpack_context::<L>();
         L::power_on(self, context, scope, actions)
     }
 
     #[inline]
-    fn power_off(&self, mut scope: Scope)
+    fn power_off(&self, scope: Scope)
     {
         let (context, scope) = scope.unpack_context::<L>();
         L::power_off(self, context, scope)
     }
 
     #[inline]
-    fn re_enter(&self, mut scope: Scope, actions: LatchActions)
+    fn re_enter(&self, scope: Scope, actions: LatchActions)
     {
         let (context, scope) = scope.unpack_context::<L>();
         L::re_enter(self, context, scope, actions)
     }
 
     #[inline]
-    fn on_var_changed(&self, change: VarChange, mut scope: Scope, actions: LatchActions)
+    fn on_var_changed(&self, change: VarChange, scope: Scope, actions: LatchActions)
     {
         let (context, scope) = scope.unpack_context::<L>();
         L::on_var_changed(self, context, change, scope, actions)
@@ -209,6 +208,7 @@ pub struct PulsedOutlet
     pub plugs: Box<[Plug]>,
 }
 // Outlets that carry the parent signal and respond to power-offs
+// note: Latchin
 #[derive(Default)]
 pub struct LatchingOutlet
 {

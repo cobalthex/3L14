@@ -1,11 +1,9 @@
 use super::*;
-use nab_3l14::{append_file, debug_panic, Signal};
+use nab_3l14::{debug_panic, Signal};
 use smallvec::SmallVec;
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter, Write};
-use std::sync::Arc;
-use nab_3l14::utils::ShortTypeName;
-use crate::latches::Latch;
+use std::fmt::{Debug, Write};
+use triomphe::Arc;
 
 const MAX_VISIT_DEPTH: u32 = 100; // smaller number?
 
@@ -64,7 +62,6 @@ struct Visit
     block: BlockId,
     action: VisitAction,
 }
-
 
 pub struct Instance
 {
@@ -312,7 +309,6 @@ impl Instance
                                 // todo: can downstream latches be stored statically?
                                 if let Some(parent_latch) = parent_latch
                                 {
-                                    append_file!("D:\\latch_test.txt", "%%% {parent_latch:?}");
                                     let hydrated_parent = self.hydrated_latches.get_mut(&parent_latch.value())
                                         .expect("Parent latch set but no hydrated state exists for it??");
                                     hydrated_parent.powered_outlets.push(test_visit.block);
@@ -866,10 +862,8 @@ mod traversal_tests
 
         instance.clear_action_history();
 
-        append_file!("D:\\latch_test.txt", "!!! {:#?}", instance.hydrated_latches);
         instance.visit([Visit { block: BlockId::latch(0), action: VisitAction::Pulse(Inlet::PowerOff, None) }], run_cxt.clone());
 
-        append_file!("D:\\latch_test.txt", "$$$ {:#?}", instance.hydrated_latches);
         assert_eq!(instance.is_latch_powered(0), false);
         assert_eq!(instance.is_latch_powered(1), false);
 

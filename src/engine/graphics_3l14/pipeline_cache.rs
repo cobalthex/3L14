@@ -8,7 +8,7 @@ use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use triomphe::Arc;
 use arrayvec::ArrayVec;
 use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutEntry, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerDescriptor, StencilState, TextureFormat, VertexBufferLayout, VertexState};
 use crate::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};

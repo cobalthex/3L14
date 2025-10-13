@@ -2,7 +2,7 @@ use bitcode::{Decode, Encode};
 use egui::Ui;
 use std::error::Error;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::Arc;
+use triomphe::Arc;
 use wgpu::util::{DeviceExt, TextureDataOrder};
 use wgpu::{Extent3d, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor};
 use asset_3l14::{AssetLifecycler, AssetLoadRequest};
