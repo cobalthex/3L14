@@ -434,23 +434,30 @@ mod tests
         let input =
 r#"
 meta="value"
-[ConditionalLatch] Cond1 # comment
-OnTrue > Print2 # comment
-# comment
+
+[ConditionalLatch] Cond1
+OnTrue > Print2
 True <> Sub1
 False <> -Sub1
 x = 5
+
 <DebugLog> Print1
 Text = "Hola!"
+
 <DebugLog> Print2
 Text = "Hola!"
 outlet > Print3
+
 <DebugLog> Print3
+
 [Something] Sub1
-~ Sig1 # comment
+
+~ Sig1 # signaled entries
 Cond1 # comment
-@ # comment
-Print1"#;
+
+@ # auto entries
+Print1
+"#;
 
         let lexed = lex_circuit_dsl(input).unwrap();
         parse(lexed).unwrap();

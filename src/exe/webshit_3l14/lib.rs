@@ -1,6 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::Duration;
 use dashmap::DashMap;
+use triomphe::Arc;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -100,7 +101,7 @@ impl LatchBlock for Wait
         defer(self.duration, move ||
         {
             log::debug!("Wait finished");
-            rt.re_enter(block_ref.clone());
+            Runtime::re_enter(&rt, block_ref.clone());
         });
     }
 
@@ -239,7 +240,7 @@ impl App
         };
 
         let runtime = Runtime::new();
-        let inst_run_id = runtime.spawn(graph, None);
+        let inst_run_id = Runtime::spawn(&runtime, graph, None);
 
         Self
         {
@@ -256,17 +257,17 @@ impl App
 
     pub fn signal(&self)
     {
-        self.runtime.signal(Signal::test('a'));
+        Runtime::signal(&self.runtime, Signal::test('a'));
     }
 
     pub fn signal_on(&self)
     {
-        self.runtime.signal(Signal::test('b'));
+        Runtime::signal(&self.runtime, Signal::test('b'));
     }
 
     pub fn signal_off(&self)
     {
-        self.runtime.signal(Signal::test('c'));
+        Runtime::signal(&self.runtime, Signal::test('c'));
     }
 
     #[must_use]

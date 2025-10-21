@@ -2759,6 +2759,7 @@ dependencies = [
  "latch_3l14",
  "log",
  "nab_3l14",
+ "triomphe",
  "wasm-bindgen",
 ]
 
