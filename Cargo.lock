@@ -225,6 +225,7 @@ dependencies = [
  "gltf",
  "graphics_3l14",
  "hassle-rs",
+ "indexmap",
  "inventory",
  "latch_3l14",
  "log",

@@ -27,6 +27,7 @@ clap.workspace = true
 glam.workspace = true
 gltf.workspace = true
 hassle-rs.workspace = true
+indexmap.workspace = true
 inventory.workspace = true
 log.workspace = true
 logos.workspace = true

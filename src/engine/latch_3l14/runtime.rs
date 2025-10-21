@@ -214,7 +214,6 @@ impl Runtime
                 InstanceAction::PowerOff => inst_mut.power_off(context.clone()),
                 InstanceAction::Signal(slot) => inst_mut.signal(slot as usize, context.clone()),
                 InstanceAction::ReEnter(block_id) => inst_mut.re_enter(block_id, context.clone()),
-                // InstanceAction::DebugSetVar(run_id, var_id, value) => inst_mut.asdf(),
             }
         }
     }

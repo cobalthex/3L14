@@ -1,13 +1,14 @@
-use std::error::Error;
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionBuilder};
-use logos::{Lexer, Logos};
-use std::collections::HashMap;
-use std::fmt::Display;
-use std::io::Read;
-use smallvec::SmallVec;
-use unicase::UniCase;
 use latch_3l14::block_meta::BlockRegistration;
 use latch_3l14::Inlet;
+use logos::{Lexer, Logos};
+use smallvec::SmallVec;
+use std::collections::HashMap;
+use std::error::Error;
+use std::fmt::Display;
+use std::io::Read;
+use indexmap::IndexMap;
+use unicase::UniCase;
 
 pub struct CircuitBuilder
 {
@@ -66,8 +67,7 @@ impl AssetBuilder for CircuitBuilder
 
         let mut str = String::new();
         input.read_to_string(&mut str)?;
-        let parsed = lex_circuit_dsl(&str);
-        println!("{:#?}", parsed);
+        let lexed = lex_circuit_dsl(&str);
         todo!()
     }
 }
@@ -108,8 +108,7 @@ enum Token<'p>
 fn newline_callback<'p>(lexer: &mut Lexer<'p, Token<'p>>)
 {
     lexer.extras.line += 1;
-    lexer.extras.column = 1;
-    lexer.extras.line_offset = lexer.span().start;
+    lexer.extras.column = lexer.span().start;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -128,6 +127,7 @@ pub enum LexerErrorKind<'p>
     ExpectedSignalName,
     DuplicateAutoEntry,
     UnexpectedKeyValue,
+    DuplicateBlockName { block_name: &'p str },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -148,17 +148,23 @@ struct FilePos
 {
     line: usize,
     column: usize,
-    line_offset: usize,
 }
 impl Default for FilePos
 {
     fn default() -> FilePos
     {
-        FilePos { line: 1, column: 1, line_offset: 0 }
+        FilePos { line: 1, column: 1 }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+enum BlockKind
+{
+    Impulse,
+    Latch,
+}
+
+#[derive(Debug)]
 pub struct PlugRef<'p>
 {
     pub target_block_name: UniCase<&'p str>,
@@ -167,10 +173,11 @@ pub struct PlugRef<'p>
 
 pub type Outlets<'p> = HashMap<UniCase<&'p str>, Vec<PlugRef<'p>>>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct BlockDef<'p>
 {
     pub type_name: &'p str,
+    pub kind: BlockKind,
     pub name: UniCase<&'p str>,
     pub pulsed_outlets: Outlets<'p>,
     pub latching_outlets: Outlets<'p>,
@@ -181,8 +188,7 @@ pub struct BlockDef<'p>
 pub struct CircuitDef<'p>
 {
     pub metadata: toml::Table,
-    pub impulses: Vec<BlockDef<'p>>,
-    pub latches: Vec<BlockDef<'p>>,
+    pub blocks: IndexMap<UniCase<&'p str>, BlockDef<'p>>,
     pub auto_entries: Vec<UniCase<&'p str>>,
     pub signal_entries: HashMap<&'p str, SmallVec<[UniCase<&'p str>; 4]>>,
 }
@@ -238,21 +244,24 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
         }
     } }
 
-    macro_rules! declare_block { ($is_latch:expr) =>
+    macro_rules! declare_block { ($block_kind:expr) =>
     {{
         let Some(Ok(Token::Identifier(block_type))) = lexer.next()
             else { error!(LexerErrorKind::ExpectedBlockType) };
 
         // cleaner way to do this?f
-        if $is_latch
+        match $block_kind
         {
-            let Some(Ok(Token::LatchDefEnd)) = lexer.next()
-                else { error!(LexerErrorKind::ExpectedBlockDefTerminator) };
-        }
-        else
-        {
+            BlockKind::Impulse =>
+            {
             let Some(Ok(Token::ImpulseDefEnd_PulseOutlet)) = lexer.next()
                 else { error!(LexerErrorKind::ExpectedBlockDefTerminator) };
+            }
+            BlockKind::Latch =>
+            {
+                let Some(Ok(Token::LatchDefEnd)) = lexer.next()
+                    else { error!(LexerErrorKind::ExpectedBlockDefTerminator) };
+            }
         }
 
         let Some(Ok(Token::Identifier(block_name))) = lexer.next()
@@ -261,8 +270,8 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
         Ok(BlockDef
         {
             type_name: block_type,
+            kind: $block_kind,
             name: UniCase::new(block_name),
-
             pulsed_outlets: Default::default(),
             latching_outlets: Default::default(),
             properties: Default::default(),
@@ -270,8 +279,7 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
     }} }
 
     let mut metadata = toml::Table::new();
-    let mut impulses = Vec::new();
-    let mut latches = Vec::new();
+    let mut blocks = IndexMap::new();
     let mut auto_entries = Vec::new();
     let mut signal_entries: HashMap<_, SmallVec<_>> = HashMap::new();
 
@@ -282,8 +290,22 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
     {
         match std::mem::replace(&mut curr_state, $new_state)
         {
-            LexerState::ImpulseBlock(impulse) => impulses.push(impulse),
-            LexerState::LatchBlock(latch) => latches.push(latch),
+            LexerState::ImpulseBlock(impulse) =>
+            {
+                let name = impulse.name;
+                if let Some(_) = blocks.insert(name, impulse)
+                {
+                    error!(LexerErrorKind::DuplicateBlockName { block_name: name.into_inner() });
+                }
+            },
+            LexerState::LatchBlock(latch) =>
+            {
+                let name = latch.name;
+                if let Some(_) = blocks.insert(name, latch)
+                {
+                    error!(LexerErrorKind::DuplicateBlockName { block_name: name.into_inner() });
+                }
+            },
             LexerState::SignalEntry(signal, entries) =>
             {
                 let sig = signal_entries.entry(signal).or_default();
@@ -365,11 +387,11 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
 
             Some(Ok(Token::ImpulseDefBegin)) =>
             {
-                set_state!(LexerState::ImpulseBlock(declare_block!(false)?));
+                set_state!(LexerState::ImpulseBlock(declare_block!(BlockKind::Impulse)?));
             }
             Some(Ok(Token::LatchDefBegin)) =>
             {
-                set_state!(LexerState::LatchBlock(declare_block!(true)?));
+                set_state!(LexerState::LatchBlock(declare_block!(BlockKind::Latch)?));
             }
 
             Some(Ok(Token::SignalEntry)) =>
@@ -398,7 +420,7 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
     }
 
     set_state!(LexerState::Metadata);
-    Ok(CircuitDef { metadata, impulses, latches, auto_entries, signal_entries })
+    Ok(CircuitDef { metadata, blocks, auto_entries, signal_entries })
 }
 
 #[cfg(test)]
@@ -413,22 +435,162 @@ mod tests
 r#"
 meta="value"
 [ConditionalLatch] Cond1 # comment
-OnTrue > Print1 # comment
+OnTrue > Print2 # comment
 # comment
 True <> Sub1
 False <> -Sub1
 x = 5
 <DebugLog> Print1
 Text = "Hola!"
+<DebugLog> Print2
+Text = "Hola!"
+outlet > Print3
+<DebugLog> Print3
+[Something] Sub1
 ~ Sig1 # comment
 Cond1 # comment
-~ Sig1 # comment
-Print1 # comment
 @ # comment
 Print1"#;
 
-        let lexed = lex_circuit_dsl(input);
-        println!("!!! {:#?}", lexed);
+        let lexed = lex_circuit_dsl(input).unwrap();
+        parse(lexed).unwrap();
+
+        #[derive(Debug)]
+        enum ParseError<'p>
+        {
+            AutoEntryPointsToUndefinedBlock { block_name: &'p str },
+            SignalEntryPointsToUndefinedBlock { signal: &'p str, block_name: &'p str },
+            OutletPointsToUndefinedBlock { block_name: &'p str },
+            ImpulseBlockContainsLatchingOutlets { block_name: &'p str },
+            PulsedPlugPointsToUndefinedBlock { block_name: &'p str, outlet_name: &'p str, target_block_name: &'p str },
+            LatchingPlugPointsToUndefinedBlock { block_name: &'p str, outlet_name: &'p str, target_block_name: &'p str },
+            ImpulsesDoNotHavePowerOffInlets { block_name: &'p str, outlet_name: &'p str, target_block_name: &'p str },
+        }
+
+        fn parse(lexed: CircuitDef) -> Result<(), ParseError>
+        {
+            let mut depths = HashMap::new();
+            let mut stack = Vec::new();
+            for entry in lexed.auto_entries
+            {
+                if !lexed.blocks.contains_key(&entry)
+                {
+                    return Err(ParseError::AutoEntryPointsToUndefinedBlock { block_name: entry.into_inner() });
+                }
+
+                depths.entry(entry).or_insert(0u32);
+                stack.push(entry);
+            }
+            for (signal, entries) in lexed.signal_entries
+            {
+                for entry in entries
+                {
+                    if !lexed.blocks.contains_key(&entry)
+                    {
+                        return Err(ParseError::SignalEntryPointsToUndefinedBlock { signal, block_name: entry.into_inner() });
+                    }
+
+                    depths.entry(entry).or_insert(0u32);
+                    stack.push(entry);
+                }
+            }
+
+            while let Some(block_name) = stack.pop()
+            {
+                let block = lexed.blocks.get(&block_name)
+                    .expect("Block should not be pushed onto depth stack if it doesn't exist");
+
+                if let BlockKind::Impulse = block.kind &&
+                    !block.latching_outlets.is_empty()
+                {
+                    return Err(ParseError::ImpulseBlockContainsLatchingOutlets { block_name: block_name.into_inner() });
+                }
+
+                let depth = depths.get(&block_name).unwrap() + 1;
+                for (outlet_name, plugs) in block.pulsed_outlets.iter()
+                {
+                    for PlugRef { target_block_name, inlet } in plugs.iter()
+                    {
+                        let Some(target_block) = lexed.blocks.get(target_block_name)
+                            else { return Err(ParseError::PulsedPlugPointsToUndefinedBlock
+                            {
+                                block_name: block_name.into_inner(),
+                                outlet_name: outlet_name.into_inner(),
+                                target_block_name: target_block_name.into_inner(),
+                            }) };
+
+                        if let Inlet::PowerOff = inlet &&
+                            let BlockKind::Impulse = target_block.kind
+                        {
+                            return Err(ParseError::ImpulsesDoNotHavePowerOffInlets
+                            {
+                                block_name: block_name.into_inner(),
+                                outlet_name: outlet_name.into_inner(),
+                                target_block_name: target_block_name.into_inner(),
+                            });
+                        }
+
+                        let target_depth = depths.entry(*target_block_name).or_insert(u32::MAX);
+                        if *target_depth > depth
+                        {
+                            *target_depth = depth;
+                            stack.push(*target_block_name);
+                        }
+                    }
+                }
+
+                for (outlet_name, plugs) in block.latching_outlets.iter()
+                {
+                    for PlugRef { target_block_name, inlet } in plugs.iter()
+                    {
+                        let Some(target_block) = lexed.blocks.get(target_block_name)
+                            else { return Err(ParseError::LatchingPlugPointsToUndefinedBlock
+                            {
+                                block_name: block_name.into_inner(),
+                                outlet_name: outlet_name.into_inner(),
+                                target_block_name: target_block_name.into_inner(),
+                            }) };
+
+                        if let Inlet::PowerOff = inlet &&
+                            let BlockKind::Impulse = target_block.kind
+                        {
+                            return Err(ParseError::ImpulsesDoNotHavePowerOffInlets
+                            {
+                                block_name: block_name.into_inner(),
+                                outlet_name: outlet_name.into_inner(),
+                                target_block_name: target_block_name.into_inner(),
+                            });
+                        }
+
+                        let target_depth = depths.entry(*target_block_name).or_insert(u32::MAX);
+                        if *target_depth > depth
+                        {
+                            *target_depth = depth;
+                            stack.push(*target_block_name);
+                        }
+                    }
+                }
+            }
+
+            let mut impulses = Vec::new();
+            let mut latches = Vec::new();
+            for (block_name, block) in lexed.blocks.iter()
+            {
+                let Some(depth) = depths.get(block_name) else { continue };
+                match block.kind
+                {
+                    BlockKind::Impulse => impulses.push((*block_name, depth)),
+                    BlockKind::Latch => latches.push((*block_name, depth)),
+                }
+            }
+            // these will sort stable and fallback to insertion order (maintained by the indexmap) if the same
+            impulses.sort_by(|a, b| a.1.cmp(&b.1));
+            latches.sort_by(|a, b| a.1.cmp(&b.1));
+
+            println!("{:?}\n--\n{:?}", impulses, latches);
+
+            Ok(())
+        }
     }
 }
 
@@ -444,4 +606,10 @@ signals
 combine duplicate signals
 auto entries
 combine all auto entries
+discard unlinked blocks (and should not get IDs)
+impulses cannot have latching outlets
+impulses cannot have power-off inlets
+circular wires have correct depth
+output block ordering is depth then insertion order
+impulses and blocks are indexed independently
 */

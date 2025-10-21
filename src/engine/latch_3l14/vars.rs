@@ -109,8 +109,10 @@ impl Debug for LocalScope
         let mut dbg = f.debug_struct("LocalScope");
         for (i, var) in self.vars.iter().enumerate()
         {
+            // todo: query if stacked
             dbg.field(&format!("{}", i), var);
         }
+
         dbg.finish()
     }
 }
