@@ -24,6 +24,7 @@ arrayvec.workspace = true
 bitcode.workspace = true
 chrono.workspace = true
 clap.workspace = true
+erased-serde.workspace = true
 glam.workspace = true
 gltf.workspace = true
 hassle-rs.workspace = true

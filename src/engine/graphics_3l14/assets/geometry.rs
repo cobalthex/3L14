@@ -62,13 +62,14 @@ impl From<IndexFormat> for wgpu::IndexFormat
 #[derive(Encode, Decode)]
 pub struct GeometryFile
 {
+    // TODO: convert all boxes to offsets in the src payload
     pub bounds_aabb: AABB,
     pub bounds_sphere: Sphere,
     pub vertex_layout: <VertexLayout as FlagsEnum<VertexLayout>>::Repr, // must store as underlying type due to limitation of bitcode
     pub index_format: IndexFormat,
     pub vertices: Box<[u8]>, // Contains composite vertices of type vertex_layout
     pub indices: Box<[u8]>, // contains indices of type index_format
-    pub meshes: Box<[GeometryMesh]>,
+    pub meshes: Box<[GeometryMesh]>, // TODO: make variable sized tail (then put boxes above after in payload)
 }
 
 #[derive(Encode, Decode)]

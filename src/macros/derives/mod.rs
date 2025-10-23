@@ -2,4 +2,4 @@ pub mod fancy_enum;
 pub mod flags_enum;
 pub mod type_layout_hash;
 
-pub mod circuit_block_meta;
+pub mod circuit_block;

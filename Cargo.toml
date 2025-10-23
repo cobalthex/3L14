@@ -53,6 +53,7 @@ directories = "6.0.0"
 #egui-wgpu = { version = "0.32.3" }
 egui = { git = "https://github.com/torokati44/egui", branch = "wgpu-26", features = ["persistence"] }
 egui-wgpu = { git = "https://github.com/torokati44/egui", branch = "wgpu-26" }
+erased-serde = "0.4.8"
 futures = { version = "0.3.31", features = ["thread-pool"] }
 glam = { version = "0.30.8", features = ["serde", "approx"] }
 gltf = "1.4.1"

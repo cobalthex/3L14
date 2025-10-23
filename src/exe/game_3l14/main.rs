@@ -345,7 +345,7 @@ fn main() -> ExitReason
 
                                     let mut poser = SkeletonPoser::new(&skel);
 
-                                    let mut time = frame_time.total_runtime.as_nanos() as u64;
+                                    let time = frame_time.total_runtime.as_nanos() as u64;
                                     // time = Ratio::new(3, 10).scale(time);
                                     if let AssetPayload::Available(anim) = test_base_anim.payload()
                                     {

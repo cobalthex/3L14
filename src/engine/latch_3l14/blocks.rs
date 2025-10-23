@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
+use bitcode::Decode;
 use triomphe::Arc;
 use smallvec::SmallVec;
 use crate::{Runtime, Scope, VarChange};
 
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
+#[derive(Hash, PartialEq, Eq, Clone, Copy, Decode)]
 pub struct BlockId(u32);
 impl BlockId
 {
@@ -53,7 +55,6 @@ impl Debug for BlockId
 }
 pub trait Block
 {
-    fn name(&self) -> &'static str { "TODO?" }
 }
 
 // A block that can perform an action whenever they are pulsed
@@ -65,7 +66,6 @@ pub trait ImpulseBlock: Send
     // Return some basic information about this block, useful for diagnostics/etc
     fn inspect(&self, visit: BlockVisitor);
 }
-impl Block for dyn ImpulseBlock { }
 
 pub struct ImpulseActions<'i>
 {
@@ -120,7 +120,6 @@ pub trait LatchBlock: Send
     // Return some basic information about this block, useful for diagnostics/etc
     fn inspect(&self, visit: BlockVisitor);
 }
-impl Block for dyn LatchBlock { }
 
 // A latch block that also maintains an internal (runtime-only) state
 pub trait ContextfulLatchBlock: Send // better name?
@@ -177,7 +176,7 @@ impl<L: ContextfulLatchBlock> LatchBlock for L
 }
 
 // How the target block should behave on pulse
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Decode)]
 pub enum Inlet
 {
     #[default]
@@ -186,7 +185,7 @@ pub enum Inlet
 }
 
 // Where an outlet points to
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Decode)]
 pub struct Plug
 {
     pub block: BlockId,
@@ -202,14 +201,15 @@ impl Plug
 }
 
 // Outlets that pass-thru incoming pulses (but not power-offs)
-#[derive(Default)]
+#[derive(Default, Debug, Decode)]
 pub struct PulsedOutlet
 {
     pub plugs: Box<[Plug]>,
 }
+
 // Outlets that carry the parent signal and respond to power-offs
 // note: Latchin
-#[derive(Default)]
+#[derive(Default, Debug, Decode)]
 pub struct LatchingOutlet
 {
     pub plugs: Box<[Plug]>,
@@ -249,3 +249,12 @@ impl<'b> BlockVisitor<'b, '_>
     }
 }
 pub(super) type PlugList = SmallVec<[Plug; 2]>;
+
+
+// The intermediate format of a block that is used for deserializing
+pub struct BlockDefz<'p>
+{
+    pulsed_outlets: HashMap<&'p str, PulsedOutlet>,
+    latching_outlets: HashMap<&'p str, LatchingOutlet>,
+    // fields: HashMap<&'p str, toml::Value>,
+}

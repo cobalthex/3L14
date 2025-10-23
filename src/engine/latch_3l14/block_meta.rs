@@ -1,11 +1,24 @@
-use crate::Block;
+use std::collections::HashMap;
+use crate::{Block, LatchingOutlet, PulsedOutlet};
 use bitcode::DecodeOwned;
 use std::error::Error;
+use crate::impulses::DebugPrint;
+
+type Des<'de> = dyn erased_serde::Deserializer<'de>;
+// The intermediate format of a block that is used for deserializing
+pub struct HydrateBlock<'de>
+{
+    pub pulsed_outlets: HashMap<&'de str, PulsedOutlet>,
+    pub latching_outlets: HashMap<&'de str, LatchingOutlet>,
+    pub fields: HashMap<&'de str, &'de mut Des<'de>>,
+}
 
 pub trait BlockMeta: 'static
 {
     const TYPE_NAME: &'static str;
     const BLOCK_NAME_HASH: u64; // a combination of crate name and type name
+
+    fn hydrate_block(hydration: HydrateBlock) -> impl Block;
 }
 
 pub struct BlockRegistration
@@ -20,7 +33,6 @@ impl BlockRegistration
 {
     pub const fn register<B: BlockMeta + Block + DecodeOwned>() -> Self
     {
-
         Self
         {
             name: B::TYPE_NAME,
