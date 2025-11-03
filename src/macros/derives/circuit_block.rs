@@ -1,8 +1,9 @@
-use proc_macro::{Ident, Span, TokenStream};
+use proc_macro::TokenStream;
+use proc_macro2::Span;
 use std::hash::Hasher;
 use metrohash::MetroHash64;
 use quote::quote;
-use syn::{parse_macro_input, parse_str, DeriveInput, ExprCall, Fields, Path, Type};
+use syn::{parse_macro_input, parse_str, DeriveInput, Fields, Ident, Path, Type};
 use syn::Data::Struct;
 
 fn path_contains(container: &Path, containing: &Path) -> bool
@@ -51,7 +52,7 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
 
     let typename_ident = &input.ident;
 
-    let (latch_crate_name, block_name_hash) =
+    let (latch_crate_name, type_name_hash) =
     {
         let mut name = std::env::var("CARGO_PKG_NAME").unwrap();
         let name_hash =
@@ -89,42 +90,56 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
         let fname = ident.to_string();
         match is_outlet
         {
-            IsOutlet::No => quote! { #ident: ::erased_serde::deserialize(hydration.fields.remove(#fname).unwrap()).unwrap() },
-            IsOutlet::Pulsed => quote! { #ident: hydration.pulsed_outlets.remove(#fname).unwrap() },
-            IsOutlet::Latching => quote! { #ident: hydration.latching_outlets.remove(#fname).unwrap() },
+            IsOutlet::No => quote!
+            {
+                // TODO: error handling
+                #ident:
+                {
+                    if let Some(mut field) = hydration.fields.remove(&unicase::UniCase::unicode(#fname))
+                    {
+                        ::erased_serde::deserialize(&mut field)?
+                    }
+                    else { Default::default() }
+                }
+            },
+            IsOutlet::Pulsed => quote! { #ident: hydration.pulsed_outlets.remove(&unicase::UniCase::unicode(#fname)).unwrap_or_default() },
+            IsOutlet::Latching => quote! { #ident: hydration.latching_outlets.remove(&unicase::UniCase::unicode(#fname)).unwrap_or_default() },
         }
     });
 
+    // TODO: iter_all_outlets
+
     let typename_str = typename_ident.to_string();
 
+    let meta_ident = Ident::new(&format!("{}_BLOCK_META", typename_str.to_uppercase()), Span::call_site());
     let path_hydrate = path("block_meta::HydrateBlock");
     let path_block = path("Block");
-    let path_blockmeta: Path = path("block_meta::BlockMeta");
-    let path_blockreg: Path = path("block_meta::BlockRegistration::register");
-    let out = quote!
-    {
-        impl #path_block for #typename_ident
-        {
-        }
-        impl #path_blockmeta for #typename_ident
-        {
-            const TYPE_NAME: &'static str = #typename_str;
-            const BLOCK_NAME_HASH: u64 = #block_name_hash;
+    let path_blockmeta = path("block_meta::BlockMeta");
+    let path_kind = path("blocks::BlockKind");
+    let path_bothimpls = path("block_meta::CannotImplBothBlockTypes");
 
-            fn hydrate_block(mut hydration: #path_hydrate) -> impl #path_block
+    quote!
+    {
+        const #meta_ident: #path_blockmeta = #path_blockmeta
+        {
+            type_name: #typename_str,
+            type_name_hash: #type_name_hash,
+            hydrate_fn: |hydration: &mut #path_hydrate|
             {
-                Self
+                Ok(Box::new(#typename_ident
                 {
                     #(#hydrate_fn_lines),*
-                }
-            }
+                }))
+            },
+            kind: #path_kind::Impulse, // TODO
+        };
+        impl #path_block for #typename_ident
+        {
+            fn meta(&self) -> &'static #path_blockmeta { &#meta_ident }
         }
-        ::inventory::submit! {
-            #path_blockreg::<#typename_ident>()
-        }
-    }.into();
-
-    out
+        impl #path_bothimpls for #typename_ident { }
+        ::inventory::submit! { #meta_ident }
+    }.into()
 }
 
 

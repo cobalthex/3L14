@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::error::Error;
+use crate::block_meta::BlockMeta;
 use crate::blocks::PlugList;
 use crate::vars::ScopeChanges;
 use crate::{BlockId, ImpulseActions, ImpulseBlock, InstRunId, LatchActions, LatchBlock, LocalScope, Runtime, Scope, SharedScope};
@@ -9,7 +10,6 @@ use std::hash::Hasher;
 use triomphe::Arc;
 use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use debug_3l14::debug_gui::DebugGui;
-use crate::block_meta::BlockRegistration;
 
 #[proc_macros_3l14::asset]
 pub struct Circuit
@@ -25,14 +25,14 @@ pub type EntryPoints = Box<[BlockId]>;
 
 struct CircuitLifecycler
 {
-    known_block_types: HashMap<u64, &'static BlockRegistration>,
+    known_block_types: HashMap<u64, &'static BlockMeta>,
 }
 impl Default for CircuitLifecycler
 {
     fn default() -> Self
     {
-        let known_block_types = inventory::iter::<BlockRegistration>()
-            .map(|b| (b.name_hash, b)).collect();
+        let known_block_types = inventory::iter::<BlockMeta>()
+            .map(|b| (b.type_name_hash, b)).collect();
         Self { known_block_types }
     }
 }
@@ -138,18 +138,17 @@ impl TestContext
 mod tests
 {
     use std::fmt::Formatter;
+    use crate::BlockKind;
     use super::*;
 
     #[test]
     fn block_id()
     {
         let block = BlockId::impulse(0);
-        assert!(block.is_impulse());
-        assert!(!block.is_latch());
+        assert!(matches!(block.kind(), BlockKind::Impulse));;
 
         let block = BlockId::latch(0);
-        assert!(block.is_latch());
-        assert!(!block.is_impulse());
+        assert!(matches!(block.kind(), BlockKind::Latch));;
     }
 
     #[test]

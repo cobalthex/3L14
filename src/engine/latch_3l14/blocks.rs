@@ -4,6 +4,15 @@ use bitcode::Decode;
 use triomphe::Arc;
 use smallvec::SmallVec;
 use crate::{Runtime, Scope, VarChange};
+use crate::block_meta::BlockMeta;
+
+#[repr(u8)]
+#[derive(Debug, Copy, Clone)]
+pub enum BlockKind
+{
+    Impulse = 0,
+    Latch = 1,
+}
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Decode)]
 pub struct BlockId(u32);
@@ -23,16 +32,10 @@ impl BlockId
     }
 
     #[inline] #[must_use]
-    pub const fn is_impulse(self) -> bool
+    pub const fn kind(self) -> BlockKind
     {
-        self.0 < (1 << 31)
+        unsafe { std::mem::transmute((self.0 >> 31) as u8) }
     }
-    #[inline] #[must_use]
-    pub const fn is_latch(self) -> bool
-    {
-        self.0 >= (1 << 31)
-    }
-
     #[inline] #[must_use]
     pub(super) const fn value(self) -> u32
     {
@@ -43,18 +46,12 @@ impl Debug for BlockId
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
-        if self.is_latch()
-        {
-            f.write_fmt(format_args!("[Latch|{}]", self.value()))
-        }
-        else
-        {
-            f.write_fmt(format_args!("[Impulse|{}]", self.value()))
-        }
+        f.write_fmt(format_args!("[{:?}|{}]", self.kind(), self.value()))
     }
 }
-pub trait Block
+pub trait Block: Debug
 {
+    fn meta(&self) -> &'static BlockMeta; // todo: better name?
 }
 
 // A block that can perform an action whenever they are pulsed

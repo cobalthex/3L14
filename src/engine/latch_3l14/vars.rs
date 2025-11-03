@@ -1,5 +1,5 @@
 use std::fmt::{Debug, Formatter};
-use super::{BlockId, InstRunId, ContextfulLatchBlock};
+use super::{BlockId, InstRunId, ContextfulLatchBlock, BlockKind};
 use smallvec::SmallVec;
 use nab_3l14::utils::alloc_slice::alloc_slice_default;
 use crate::instance::LatchContextStorage;
@@ -204,7 +204,7 @@ impl<'s> Scope<'s>
     pub fn subscribe(&mut self, var_id: VarId) -> VarValue
     {
         // statically restrict this?
-        debug_assert!(self.block_id.is_latch());
+        debug_assert!(matches!(self.block_id.kind(), BlockKind::Latch));
 
         match var_id.scope()
         {
@@ -225,7 +225,7 @@ impl<'s> Scope<'s>
 
     pub fn unsubscribe(&mut self, var_id: VarId)
     {
-        debug_assert!(self.block_id.is_latch());
+        debug_assert!(matches!(self.block_id.kind(), BlockKind::Latch));
 
         match var_id.scope()
         {

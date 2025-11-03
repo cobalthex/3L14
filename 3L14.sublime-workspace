@@ -1,0 +1,618 @@
+{
+	"auto_complete":
+	{
+		"selected_items":
+		[
+			[
+				"fro",
+				"from_str(…)"
+			],
+			[
+				"Scope",
+				"Scope(use crate::Scope)"
+			],
+			[
+				"as_",
+				"as_mut()"
+			],
+			[
+				"Val",
+				"VarValue"
+			],
+			[
+				"bucket",
+				"num_buckets"
+			],
+			[
+				"Sh",
+				"ShaderCompilationError"
+			]
+		]
+	},
+	"buffers":
+	[
+	],
+	"build_system": "",
+	"build_system_choices":
+	[
+	],
+	"build_varint": "",
+	"command_palette":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+			[
+				"settings",
+				"Preferences: Settings"
+			],
+			[
+				"color",
+				"UI: Select Color Scheme"
+			],
+			[
+				"install",
+				"Package Control: Install Package"
+			],
+			[
+				"lsp",
+				"LSP: Restart Server"
+			],
+			[
+				"rust en",
+				"Set Syntax: Rust Enhanced"
+			],
+			[
+				"ehna",
+				"Set Syntax: Rust Enhanced"
+			],
+			[
+				"enha",
+				"Preferences: Rust Enhanced Settings"
+			],
+			[
+				"diable",
+				"Package Control: Disable Package"
+			],
+			[
+				"enable",
+				"Package Control: Enable Package"
+			],
+			[
+				"rust",
+				"Set Syntax: Rust"
+			],
+			[
+				"enable ",
+				"Package Control: Enable Package"
+			],
+			[
+				"disable",
+				"Package Control: Disable Package"
+			],
+			[
+				"remove package",
+				"Package Control: Remove Package"
+			],
+			[
+				"instal",
+				"Package Control: Install Package"
+			],
+			[
+				"powers",
+				"Set Syntax: PowerShell"
+			],
+			[
+				"prefere",
+				"Preferences: Settings"
+			],
+			[
+				"wrap",
+				"Word Wrap: Toggle"
+			],
+			[
+				"toml",
+				"Set Syntax: TOML"
+			],
+			[
+				"install ",
+				"Package Control: Install Package"
+			]
+		],
+		"width": 0.0
+	},
+	"console":
+	{
+		"height": 144.0,
+		"history":
+		[
+		]
+	},
+	"distraction_free":
+	{
+		"menu_visible": true,
+		"show_minimap": false,
+		"show_open_files": false,
+		"show_tabs": false,
+		"side_bar_visible": false,
+		"status_bar_visible": false
+	},
+	"expanded_folders":
+	[
+		"/C/Users/Matt/Code/3l14"
+	],
+	"file_history":
+	[
+		"/C/Users/Matt/Code/3l14/3L14.sublime-project",
+		"/C/Users/Matt/Code/3l14/src/engine/latch_3l14/vars.rs",
+		"/C/Users/Matt/Code/3l14/src/exe/assets_builder_3l14/builders/circuit_builder.rs",
+		"/C/Users/Matt/Code/3l14/src/build_common.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/latch_3l14/instance.rs",
+		"/C/Users/Matt/Code/3l14/src/macros/has_derive.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/latch_3l14/runtime.rs",
+		"/C/Users/Matt/Code/3l14/src/exe/assets_builder_3l14/core/symbol_validator.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/latch_3l14/latches.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/latch_3l14/circuit.rs",
+		"/C/Users/Matt/Code/3l14/src/exe/assets_builder_3l14/main.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/graphics_3l14/uniforms_pool.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/asset_3l14/symbol.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/latch_3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/src/engine/containers_3l14/bucket_vec.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/containers_3l14/object_pool.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/graphics_3l14/view.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/nab_3l14/utils/mod.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/latch_3l14/states.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/latch_3l14/graph.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/asset_3l14/asset_handle.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/graphics_3l14/assets/geometry.rs",
+		"/C/Users/Matt/Code/3l14/src/exe_assets_builder/core/assets_builder.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/math_3l14/aabb.rs",
+		"/C/Users/Matt/Code/3l14/src/exe_assets_builder/builders/model_builder.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/graphics_3l14/skeleton_poser.rs",
+		"/C/Users/Matt/Code/3l14/src/exe_game/main.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/containers_3l14/rstar_tree.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/math_3l14/lib.rs",
+		"/C/Users/Matt/Code/3l14/src/exe_assets_browser/main.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/graphics_3l14/renderer.rs",
+		"/C/Users/Matt/gdrive/enc/3L14/pawn.gltf",
+		"/C/Users/Matt/Code/3l14/src/engine/graphics_3l14/assets/skeleton.rs",
+		"/C/Users/Matt/Code/3l14/src/exe_assets_builder/helpers/texture_compressor.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/graphics_3l14/skeletal_animator.rs",
+		"/C/Users/Matt/Desktop/dump_wiggle-right.anim",
+		"/C/Users/Matt/Code/3l14/src/engine/graphics_3l14/assets/skeletal_animation.rs",
+		"/C/Users/Matt/Code/3l14/src/exe_assets_builder/helpers/shader_compiler.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/world_3l14/static_geo.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/nab_3l14/utils/alloc_slice.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/nab_3l14/lib.rs",
+		"/?hexadex/desktop$/License.sublime_license",
+		"/C/Users/Matt/Code/3l14/src/engine/debug_3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/src/engine/world_3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/src/engine/input_3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/src/engine/graphics_3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/src/engine/containers_3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/src/engine/nab_3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/src/engine/asset_3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/src/engine/containers_3l14/[]",
+		"/C/Users/Matt/Code/3l14/asset-3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/world-3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/containers-3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/debug-3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/graphics-3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/input-3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/macros/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/nab-3l14/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/debug-3l14/src/debug_gui.rs",
+		"/C/Users/Matt/Code/3l14/graphics-3l14/src/debug_draw.rs",
+		"/C/Users/Matt/Code/3l14/debug-3l14/src/mod.rs",
+		"/C/Users/Matt/Code/3l14/debug-3l14/src/lib.rs",
+		"/C/Users/Matt/Code/3l14/debug-3l14/src/debug_menu.rs",
+		"/C/Users/Matt/Code/3l14/src/game/main.rs",
+		"/C/Users/Matt/Code/3l14/tlof-asset/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/tlof-containers/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/tlof-graphics/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/tlof-input/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/tlof-nab/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/tlof-world/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/3l14-asset/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/3l14-containers/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/3l14-graphics/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/3l14-input/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/3l14-nab/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/3l14-world/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/lib-asset/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/lib-containers/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/lib-nab/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/lib-input/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/lib-world/Cargo.toml",
+		"/C/Users/Matt/Code/3l14/lib-graphics/Cargo.toml",
+		"/C/Users/Matt/Downloads/frustum.cs",
+		"/C/Users/Matt/Code/3l14/src/engine/graphics/view.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/graphics/renderer.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/graphics/pipeline_cache.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/graphics/debug_gui/debug_menu.rs",
+		"/C/Users/Matt/Code/3l14/debug_gui.state",
+		"/C/Users/Matt/Code/3l14/src/engine/graphics/uniforms_pool.rs",
+		"/C/Users/Matt/Code/3l14/src/engine/containers/object_pool.rs",
+		"/C/Users/Matt/Code/3l14/src/assets_builder/core/assets_builder.rs",
+		"/C/Users/Matt/Code/3l14/build/build_main.rs",
+		"/C/Users/Matt/Documents/PowerShell/Scripts/editors.ps1",
+		"/C/Users/Matt/Code/scratch/scratch.cpp",
+		"/C/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.42.34433/include/arm64intr.h",
+		"/C/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.42.34433/include/__msvc_ranges_to.hpp",
+		"/C/Users/Matt/AppData/Local/Temp/tmp31yocz.tmp",
+		"/C/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Auxiliary/msvcp140_2.dll",
+		"/C/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.42.34433/include/cstdio",
+		"/C/Users/Matt/Documents/PowerShell/profile.ps1",
+		"/C/Users/Matt/Documents/PowerShell/Scripts/user32.ps1"
+	],
+	"find":
+	{
+		"height": 27.2
+	},
+	"find_in_files":
+	{
+		"height": 107.2,
+		"where_history":
+		[
+		]
+	},
+	"find_state":
+	{
+		"case_sensitive": false,
+		"find_history":
+		[
+		],
+		"highlight": true,
+		"in_selection": false,
+		"preserve_case": false,
+		"regex": true,
+		"replace_history":
+		[
+		],
+		"reverse": false,
+		"scrollbar_highlights": true,
+		"show_context": true,
+		"use_buffer2": true,
+		"use_gitignore": true,
+		"whole_word": false,
+		"wrap": true
+	},
+	"groups":
+	[
+		{
+			"sheets":
+			[
+			]
+		}
+	],
+	"incremental_find":
+	{
+		"height": 27.2
+	},
+	"input":
+	{
+		"height": 41.6
+	},
+	"layout":
+	{
+		"cells":
+		[
+			[
+				0,
+				0,
+				1,
+				1
+			]
+		],
+		"cols":
+		[
+			0.0,
+			1.0
+		],
+		"rows":
+		[
+			0.0,
+			1.0
+		]
+	},
+	"menu_visible": true,
+	"output.LSP Log Panel":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"output.diagnostics":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"output.find_results":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"pinned_build_system": "",
+	"project": "3L14.sublime-project",
+	"replace":
+	{
+		"height": 51.2
+	},
+	"save_all_on_build": true,
+	"select_file":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+			[
+				"vars.",
+				"src\\engine\\latch_3l14\\vars.rs"
+			],
+			[
+				"instance.",
+				"src\\engine\\latch_3l14\\instance.rs"
+			],
+			[
+				"circuit_build",
+				"src\\exe\\assets_builder_3l14\\builders\\circuit_builder.rs"
+			],
+			[
+				"circuit",
+				"src\\engine\\latch_3l14\\circuit.rs"
+			],
+			[
+				"latches",
+				"src\\engine\\latch_3l14\\latches.rs"
+			],
+			[
+				"main",
+				"src\\exe\\assets_builder_3l14\\main.rs"
+			],
+			[
+				"symbol_va",
+				"src\\exe\\assets_builder_3l14\\core\\symbol_validator.rs"
+			],
+			[
+				"vars",
+				"src\\engine\\latch_3l14\\vars.rs"
+			],
+			[
+				"object",
+				"src\\engine\\containers_3l14\\object_pool.rs"
+			],
+			[
+				"object_po",
+				"src\\engine\\containers_3l14\\object_pool.rs"
+			],
+			[
+				"latch/ca",
+				"src\\engine\\latch_3l14\\Cargo.toml"
+			],
+			[
+				"symbol",
+				"src\\engine\\asset_3l14\\symbol.rs"
+			],
+			[
+				"runtime",
+				"src\\engine\\latch_3l14\\runtime.rs"
+			],
+			[
+				"states",
+				"src\\engine\\latch_3l14\\states.rs"
+			],
+			[
+				"latch/cargo",
+				"src\\engine\\latch_3l14\\Cargo.toml"
+			],
+			[
+				"latch_3l14/cargo",
+				"src\\engine\\latch_3l14\\Cargo.toml"
+			],
+			[
+				"util/mod",
+				"src\\engine\\nab_3l14\\utils\\mod.rs"
+			],
+			[
+				"nab/utils/mod",
+				"src\\engine\\nab_3l14\\utils\\mod.rs"
+			],
+			[
+				"graph",
+				"src\\engine\\latch_3l14\\graph.rs"
+			],
+			[
+				"instance",
+				"src\\engine\\latch_3l14\\instance.rs"
+			],
+			[
+				"math_3l14/lib",
+				"src\\engine\\math_3l14\\lib.rs"
+			],
+			[
+				"aabb",
+				"src\\engine\\math_3l14\\aabb.rs"
+			],
+			[
+				"renderer",
+				"src\\engine\\graphics_3l14\\renderer.rs"
+			],
+			[
+				"asset_browser/main",
+				"src\\exe_assets_browser\\main.rs"
+			],
+			[
+				"skeleton_po",
+				"src\\engine\\graphics_3l14\\skeleton_poser.rs"
+			],
+			[
+				"asset_builder",
+				"src\\exe_assets_builder\\core\\assets_builder.rs"
+			],
+			[
+				"exe/main",
+				"src\\exe_game\\main.rs"
+			],
+			[
+				"texture_Comp",
+				"src\\exe_assets_builder\\helpers\\texture_compressor.rs"
+			],
+			[
+				"cargo.toml",
+				"Cargo.toml"
+			],
+			[
+				"skeleton.",
+				"src\\engine\\graphics_3l14\\assets\\skeleton.rs"
+			],
+			[
+				"geometry.rs",
+				"src\\engine\\graphics_3l14\\assets\\geometry.rs"
+			],
+			[
+				"skeletal",
+				"src\\engine\\graphics_3l14\\assets\\skeletal_animation.rs"
+			],
+			[
+				"shadercom",
+				"src\\exe_assets_builder\\helpers\\shader_compiler.rs"
+			],
+			[
+				"model_build",
+				"src\\exe_assets_builder\\builders\\model_builder.rs"
+			],
+			[
+				"bucket_",
+				"src\\engine\\containers_3l14\\bucket_vec.rs"
+			],
+			[
+				"nab/util/rs",
+				"src\\engine\\nab_3l14\\utils\\mod.rs"
+			],
+			[
+				"nab/lib.rs",
+				"src\\engine\\nab_3l14\\lib.rs"
+			],
+			[
+				"alloc_slice",
+				"src\\engine\\nab_3l14\\utils\\alloc_slice.rs"
+			],
+			[
+				"static_geo",
+				"src\\engine\\world_3l14\\static_geo.rs"
+			],
+			[
+				"shader_compi",
+				"src\\exe_assets_builder\\helpers\\shader_compiler.rs"
+			],
+			[
+				"model_builder",
+				"src\\exe_assets_builder\\builders\\model_builder.rs"
+			],
+			[
+				"nab_3l14/c",
+				"src\\engine\\nab_3l14\\Cargo.toml"
+			],
+			[
+				"containers/cargo",
+				"src\\engine\\containers_3l14\\Cargo.toml"
+			],
+			[
+				"debug_gui.rs",
+				"debug-3l14\\src\\debug_gui.rs"
+			],
+			[
+				"debug_men",
+				"debug-3l14\\src\\debug_menu.rs"
+			],
+			[
+				"cargo.tom",
+				"Cargo.toml"
+			],
+			[
+				"main.rs",
+				"src\\game\\main.rs"
+			],
+			[
+				"debugmenu",
+				"src\\engine\\graphics\\debug_gui\\debug_menu.rs"
+			],
+			[
+				"object_",
+				"src\\engine\\containers\\object_pool.rs"
+			],
+			[
+				"view",
+				"src\\engine\\graphics\\view.rs"
+			],
+			[
+				"pipeline",
+				"src\\engine\\graphics\\pipeline_cache.rs"
+			],
+			[
+				"uniform_",
+				"src\\engine\\graphics\\uniforms_pool.rs"
+			],
+			[
+				"build_",
+				"build\\build_main.rs"
+			],
+			[
+				"shade_",
+				"src\\assets_builder\\helpers\\shader_compiler.rs"
+			],
+			[
+				"model_bulid",
+				"src\\assets_builder\\builders\\model_builder.rs"
+			],
+			[
+				"build",
+				"build\\build_main.rs"
+			]
+		],
+		"width": 0.0
+	},
+	"select_project":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_symbol":
+	{
+		"height": 83.2,
+		"last_filter": "shadercompilation",
+		"selected_items":
+		[
+			[
+				"shadercompilation",
+				"ShaderCompilation"
+			]
+		],
+		"width": 592.0
+	},
+	"selected_group": 0,
+	"settings":
+	{
+		"lsp_show_inlay_hints": false
+	},
+	"show_minimap": true,
+	"show_open_files": false,
+	"show_tabs": true,
+	"side_bar_visible": true,
+	"side_bar_width": 189.0,
+	"status_bar_visible": true,
+	"template_settings":
+	{
+	}
+}

@@ -1,5 +1,5 @@
 use bitcode::Decode;
-use super::{BlockVisitor, ImpulseActions, ImpulseBlock, PulsedOutlet, Runtime, Scope, VarId, VarValue};
+use super::{BlockVisitor, ImpulseActions, ImpulseBlock, LatchActions, LatchBlock, PulsedOutlet, Runtime, Scope, VarId, VarValue};
 use nab_3l14::utils::ShortTypeName;
 use nab_3l14::Signal;
 use proc_macros_3l14::CircuitBlock;
@@ -22,7 +22,7 @@ impl ImpulseBlock for NoOp
     }
 }
 
-#[derive(CircuitBlock, Decode)]
+#[derive(CircuitBlock, Decode, Debug)]
 pub struct DebugPrint
 {
     pub message: String,

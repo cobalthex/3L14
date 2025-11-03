@@ -209,7 +209,11 @@ impl Instance
                         {
                             block: pulse.block,
                             // only propagate upstream latch pulses through impulses (downstream latches 'reset' propagation)
-                            action: VisitAction::Pulse(pulse.inlet, if test_visit.block.is_latch() { None } else { $option_parent_latch }),
+                            action: VisitAction::Pulse(pulse.inlet, match test_visit.block.kind()
+                            {
+                                BlockKind::Impulse => $option_parent_latch,
+                                BlockKind::Latch => None,
+                            }),
                         },
                         depth: depth + 1
                     });
@@ -251,110 +255,112 @@ impl Instance
             {
                 VisitAction::Pulse(inlet, parent_latch) =>
                 {
-                    if test_visit.block.is_impulse()
+                    match test_visit.block.kind()
                     {
-                        let impulse = self.circuit.impulses[test_visit.block.value() as usize].as_ref();
-                        if let Inlet::Pulse = inlet
+                        BlockKind::Impulse =>
                         {
-                            // stupid rust mutability rules
-                            // ordering here to match latch ordering
-                            #[cfg(any(test, feature = "action_history"))]
-                            self.action_history.push(History::Pulse(test_visit.block));
-
-                            impulse.pulse(
-                                scope!(std::ptr::null_mut()), // impulses cannot use tracked data
-                                ImpulseActions
-                                {
-                                    pulse_outlets: &mut pulsed_plugs,
-                                    runtime: context.runtime.clone(),
-                                }
-                            );
-
-                            process_pulses!(parent_latch); // pass-thru parent latch
-                            process_var_changes!();
-                        }
-                        }
-                    else
-                    {
-                        let hydrated = self.hydrated_latches.entry(test_visit.block.value())
-                            .or_insert_with(|| HydratedLatch
+                            let impulse = self.circuit.impulses[test_visit.block.value() as usize].as_ref();
+                            if let Inlet::Pulse = inlet
                             {
-                                is_powered: false,
-                                powered_outlets: SmallVec::new(),
-                                latch_context: None,
-                            });
-                        match inlet
-                        {
-                            Inlet::Pulse =>
-                            {
-                                if hydrated.is_powered { continue; }
-                                hydrated.is_powered = true;
-
+                                // stupid rust mutability rules
+                                // ordering here to match latch ordering
                                 #[cfg(any(test, feature = "action_history"))]
-                                self.action_history.push(History::PowerOn(test_visit.block));
+                                self.action_history.push(History::Pulse(test_visit.block));
 
-                                let latch = self.circuit.latches[test_visit.block.value() as usize].as_ref();
-
-                                latch.power_on(
-                                    scope!(&mut hydrated.latch_context),
-                                    LatchActions
+                                impulse.pulse(
+                                    scope!(std::ptr::null_mut()), // impulses cannot use tracked data
+                                    ImpulseActions
                                     {
-                                        pulse_plugs: &mut pulsed_plugs,
-                                        latch_plugs: &mut latched_plugs,
+                                        pulse_outlets: &mut pulsed_plugs,
                                         runtime: context.runtime.clone(),
                                     }
                                 );
 
-                                // link the parent directly to this state for when powering-off
-                                // todo: can downstream latches be stored statically?
-                                if let Some(parent_latch) = parent_latch
-                                {
-                                    let hydrated_parent = self.hydrated_latches.get_mut(&parent_latch.value())
-                                        .expect("Parent latch set but no hydrated state exists for it??");
-                                    hydrated_parent.powered_outlets.push(test_visit.block);
-                                }
-
-                                process_pulses!(Some(test_visit.block));
+                                process_pulses!(parent_latch); // pass-thru parent latch
                                 process_var_changes!();
                             }
-                            Inlet::PowerOff =>
-                            {
-                                if !hydrated.is_powered { continue; }
-
-                                // todo: store downstream latches in circuit
-
-                                if hydrated.powered_outlets.is_empty()
+                            // else panic?
+                        }
+                        BlockKind::Latch =>
+                        {
+                            let hydrated = self.hydrated_latches.entry(test_visit.block.value())
+                                .or_insert_with(|| HydratedLatch
                                 {
-                                    hydrated.is_powered = false;
+                                    is_powered: false,
+                                    powered_outlets: SmallVec::new(),
+                                    latch_context: None,
+                                });
+                            match inlet
+                            {
+                                Inlet::Pulse =>
+                                {
+                                    if hydrated.is_powered { continue; }
+                                    hydrated.is_powered = true;
 
                                     #[cfg(any(test, feature = "action_history"))]
-                                    self.action_history.push(History::PowerOff(test_visit.block));
+                                    self.action_history.push(History::PowerOn(test_visit.block));
 
-                                    let latch = &self.circuit.latches[test_visit.block.value() as usize];
-                                    latch.power_off(scope!(&mut hydrated.latch_context));
+                                    let latch = self.circuit.latches[test_visit.block.value() as usize].as_ref();
 
+                                    latch.power_on(
+                                        scope!(&mut hydrated.latch_context),
+                                        LatchActions
+                                        {
+                                            pulse_plugs: &mut pulsed_plugs,
+                                            latch_plugs: &mut latched_plugs,
+                                            runtime: context.runtime.clone(),
+                                        }
+                                    );
+
+                                    // link the parent directly to this state for when powering-off
+                                    // todo: can downstream latches be stored statically?
+                                    if let Some(parent_latch) = parent_latch
+                                    {
+                                        let hydrated_parent = self.hydrated_latches.get_mut(&parent_latch.value())
+                                            .expect("Parent latch set but no hydrated state exists for it??");
+                                        hydrated_parent.powered_outlets.push(test_visit.block);
+                                    }
+
+                                    process_pulses!(Some(test_visit.block));
                                     process_var_changes!();
                                 }
-                                else
+                                Inlet::PowerOff =>
                                 {
-                                    // re-visit this after powering-off all downstream latches
-                                    stack.push(VisitBlock
-                                    {
-                                        visit: test_visit,
-                                        depth: depth + 1,
-                                    });
+                                    if !hydrated.is_powered { continue; }
 
-                                    for powered in hydrated.powered_outlets.drain(..).rev() // should this be rev order?
+                                    // todo: store downstream latches in circuit
+
+                                    if hydrated.powered_outlets.is_empty()
                                     {
+                                        hydrated.is_powered = false;
+
+                                        #[cfg(any(test, feature = "action_history"))]
+                                        self.action_history.push(History::PowerOff(test_visit.block));
+
+                                        let latch = &self.circuit.latches[test_visit.block.value() as usize];
+                                        latch.power_off(scope!(&mut hydrated.latch_context));
+
+                                        process_var_changes!();
+                                    } else {
+                                        // re-visit this after powering-off all downstream latches
                                         stack.push(VisitBlock
                                         {
-                                            visit: Visit
-                                            {
-                                                block: powered,
-                                                action: VisitAction::Pulse(Inlet::PowerOff, None),
-                                            },
+                                            visit: test_visit,
                                             depth: depth + 1,
                                         });
+
+                                        for powered in hydrated.powered_outlets.drain(..).rev() // should this be rev order?
+                                        {
+                                            stack.push(VisitBlock
+                                            {
+                                                visit: Visit
+                                                {
+                                                    block: powered,
+                                                    action: VisitAction::Pulse(Inlet::PowerOff, None),
+                                                },
+                                                depth: depth + 1,
+                                            });
+                                        }
                                     }
                                 }
                             }
@@ -364,7 +370,7 @@ impl Instance
                 VisitAction::ReEnter =>
                 {
                     // should be verified earlier
-                    debug_assert!(test_visit.block.is_latch(), "Only latch blocks can be re-entered");
+                    debug_assert!(matches!(test_visit.block.kind(), BlockKind::Latch), "Only latch blocks can be re-entered");
 
                     #[cfg(any(test, feature = "action_history"))]
                     self.action_history.push(History::ReEnter(test_visit.block));
@@ -393,7 +399,8 @@ impl Instance
                 VisitAction::VarChanged(change) =>
                 {
                     // should be verified earlier
-                    debug_assert!(test_visit.block.is_latch(), "Only latch blocks can be re-entered");
+                    debug_assert!(matches!(test_visit.block.kind(), BlockKind::Latch), "Only latch blocks can be re-entered");
+
                     #[cfg(any(test, feature = "action_history"))]
                     self.action_history.push(History::VarChanged(change.var, change.new_value.clone()));
 
@@ -509,83 +516,86 @@ impl Instance
             let mut pulses = VisitList::default();
             let mut latches = VisitList::default();
 
-            if block.is_impulse()
+            match block.kind()
             {
-                let impulse = self.circuit.impulses[block.value() as usize].as_ref();
-
-                impulse.inspect(BlockVisitor
+                BlockKind::Impulse =>
                 {
-                    name: &mut block_name,
-                    annotation: &mut annotation,
-                    pulses: &mut pulses,
-                    latches: &mut latches,
-                });
-                debug_assert!(latches.is_empty(), "Impulse blocks cannot have latches");
+                    let impulse = self.circuit.impulses[block.value() as usize].as_ref();
 
-                write!(out_str, "  \"{:?}\" [class=impulse shape=record style=rounded label=\"{{ <IN> ∿ | {}",
-                    block,
-                    if annotation.is_empty() { block_name } else { &format!("{{ {block_name} | {} }}", escape_string(&annotation)) }).unwrap();
+                    impulse.inspect(BlockVisitor
+                    {
+                        name: &mut block_name,
+                        annotation: &mut annotation,
+                        pulses: &mut pulses,
+                        latches: &mut latches,
+                    });
+                    debug_assert!(latches.is_empty(), "Impulse blocks cannot have latches");
 
-                if !pulses.is_empty()
-                {
-                    out_str.push_str(" | { ");
+                    write!(out_str, "  \"{:?}\" [class=impulse shape=record style=rounded label=\"{{ <IN> ∿ | {}",
+                           block,
+                           if annotation.is_empty() { block_name } else { &format!("{{ {block_name} | {} }}", escape_string(&annotation)) }).unwrap();
+
+                    if !pulses.is_empty()
+                    {
+                        out_str.push_str(" | { ");
+                    }
+
+                    for (i, outlet) in pulses.iter().enumerate()
+                    {
+                        if i > 0 { out_str.push_str(" | "); }
+                        write!(out_str, "<P{}> {}", i, outlet.0).unwrap();
+                    }
+
+                    if !pulses.is_empty()
+                    {
+                        out_str.push_str(" }");
+                    }
+
+                    out_str.push_str(" }\"]\n");
                 }
-
-                for (i, outlet) in pulses.iter().enumerate()
+                BlockKind::Latch =>
                 {
-                    if i > 0 { out_str.push_str(" | "); }
-                    write!(out_str, "<P{}> {}", i, outlet.0).unwrap();
+                    let hydrated = self.hydrated_latches.get(&block.value());
+                    let latch = self.circuit.latches[block.value() as usize].as_ref();
+
+                    let is_powered = hydrated.map(|h| h.is_powered).unwrap_or(false);
+
+                    latch.inspect(BlockVisitor
+                    {
+                        name: &mut block_name,
+                        annotation: &mut annotation,
+                        pulses: &mut pulses,
+                        latches: &mut latches,
+                    });
+
+                    write!(out_str, "  \"{:?}\" [class=\"{} latch\" shape=record label=\"{{ {{ <IN> ∿ | <OFF> ◯ }} | {}",
+                           block,
+                           if is_powered { "powered" } else { "" },
+                           if annotation.is_empty() { block_name } else { &format!("{{ {block_name} | {} }}", escape_string(&annotation)) }).unwrap();
+
+                    if !pulses.is_empty() || !latches.is_empty()
+                    {
+                        out_str.push_str(" | { ");
+                    }
+
+                    for (i, outlet) in pulses.iter().enumerate()
+                    {
+                        if i > 0 { out_str.push_str(" | "); }
+                        write!(out_str, "<P{}> {}", i, outlet.0).unwrap();
+                    }
+
+                    for (i, outlet) in latches.iter().enumerate()
+                    {
+                        if !pulses.is_empty() || i > 0 { out_str.push_str(" | "); }
+                        write!(out_str, "<L{}> {}", i, outlet.0).unwrap();
+                    }
+
+                    if !pulses.is_empty() || !latches.is_empty()
+                    {
+                        out_str.push_str(" }");
+                    }
+                    out_str.push_str(" }\"]\n");
                 }
-
-                if !pulses.is_empty()
-                {
-                    out_str.push_str(" }");
-                }
-
-                out_str.push_str(" }\"]\n");
-            }
-            else
-            {
-                let hydrated = self.hydrated_latches.get(&block.value());
-                let latch = self.circuit.latches[block.value() as usize].as_ref();
-
-                let is_powered = hydrated.map(|h| h.is_powered).unwrap_or(false);
-
-                latch.inspect(BlockVisitor
-                {
-                    name: &mut block_name,
-                    annotation: &mut annotation,
-                    pulses: &mut pulses,
-                    latches: &mut latches,
-                });
-
-                write!(out_str, "  \"{:?}\" [class=\"{} latch\" shape=record label=\"{{ {{ <IN> ∿ | <OFF> ◯ }} | {}",
-                       block,
-                       if is_powered { "powered" } else { "" },
-                       if annotation.is_empty() { block_name } else { &format!("{{ {block_name} | {} }}", escape_string(&annotation)) }).unwrap();
-
-                if !pulses.is_empty() || !latches.is_empty()
-                {
-                    out_str.push_str(" | { ");
-                }
-
-                for (i, outlet) in pulses.iter().enumerate()
-                {
-                    if i > 0 { out_str.push_str(" | "); }
-                    write!(out_str, "<P{}> {}", i, outlet.0).unwrap();
-                }
-
-                for (i, outlet) in latches.iter().enumerate()
-                {
-                    if !pulses.is_empty() || i > 0 { out_str.push_str(" | "); }
-                    write!(out_str, "<L{}> {}", i, outlet.0).unwrap();
-                }
-
-                if !pulses.is_empty() || !latches.is_empty()
-                {
-                    out_str.push_str(" }");
-                }
-                out_str.push_str(" }\"]\n");
             }
 
             for pulse in pulses.iter()

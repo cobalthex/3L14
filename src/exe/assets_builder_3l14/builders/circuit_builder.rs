@@ -1,21 +1,21 @@
 use bitcode::Decode;
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionBuilder};
 use indexmap::IndexMap;
-use latch_3l14::block_meta::{BlockRegistration, HydrateBlock};
-use latch_3l14::{Inlet, PulsedOutlet};
+use latch_3l14::block_meta::{BlockMeta, HydrateBlock};
+use latch_3l14::{BlockKind, Inlet, PulsedOutlet};
 use logos::{Lexer, Logos};
 use proc_macros_3l14::CircuitBlock;
 use serde::Deserialize;
 use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::error::Error;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::io::Read;
 use unicase::UniCase;
 
 pub struct CircuitBuilder
 {
-    block_types: HashMap<UniCase<&'static str>, &'static BlockRegistration>,
+    block_types: HashMap<UniCase<&'static str>, &'static BlockMeta>,
 }
 impl CircuitBuilder
 {
@@ -23,9 +23,9 @@ impl CircuitBuilder
     pub fn new() -> Self
     {
         let mut block_types = HashMap::new();
-        for bty in inventory::iter::<BlockRegistration>()
+        for bty in inventory::iter::<BlockMeta>()
         {
-            block_types.insert(UniCase::unicode(bty.name), bty);
+            block_types.insert(UniCase::unicode(bty.type_name), bty);
         }
 
         Self
@@ -75,7 +75,7 @@ impl AssetBuilder for CircuitBuilder
     }
 }
 
-#[derive(Logos, Debug)]
+#[derive(Logos)]
 #[logos(skip r"[ \t\r\f]+")]
 #[logos(skip r"#[^\n]*")] // TODO: should this consume the newline?
 #[logos(extras = FilePos)]
@@ -92,6 +92,7 @@ enum Token<'p>
     ImpulseDefEnd_PulseOutlet,
     #[token("<>")]
     LatchOutlet,
+
     #[token("-")]
     PowerOff,
     #[token("~")]
@@ -99,14 +100,86 @@ enum Token<'p>
     #[token("@")]
     AutoEntry,
 
-    #[regex(r"=\s*[^\n]+")]
-    KeyValue(&'p str),
+    #[token("=", lex_toml)]
+    Assignment(Result<Box<dyn erased_serde::Deserializer<'p> + 'p>, LexerError<'p>>),
 
     #[token("\n", newline_callback)]
     NewLine,
 
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
     Identifier(&'p str),
+}
+fn lex_toml<'p>(lex: &mut Lexer<'p, Token<'p>>) -> Result<Box<dyn erased_serde::Deserializer<'p> + 'p>, LexerError<'p>>
+{
+    // todo: this would be cleaner as a nested lexer
+
+    let sub = lex.remainder().trim_start();
+    let mut chars = sub.chars();
+
+    let mut n = 1;
+    let closer = match chars.next()
+    {
+        Some('{') => '}',
+        Some('[') => ']',
+        // todo: escaping
+        Some('"') => '"',
+        Some('\'') => '\'',
+        Some(other) =>
+        {
+            let s = sub.split_whitespace().next().unwrap();
+            // todo: dedupe
+            let parsed = match toml::de::ValueDeserializer::parse(s)
+            {
+                Ok(v) => v,
+                Err(e) => return Err(LexerError
+                {
+                    kind: LexerErrorKind::InvalidTomlValue { value: s, error: e },
+                    line: lex.extras.line,
+                    column: lex.extras.column,
+                    token: lex.slice(),
+                })
+            };
+            lex.bump(s.len() + 1);
+            return Ok(Box::new(<dyn erased_serde::Deserializer>::erase(parsed)));
+        }
+        None => return Err(LexerError
+        {
+            kind: LexerErrorKind::ExpectedFieldValue,
+            line: lex.extras.line,
+            column: lex.extras.column,
+            token: lex.slice(),
+        })
+    };
+
+    for char in chars
+    {
+        if char == closer
+        {
+            let s = &sub[0..=n];
+            let parsed = match toml::de::ValueDeserializer::parse(s)
+            {
+                Ok(v) => v,
+                Err(e) => return Err(LexerError
+                {
+                    kind: LexerErrorKind::InvalidTomlValue { value: s, error: e },
+                    line: lex.extras.line,
+                    column: lex.extras.column,
+                    token: lex.slice(),
+                })
+            };
+            lex.bump(n + 2);
+            return Ok(Box::new(<dyn erased_serde::Deserializer>::erase(parsed)));
+        }
+        n += 1
+    }
+
+    return Err(LexerError
+    {
+        kind: LexerErrorKind::ExpectedTomlValueTerminator,
+        line: lex.extras.line,
+        column: lex.extras.column,
+        token: lex.slice(),
+    });
 }
 fn newline_callback<'p>(lexer: &mut Lexer<'p, Token<'p>>)
 {
@@ -126,12 +199,13 @@ pub enum LexerErrorKind<'p>
     ExpectedBlockDefTerminator,
     ImpulseBlockLatchedOutlet { block_name: &'p str },
     ExpectedEndOfLine,
-    DuplicateSignalEntry { signal: &'p str },
     ExpectedSignalName,
     DuplicateAutoEntry,
-    UnexpectedKeyValue,
     DuplicateBlockName { block_name: &'p str },
     DuplicateField { field: &'p str },
+    ExpectedTomlValueTerminator,
+    UnexpectedKeyValue,
+    ExpectedFieldValue,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -161,14 +235,6 @@ impl Default for FilePos
     }
 }
 
-#[derive(Debug)]
-enum BlockKind
-{
-    Impulse,
-    Latch,
-}
-
-#[derive(Debug)]
 struct PlugRef<'p>
 {
     pub target_block_name: UniCase<&'p str>,
@@ -176,13 +242,11 @@ struct PlugRef<'p>
 }
 
 type Outlets<'p> = HashMap<UniCase<&'p str>, Vec<PlugRef<'p>>>;
+type Fields<'p> = HashMap<UniCase<&'p str>, Box<dyn erased_serde::Deserializer<'p> + 'p>>;
 
-type Fields<'p> = HashMap<UniCase<&'p str>, toml::Spanned<toml::de::DeValue<'p>>>;
-
-#[derive(Debug)]
 struct BlockDef<'p>
 {
-    pub type_name: &'p str,
+    pub type_name: UniCase<&'p str>,
     pub kind: BlockKind,
     pub name: UniCase<&'p str>,
     pub pulsed_outlets: Outlets<'p>,
@@ -190,7 +254,6 @@ struct BlockDef<'p>
     pub fields: Fields<'p>,
 }
 
-#[derive(Debug)]
 struct CircuitDef<'p>
 {
     pub metadata: Fields<'p>,
@@ -239,13 +302,13 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
         {
             Some(Ok(Token::Identifier(target_block_name))) =>
             {
-                Ok(PlugRef { target_block_name: UniCase::new(target_block_name), inlet: Inlet::Pulse })
+                Ok(PlugRef { target_block_name: UniCase::unicode(target_block_name), inlet: Inlet::Pulse })
             },
             Some(Ok(Token::PowerOff)) =>
             {
                 let Some(Ok(Token::Identifier(target_block_name))) = lexer.next()
                     else { error!(LexerErrorKind::ExpectedTargetBlock); };
-                Ok(PlugRef { target_block_name: UniCase::new(target_block_name), inlet: Inlet::PowerOff })
+                Ok(PlugRef { target_block_name: UniCase::unicode(target_block_name), inlet: Inlet::PowerOff })
             }
             _ => error!(LexerErrorKind::ExpectedTargetBlock)
         }
@@ -276,9 +339,9 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
 
         Ok(BlockDef
         {
-            type_name: block_type,
+            type_name: UniCase::unicode(block_type),
             kind: $block_kind,
-            name: UniCase::new(block_name),
+            name: UniCase::unicode(block_name),
             pulsed_outlets: Default::default(),
             latching_outlets: Default::default(),
             fields: Default::default(),
@@ -336,11 +399,11 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
                 {
                     LexerState::AutoEntry =>
                     {
-                        auto_entries.push(UniCase::new(id));
+                        auto_entries.push(UniCase::unicode(id));
                     }
                     LexerState::SignalEntry(signal, entries) =>
                     {
-                        entries.push(UniCase::new(id));
+                        entries.push(UniCase::unicode(id));
                     }
 
                     // a <> b, a > b, a = b
@@ -349,7 +412,7 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
                         (Some(Ok(Token::ImpulseDefEnd_PulseOutlet)), LexerState::ImpulseBlock(block)) =>
                         {
                             let plug = parse_plug!()?;
-                            let outlet = block.pulsed_outlets.entry(UniCase::new(id))
+                            let outlet = block.pulsed_outlets.entry(UniCase::unicode(id))
                                 .or_insert(Vec::new());
                             outlet.push(plug);
                         }
@@ -357,33 +420,34 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
                         (Some(Ok(Token::ImpulseDefEnd_PulseOutlet)), LexerState::LatchBlock(block)) =>
                         {
                             let plug = parse_plug!()?;
-                            let outlet = block.pulsed_outlets.entry(UniCase::new(id))
+                            let outlet = block.pulsed_outlets.entry(UniCase::unicode(id))
                                 .or_insert(Vec::new());
                             outlet.push(plug);
                         }
                         (Some(Ok(Token::LatchOutlet)), LexerState::LatchBlock(block)) =>
                         {
                             let plug = parse_plug!()?;
-                            let outlet = block.latching_outlets.entry(UniCase::new(id))
+                            let outlet = block.latching_outlets.entry(UniCase::unicode(id))
                                 .or_insert(Vec::new());
                             outlet.push(plug);
                         }
 
-                        (Some(Ok(Token::KeyValue(val))), ls) =>
+                        (Some(Ok(Token::Assignment(val))), ls) =>
                         {
-                            let des = match toml::de::DeValue::parse(val)
+                            let fid = UniCase::unicode(id);
+                            // todo: assert no dupes
+                            let existing = match ls
                             {
-                                Ok(t) => t,
-                                Err(e) => error!(LexerErrorKind::InvalidTomlValue { value: val, error: e })
-                            };
-
-                            if let Some(_) = match ls
+                                LexerState::Metadata =>
                                 {
-                                    LexerState::ImpulseBlock(impulse) => impulse.fields.insert(UniCase::new(id), des),
-                                    LexerState::LatchBlock(latch) => latch.fields.insert(UniCase::new(id), des),
-                                    LexerState::Metadata => metadata.insert(UniCase::new(id), des),
-                                    _ => error!(LexerErrorKind::UnexpectedKeyValue)
-                                }
+                                    let fucker = <dyn ::erased_serde::Deserializer>::erase(val?);
+                                    metadata.insert(fid, Box::new(fucker))
+                                },
+                                LexerState::ImpulseBlock(impulse) => impulse.fields.insert(fid, val?),
+                                LexerState::LatchBlock(latch) => latch.fields.insert(fid, val?),
+                                _ => error!(LexerErrorKind::UnexpectedKeyValue),
+                            };
+                            if existing.is_some()
                             {
                                 error!(LexerErrorKind::DuplicateField { field: id });
                             }
@@ -436,36 +500,46 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
 mod tests
 {
     use super::*;
-    use latch_3l14::BlockId;
+    use latch_3l14::{BlockId, Circuit, LatchingOutlet, Plug};
+    use nab_3l14::utils::alloc_slice::alloc_slice_uninit;
 
     #[test]
     fn basic()
     {
         let input =
+// r#"
+// meta="value" # test
+
+// [ConditionalLatch] Cond1
+// OnTrue > Print2
+// True <> Sub1
+// False <> -Sub1
+// x = 5
+
+// <DebugLog> Print1
+// Text = "Hola!"
+
+// <DebugLog> Print2
+// Text = "Hola!"
+// outlet > Print3
+
+// <DebugLog> Print3
+
+// [Something] Sub1
+
+// ~ Sig1 # signaled entries
+// Cond1 # comment
+
+// @ # auto entries
+// Print1
+// "#;
 r#"
-meta="value"
-
-[ConditionalLatch] Cond1
-OnTrue > Print2
-True <> Sub1
-False <> -Sub1
-x = 5
-
 <DebugLog> Print1
-Text = "Hola!"
-
+message = "Hello!"
+Outlet > Print2
 <DebugLog> Print2
-Text = "Hola!"
-outlet > Print3
-
-<DebugLog> Print3
-
-[Something] Sub1
-
-~ Sig1 # signaled entries
-Cond1 # comment
-
-@ # auto entries
+message = "Goodbye!"
+@
 Print1
 "#;
 
@@ -482,9 +556,11 @@ Print1
             PulsedPlugPointsToUndefinedBlock { block_name: &'p str, outlet_name: &'p str, target_block_name: &'p str },
             LatchingPlugPointsToUndefinedBlock { block_name: &'p str, outlet_name: &'p str, target_block_name: &'p str },
             ImpulsesDoNotHavePowerOffInlets { block_name: &'p str, outlet_name: &'p str, target_block_name: &'p str },
+            BlockDeserializeError { block_name: &'p str, error: erased_serde::Error },
+            UnknownBlockType { type_name: UniCase<&'p str> },
         }
 
-        fn parse(lexed: CircuitDef) -> Result<(), ParseError>
+        fn parse(mut lexed: CircuitDef) -> Result<Circuit, ParseError>
         {
             let mut depths = HashMap::new();
             let mut stack = Vec::new();
@@ -618,20 +694,93 @@ Print1
                 blids
             };
 
-            println!("{impulses:?}\n{latches:?}\n{block_ids:?}");
+            let mut block_types = HashMap::new();
+            for bty in inventory::iter::<BlockMeta>()
+            {
+                // TODO: assert unique
+                block_types.insert(UniCase::unicode(bty.type_name), bty);
+            }
 
-            Ok(())
+            let hydrate = |block_name: &UniCase<&str>|
+            {
+                let mut block = lexed.blocks.swap_remove(block_name).unwrap();
+                let mut hydrate = HydrateBlock
+                {
+                    pulsed_outlets: block.pulsed_outlets.iter().map(|(k,v)|
+                    {
+                        (*k, PulsedOutlet
+                        {
+                            plugs: v.iter().map(|plug|
+                            {
+                                Plug
+                                {
+                                    block: *block_ids.get(&plug.target_block_name).unwrap(), // guaranteed to exist earlier
+                                    inlet: plug.inlet,
+                                }
+                            }).collect(),
+                        })
+                    }).collect(),
+                    latching_outlets: block.latching_outlets.iter().map(|(k,v)|
+                    {
+                        (*k, LatchingOutlet
+                        {
+                            plugs: v.iter().map(|plug|
+                            {
+                                Plug
+                                {
+                                    block: *block_ids.get(&plug.target_block_name).unwrap(), // guaranteed to exist earlier
+                                    inlet: plug.inlet,
+                                }
+                            }).collect(),
+                        })
+                    }).collect(),
+                    fields: block.fields
+                };
+
+                let Some(meta) = block_types.get(&block.type_name)
+                    else { return Err(ParseError::UnknownBlockType { type_name: block.type_name }); };
+
+                (meta.hydrate_fn)(&mut hydrate)
+                    .map_err(|e| ParseError::BlockDeserializeError { block_name, error: e })
+
+                // TODO: assert no fields left in hydrate
+            };
+
+            let mut impulse_blocks = Vec::with_capacity(impulses.len());
+            for (block_name, _) in impulses.iter()
+            {
+                impulse_blocks.push(hydrate(block_name)?);
+            }
+            let mut latch_blocks = Vec::with_capacity(latches.len());
+            for (block_name, _) in latches.iter()
+            {
+                latch_blocks.push(hydrate(block_name)?);
+            }
+
+            Ok(Circuit
+            {
+                auto_entries: Box::new([]),
+                signaled_entries: Box::new([]),
+                impulses: impulse_blocks.into_boxed_slice(),
+                latches: latch_blocks.into_boxed_slice(),
+                num_local_vars: 0,
+            })
         }
     }
 
     #[test]
-    fn asdf()
+    fn lex_toml()
     {
+        lex_circuit_dsl("a = \"value\"").unwrap();
+        lex_circuit_dsl("a = 5.123").unwrap();
+        lex_circuit_dsl("a = { x = 1, y = true }").unwrap();
+        lex_circuit_dsl("a = [ 1, 2, 3 ]").unwrap();
+
     }
 }
 
 #[derive(Debug, CircuitBlock, Decode)]
-pub struct DebugPrintz
+pub struct DebugLog
 {
     pub message: String,
     // todo: format strings
@@ -657,4 +806,5 @@ impulses cannot have power-off inlets
 circular wires have correct depth
 output block ordering is depth then insertion order
 impulses and blocks are indexed independently
+end file mid-line
 */
