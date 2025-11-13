@@ -12,6 +12,7 @@ use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use debug_3l14::debug_gui::DebugGui;
 
 #[proc_macros_3l14::asset]
+#[derive(Debug)]
 pub struct Circuit
 {
     pub auto_entries: EntryPoints,
@@ -25,15 +26,18 @@ pub type EntryPoints = Box<[BlockId]>;
 
 struct CircuitLifecycler
 {
-    known_block_types: HashMap<u64, &'static BlockMeta>,
+    known_impulses: HashMap<u64, &'static BlockMeta<0>>,
+    known_latches: HashMap<u64, &'static BlockMeta<1>>,
 }
 impl Default for CircuitLifecycler
 {
     fn default() -> Self
     {
-        let known_block_types = inventory::iter::<BlockMeta>()
+        let known_impulses = inventory::iter::<BlockMeta<0>>()
             .map(|b| (b.type_name_hash, b)).collect();
-        Self { known_block_types }
+        let known_latches = inventory::iter::<BlockMeta<1>>()
+            .map(|b| (b.type_name_hash, b)).collect();
+        Self { known_impulses, known_latches }
     }
 }
 impl AssetLifecycler for CircuitLifecycler

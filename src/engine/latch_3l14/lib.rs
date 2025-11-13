@@ -18,3 +18,4 @@ pub mod block_meta;
 pub mod latches;
 pub mod impulses;
 
+pub use ::impls;

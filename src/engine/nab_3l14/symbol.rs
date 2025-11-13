@@ -5,7 +5,7 @@ macro_rules! define_symbol {
 
     ($name:ident) =>
     {
-        #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, serde::Deserialize)]
         pub struct $name(u32);
         impl $name
         {

@@ -2,7 +2,7 @@ use bitcode::Decode;
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionBuilder};
 use indexmap::IndexMap;
 use latch_3l14::block_meta::{BlockMeta, HydrateBlock};
-use latch_3l14::{BlockKind, Inlet, PulsedOutlet};
+use latch_3l14::{BlockKind, BlockVisitor, ImpulseActions, ImpulseBlock, Inlet, PulsedOutlet, Scope};
 use logos::{Lexer, Logos};
 use proc_macros_3l14::CircuitBlock;
 use serde::Deserialize;
@@ -15,22 +15,25 @@ use unicase::UniCase;
 
 pub struct CircuitBuilder
 {
-    block_types: HashMap<UniCase<&'static str>, &'static BlockMeta>,
 }
 impl CircuitBuilder
 {
     #[must_use]
     pub fn new() -> Self
     {
-        let mut block_types = HashMap::new();
-        for bty in inventory::iter::<BlockMeta>()
-        {
-            block_types.insert(UniCase::unicode(bty.type_name), bty);
-        }
+        // let mut block_types = HashMap::new();
+        // for bty in inventory::iter::<BlockMeta>()
+        // {
+        //     block_types.insert(UniCase::unicode(bty.type_name), bty);
+        // }
 
+        // Self
+        // {
+        //     block_types
+        // }
         Self
         {
-            block_types
+
         }
     }
 }
@@ -500,7 +503,7 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
 mod tests
 {
     use super::*;
-    use latch_3l14::{BlockId, Circuit, LatchingOutlet, Plug};
+    use latch_3l14::{BlockId, Circuit, ImpulseBlock, LatchBlock, LatchingOutlet, Plug};
     use nab_3l14::utils::alloc_slice::alloc_slice_uninit;
 
     #[test]
@@ -544,7 +547,7 @@ Print1
 "#;
 
         let lexed = lex_circuit_dsl(input).unwrap();
-        parse(lexed).unwrap();
+        println!("{:#?}", parse(lexed).unwrap());
 
         #[derive(Debug)]
         enum ParseError<'p>
@@ -694,67 +697,73 @@ Print1
                 blids
             };
 
-            let mut block_types = HashMap::new();
-            for bty in inventory::iter::<BlockMeta>()
-            {
-                // TODO: assert unique
-                block_types.insert(UniCase::unicode(bty.type_name), bty);
-            }
+            let impulse_types: HashMap<_, _> = inventory::iter::<BlockMeta<0>>()
+                .map(|b| (UniCase::unicode(b.type_name), b)).collect();
+            let latch_types: HashMap<_, _> = inventory::iter::<BlockMeta<1>>()
+                .map(|b| (UniCase::unicode(b.type_name), b)).collect();
 
-            let hydrate = |block_name: &UniCase<&str>|
+            let map_plugs = |plugs: &Vec<PlugRef>|
+            {
+                plugs.iter().map(|plug|
+                    {
+                        Plug
+                        {
+                            block: *block_ids.get(&plug.target_block_name).unwrap(), // guaranteed to exist earlier
+                            inlet: plug.inlet,
+                        }
+                    }).collect()
+            };
+
+            let mut impulse_blocks = Vec::with_capacity(impulses.len());
+            for (block_name, _) in impulses.iter()
             {
                 let mut block = lexed.blocks.swap_remove(block_name).unwrap();
                 let mut hydrate = HydrateBlock
                 {
                     pulsed_outlets: block.pulsed_outlets.iter().map(|(k,v)|
                     {
-                        (*k, PulsedOutlet
-                        {
-                            plugs: v.iter().map(|plug|
-                            {
-                                Plug
-                                {
-                                    block: *block_ids.get(&plug.target_block_name).unwrap(), // guaranteed to exist earlier
-                                    inlet: plug.inlet,
-                                }
-                            }).collect(),
-                        })
+                        (*k, PulsedOutlet { plugs: map_plugs(v)  })
                     }).collect(),
-                    latching_outlets: block.latching_outlets.iter().map(|(k,v)|
-                    {
-                        (*k, LatchingOutlet
-                        {
-                            plugs: v.iter().map(|plug|
-                            {
-                                Plug
-                                {
-                                    block: *block_ids.get(&plug.target_block_name).unwrap(), // guaranteed to exist earlier
-                                    inlet: plug.inlet,
-                                }
-                            }).collect(),
-                        })
-                    }).collect(),
+                    latching_outlets: Default::default(),
                     fields: block.fields
                 };
 
-                let Some(meta) = block_types.get(&block.type_name)
+                let Some(meta) = impulse_types.get(&block.type_name)
                     else { return Err(ParseError::UnknownBlockType { type_name: block.type_name }); };
 
-                (meta.hydrate_fn)(&mut hydrate)
-                    .map_err(|e| ParseError::BlockDeserializeError { block_name, error: e })
+                let hydrated = (meta.hydrate_fn)(&mut hydrate)
+                    .map_err(|e| ParseError::BlockDeserializeError { block_name, error: e })?;
 
-                // TODO: assert no fields left in hydrate
-            };
-
-            let mut impulse_blocks = Vec::with_capacity(impulses.len());
-            for (block_name, _) in impulses.iter()
-            {
-                impulse_blocks.push(hydrate(block_name)?);
+                impulse_blocks.push(hydrated);
             }
+
             let mut latch_blocks = Vec::with_capacity(latches.len());
             for (block_name, _) in latches.iter()
             {
-                latch_blocks.push(hydrate(block_name)?);
+                for (block_name, _) in impulses.iter()
+                {
+                    let mut block = lexed.blocks.swap_remove(block_name).unwrap();
+                    let mut hydrate = HydrateBlock
+                    {
+                        pulsed_outlets: block.pulsed_outlets.iter().map(|(k,v)|
+                        {
+                            (*k, PulsedOutlet { plugs: map_plugs(v) })
+                        }).collect(),
+                        latching_outlets: block.latching_outlets.iter().map(|(k,v)|
+                        {
+                            (*k, LatchingOutlet { plugs: map_plugs(v) })
+                        }).collect(),
+                        fields: block.fields
+                    };
+
+                    let Some(meta) = latch_types.get(&block.type_name)
+                    else { return Err(ParseError::UnknownBlockType { type_name: block.type_name }); };
+
+                    let hydrated = (meta.hydrate_fn)(&mut hydrate)
+                        .map_err(|e| ParseError::BlockDeserializeError { block_name, error: e })?;
+
+                    latch_blocks.push(hydrated);
+                }
             }
 
             Ok(Circuit
@@ -786,6 +795,16 @@ pub struct DebugLog
     // todo: format strings
 
     pub outlet: PulsedOutlet,
+}
+impl ImpulseBlock for DebugLog
+{
+    fn pulse(&self, scope: Scope, actions: ImpulseActions) {
+        todo!()
+    }
+
+    fn inspect(&self, visit: BlockVisitor) {
+        todo!()
+    }
 }
 
 /* TODO: test cases:

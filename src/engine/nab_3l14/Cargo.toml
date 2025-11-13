@@ -17,6 +17,7 @@ colog.workspace = true
 log.workspace = true
 metrohash.workspace = true
 parking_lot.workspace = true
+serde.workspace = true
 triomphe.workspace = true
 
 [target.'cfg(not(target_arch="wasm32"))'.dependencies]

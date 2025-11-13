@@ -4,7 +4,7 @@ use crate::vars::VarChange;
 use super::{LatchingOutlet, PulsedOutlet, Scope, LatchBlock, BlockVisitor, LatchActions, VarValue, VarId, ContextfulLatchBlock};
 
 // A no-op, always-active after power-on latch
-// #[derive(CircuitBlock)]
+#[derive(CircuitBlock, Debug)]
 pub struct Latch
 {
     // on_power?
@@ -25,6 +25,7 @@ impl LatchBlock for Latch
     }
 }
 
+#[derive(CircuitBlock, Debug)]
 pub struct ConditionLatch
 {
     pub condition: VarId, // TODO: expression

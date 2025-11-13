@@ -4,7 +4,6 @@ use bitcode::Decode;
 use triomphe::Arc;
 use smallvec::SmallVec;
 use crate::{Runtime, Scope, VarChange};
-use crate::block_meta::BlockMeta;
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone)]
@@ -49,13 +48,12 @@ impl Debug for BlockId
         f.write_fmt(format_args!("[{:?}|{}]", self.kind(), self.value()))
     }
 }
-pub trait Block: Debug
+pub trait Block: Debug + Send
 {
-    fn meta(&self) -> &'static BlockMeta; // todo: better name?
 }
 
 // A block that can perform an action whenever they are pulsed
-pub trait ImpulseBlock: Send
+pub trait ImpulseBlock: Block
 {
     // Called when this block is pulsed
     fn pulse(&self, scope: Scope, actions: ImpulseActions);
@@ -102,7 +100,7 @@ impl LatchActions<'_>
 
 // A block that can be powered on/off, performing an action upon on/off.
 // Will turn off any downstream blocks when turned off
-pub trait LatchBlock: Send
+pub trait LatchBlock: Block
 {
     // Called when this latch gets powered-on
     fn power_on(&self, scope: Scope, actions: LatchActions);
@@ -119,7 +117,7 @@ pub trait LatchBlock: Send
 }
 
 // A latch block that also maintains an internal (runtime-only) state
-pub trait ContextfulLatchBlock: Send // better name?
+pub trait ContextfulLatchBlock: Block // better name?
 {
     type Context: Default + Debug + Send + 'static;
 

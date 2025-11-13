@@ -2,6 +2,7 @@ use std::fmt::{Debug, Formatter};
 use super::{BlockId, InstRunId, ContextfulLatchBlock, BlockKind};
 use smallvec::SmallVec;
 use nab_3l14::utils::alloc_slice::alloc_slice_default;
+use serde::Deserialize;
 use crate::instance::LatchContextStorage;
 use crate::runtime::BlockRef;
 
@@ -12,7 +13,7 @@ pub enum VarScope
     Shared = 1,
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Deserialize)]
 pub struct VarId(u32);
 impl VarId
 {
@@ -62,7 +63,7 @@ pub struct Var
     pub(super) listeners: SmallVec<[BlockRef; 2]>,
 }
 
-#[derive(Default, Debug, PartialEq, Clone)]
+#[derive(Default, Debug, PartialEq, Clone, Deserialize)]
 pub enum VarValue
 {
     #[default]

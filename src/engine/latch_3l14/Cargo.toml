@@ -20,6 +20,7 @@ bitcode.workspace = true
 crossbeam.workspace = true
 dashmap.workspace = true
 erased-serde.workspace = true
+impls.workspace = true
 inventory.workspace = true
 log.workspace = true
 parking_lot.workspace = true
@@ -27,3 +28,4 @@ puffin.workspace = true
 smallvec.workspace = true
 triomphe.workspace = true
 unicase.workspace = true
+serde = { version = "1.0.228", features = ["derive"] }

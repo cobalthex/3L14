@@ -4,6 +4,7 @@ use nab_3l14::utils::ShortTypeName;
 use nab_3l14::Signal;
 use proc_macros_3l14::CircuitBlock;
 
+#[derive(CircuitBlock, Debug)]
 pub struct NoOp
 {
     pub outlet: PulsedOutlet,
@@ -45,6 +46,7 @@ impl ImpulseBlock for DebugPrint
     }
 }
 
+#[derive(CircuitBlock, Debug)]
 pub struct SetVars
 {
     // TODO: multiple vars
@@ -69,6 +71,7 @@ impl ImpulseBlock for SetVars
     }
 }
 
+#[derive(CircuitBlock, Debug)]
 pub struct EmitSignal
 {
     pub signal: Signal,
@@ -89,6 +92,7 @@ impl ImpulseBlock for EmitSignal
     }
 }
 
+#[derive(CircuitBlock, Debug)]
 pub struct PowerOff;
 impl ImpulseBlock for PowerOff
 {

@@ -3,7 +3,7 @@ use proc_macro2::Span;
 use std::hash::Hasher;
 use metrohash::MetroHash64;
 use quote::quote;
-use syn::{parse_macro_input, parse_str, DeriveInput, Fields, Ident, Path, Type};
+use syn::{parse_macro_input, parse_str, DeriveInput, Fields, Ident, Member, Path, Type};
 use syn::Data::Struct;
 
 fn path_contains(container: &Path, containing: &Path) -> bool
@@ -54,7 +54,7 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
 
     let (latch_crate_name, type_name_hash) =
     {
-        let mut name = std::env::var("CARGO_PKG_NAME").unwrap();
+        let name = std::env::var("CARGO_PKG_NAME").unwrap();
         let name_hash =
         {
             let mut hasher = MetroHash64::with_seed(0);
@@ -70,40 +70,55 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
 
     let path_pulsed = path("PulsedOutlet");
     let path_latching = path("LatchingOutlet");
+    let path_impls = path("impls::impls");
+    let path_default_if = path("block_meta::default_if");
 
     let fields: Box<[_]> = match &data.fields
     {
         Fields::Named(named) =>
         {
-            named.named.iter().map(|field| (field.ident.clone().unwrap(), is_outlet(&field.ty, &path_pulsed, &path_latching)) )
+            named.named.iter().map(|field|
+                (Member::Named(field.ident.clone().unwrap()), &field.ty, is_outlet(&field.ty, &path_pulsed, &path_latching)) )
                 .collect()
         },
         Fields::Unnamed(unnamed) =>
         {
-            todo!()
+            unnamed.unnamed.iter().enumerate().map(|(i, field)|
+                (Member::Unnamed(i.into()), &field.ty, is_outlet(&field.ty, &path_pulsed, &path_latching)) )
+                .collect()
         }
         Fields::Unit => { Box::new([]) }
     };
 
-    let hydrate_fn_lines = fields.iter().map(|(ident, is_outlet)|
+    let hydrate_fn_lines = fields.iter().map(|(field, fty, is_outlet)|
     {
-        let fname = ident.to_string();
+        let fname = match field
+        {
+            Member::Named(n) => n.to_string(),
+            Member::Unnamed(i) => i.index.to_string(),
+        };
         match is_outlet
         {
             IsOutlet::No => quote!
             {
-                // TODO: error handling
-                #ident:
+                #field: match hydration.fields.remove(&unicase::UniCase::unicode(#fname))
                 {
-                    if let Some(mut field) = hydration.fields.remove(&unicase::UniCase::unicode(#fname))
+                    Some(mut v) => ::erased_serde::deserialize(&mut v)?,
+                    None =>
                     {
-                        ::erased_serde::deserialize(&mut field)?
+                         const CAN_DEFAULT: bool = #path_impls!(#fty: Default);
+                        #path_default_if::<_, CAN_DEFAULT>()
                     }
-                    else { Default::default() }
                 }
             },
-            IsOutlet::Pulsed => quote! { #ident: hydration.pulsed_outlets.remove(&unicase::UniCase::unicode(#fname)).unwrap_or_default() },
-            IsOutlet::Latching => quote! { #ident: hydration.latching_outlets.remove(&unicase::UniCase::unicode(#fname)).unwrap_or_default() },
+            IsOutlet::Pulsed => quote!
+            {
+                #field: hydration.pulsed_outlets.remove(&unicase::UniCase::unicode(#fname)).unwrap_or_default()
+            },
+            IsOutlet::Latching => quote!
+            {
+                #field: hydration.latching_outlets.remove(&unicase::UniCase::unicode(#fname)).unwrap_or_default()
+            },
         }
     });
 
@@ -111,35 +126,35 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
 
     let typename_str = typename_ident.to_string();
 
-    let meta_ident = Ident::new(&format!("{}_BLOCK_META", typename_str.to_uppercase()), Span::call_site());
     let path_hydrate = path("block_meta::HydrateBlock");
     let path_block = path("Block");
+    let path_latchblock = path("LatchBlock");
+    let path_impulseblock = path("ImpulseBlock");
     let path_blockmeta = path("block_meta::BlockMeta");
-    let path_kind = path("blocks::BlockKind");
-    let path_bothimpls = path("block_meta::CannotImplBothBlockTypes");
 
-    quote!
+    let ts = quote!
     {
-        const #meta_ident: #path_blockmeta = #path_blockmeta
-        {
-            type_name: #typename_str,
-            type_name_hash: #type_name_hash,
-            hydrate_fn: |hydration: &mut #path_hydrate|
-            {
-                Ok(Box::new(#typename_ident
-                {
-                    #(#hydrate_fn_lines),*
-                }))
-            },
-            kind: #path_kind::Impulse, // TODO
-        };
         impl #path_block for #typename_ident
         {
-            fn meta(&self) -> &'static #path_blockmeta { &#meta_ident }
         }
-        impl #path_bothimpls for #typename_ident { }
-        ::inventory::submit! { #meta_ident }
-    }.into()
+        ::inventory::submit!
+        {
+            const BLOCK_KIND_VAL: u8 = #path_impls!(#typename_ident: #path_latchblock) as u8;
+            #path_blockmeta::<BLOCK_KIND_VAL>
+            {
+                type_name: #typename_str,
+                type_name_hash: #type_name_hash,
+                hydrate_fn: |hydration: &mut #path_hydrate|
+                {
+                    Ok(Box::new(#typename_ident
+                    {
+                        #(#hydrate_fn_lines),*
+                    }))
+                },
+            }
+        }
+    }.into();
+    ts
 }
 
 

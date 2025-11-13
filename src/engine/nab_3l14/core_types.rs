@@ -91,46 +91,6 @@ impl std::ops::BitOrAssign for CompletionState
     }
 }
 
-#[macro_export]
-macro_rules! define_runtime_id_u32
-{
-    ($type_name:ident) =>
-    {
-        #[doc="An opaque ID type that can be used to uniquely identify objects during runtime"]
-        #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $type_name
-        {
-            id: u32,
-        }
-        paste::paste!
-        {
-            static [<AUTOGEN_PRIV__ $type_name:snake:upper _COUNTER>]:
-                std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
-        }
-        impl $type_name
-        {
-            pub const INVALID: Self = Self::invalid();
-            pub const fn invalid() -> Self { Self { id: 0 } }
-
-            paste::paste!
-            {
-                #[doc="Generate a new unique ID. Note: there are no ordering guarantees around ID generation"]
-                pub fn new() -> Self { Self
-                {
-                    id: [<AUTOGEN_PRIV__ $type_name:snake:upper _COUNTER>]
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                }}
-            }
-
-            pub fn as_u32(&self) -> u32 { self.id }
-        }
-        impl std::default::Default for $type_name
-        {
-            fn default() -> Self { Self::new() }
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum ToggleState
 {
