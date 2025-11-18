@@ -1,6 +1,7 @@
-use crate::{ImpulseBlock, LatchBlock, LatchingOutlet, PulsedOutlet};
+use crate::{BlockVisitor, ImpulseActions, ImpulseBlock, LatchBlock, LatchingOutlet, PulsedOutlet, Scope};
 use nab_3l14::utils::ShortTypeName;
 use std::collections::HashMap;
+use std::io::Write;
 use unicase::UniCase;
 
 trait WhichBlock
@@ -21,15 +22,24 @@ pub struct HydrateBlock<'de>
     pub fields: HashMap<UniCase<&'de str>, Box<Des<'de>>>,
 }
 
-pub struct BlockMeta<const BLOCK_KIND: u8>
+pub struct BlockDesignMeta<const BLOCK_KIND: u8>
     where BlockKindMapper<BLOCK_KIND>: WhichBlock
 {
     pub type_name: &'static str,
     pub type_name_hash: u64,
-    pub hydrate_fn: fn(&mut HydrateBlock) -> Result<Box<<BlockKindMapper<BLOCK_KIND> as WhichBlock>::Out>, erased_serde::Error>,
+    pub hydrate_and_encode_fn: fn(&mut HydrateBlock) -> Result<Vec<u8>, erased_serde::Error>,
 }
-::inventory::collect!(BlockMeta<0>);
-::inventory::collect!(BlockMeta<1>);
+::inventory::collect!(BlockDesignMeta<0>);
+::inventory::collect!(BlockDesignMeta<1>);
+
+pub struct BlockRuntimeMeta<const BLOCK_KIND: u8>
+    where BlockKindMapper<BLOCK_KIND>: WhichBlock
+{
+    pub type_name_hash: u64,
+    pub decode_fn: fn(&[u8]) -> Result<Box<<BlockKindMapper<BLOCK_KIND> as WhichBlock>::Out>, bitcode::Error>,
+}
+::inventory::collect!(BlockRuntimeMeta<0>);
+::inventory::collect!(BlockRuntimeMeta<1>);
 
 struct NeedsDefault<const B: bool>;
 trait ConditionalDefault<T>  { fn cond_default() -> T; }

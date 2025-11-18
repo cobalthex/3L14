@@ -1,10 +1,11 @@
-use bitcode::Decode;
-use super::{BlockVisitor, ImpulseActions, ImpulseBlock, LatchActions, LatchBlock, PulsedOutlet, Runtime, Scope, VarId, VarValue};
+use bitcode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
+use super::{BlockVisitor, ImpulseActions, ImpulseBlock, PulsedOutlet, Runtime, Scope, VarId, VarValue};
 use nab_3l14::utils::ShortTypeName;
 use nab_3l14::Signal;
 use proc_macros_3l14::CircuitBlock;
 
-#[derive(CircuitBlock, Debug)]
+#[derive(CircuitBlock, Debug, Encode, Decode)]
 pub struct NoOp
 {
     pub outlet: PulsedOutlet,
@@ -23,7 +24,7 @@ impl ImpulseBlock for NoOp
     }
 }
 
-#[derive(CircuitBlock, Decode, Debug)]
+#[derive(CircuitBlock, Debug, Encode, Decode)]
 pub struct DebugPrint
 {
     pub message: String,
@@ -46,7 +47,7 @@ impl ImpulseBlock for DebugPrint
     }
 }
 
-#[derive(CircuitBlock, Debug)]
+#[derive(CircuitBlock, Debug, Encode, Decode)]
 pub struct SetVars
 {
     // TODO: multiple vars
@@ -71,7 +72,7 @@ impl ImpulseBlock for SetVars
     }
 }
 
-#[derive(CircuitBlock, Debug)]
+#[derive(CircuitBlock, Debug, Encode, Decode)]
 pub struct EmitSignal
 {
     pub signal: Signal,
@@ -92,7 +93,7 @@ impl ImpulseBlock for EmitSignal
     }
 }
 
-#[derive(CircuitBlock, Debug)]
+#[derive(CircuitBlock, Debug, Encode, Decode)]
 pub struct PowerOff;
 impl ImpulseBlock for PowerOff
 {

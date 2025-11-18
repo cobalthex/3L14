@@ -1,40 +1,291 @@
-use bitcode::Decode;
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionBuilder};
+use asset_3l14::AssetTypeId;
+use bitcode::{Decode, Encode};
 use indexmap::IndexMap;
-use latch_3l14::block_meta::{BlockMeta, HydrateBlock};
-use latch_3l14::{BlockKind, BlockVisitor, ImpulseActions, ImpulseBlock, Inlet, PulsedOutlet, Scope};
+use latch_3l14::block_meta::{BlockDesignMeta, HydrateBlock};
+use latch_3l14::{BlockId, BlockKind, BlockVisitor, Circuit, CircuitFile, ImpulseActions, ImpulseBlock, Inlet, LatchingOutlet, Plug, PulsedOutlet, Scope};
 use logos::{Lexer, Logos};
+use nab_3l14::{Signal, Symbol};
 use proc_macros_3l14::CircuitBlock;
-use serde::Deserialize;
 use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::error::Error;
-use std::fmt::{Debug, Display};
-use std::io::Read;
+use std::fmt::{Debug, Display, Formatter};
+use std::io::{Read, Write};
 use unicase::UniCase;
+
+#[derive(Debug)]
+pub enum ParseError
+{
+    AutoEntryPointsToUndefinedBlock { block_name: String },
+    SignalEntryPointsToUndefinedBlock { signal: String, block_name: String },
+    OutletPointsToUndefinedBlock { block_name: String },
+    ImpulseBlockContainsLatchingOutlets { block_name: String },
+    PulsedPlugPointsToUndefinedBlock { block_name: String, outlet_name: String, target_block_name: String },
+    LatchingPlugPointsToUndefinedBlock { block_name: String, outlet_name: String, target_block_name: String },
+    ImpulsesDoNotHavePowerOffInlets { block_name: String, outlet_name: String, target_block_name: String },
+    BlockDeserializeError { block_name: String, error: erased_serde::Error },
+    UnknownBlockType { type_name: String },
+}
+impl Display for ParseError
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    {
+        Debug::fmt(self, f)
+    }
+}
+impl Error for ParseError { }
+
+struct CircuitParse
+{
+    circuit: CircuitFile,
+    // TODO: debug data
+    block_mem: Vec<u8>,
+}
 
 pub struct CircuitBuilder
 {
+    known_impulses: HashMap<UniCase<&'static str>, &'static BlockDesignMeta<0>>,
+    known_latches: HashMap<UniCase<&'static str>, &'static BlockDesignMeta<1>>,
 }
 impl CircuitBuilder
 {
     #[must_use]
     pub fn new() -> Self
     {
-        // let mut block_types = HashMap::new();
-        // for bty in inventory::iter::<BlockMeta>()
-        // {
-        //     block_types.insert(UniCase::unicode(bty.type_name), bty);
-        // }
+        let known_impulses = inventory::iter::<BlockDesignMeta<0>>()
+            .map(|b| (UniCase::unicode(b.type_name), b)).collect();
+        let known_latches = inventory::iter::<BlockDesignMeta<1>>()
+            .map(|b| (UniCase::unicode(b.type_name), b)).collect();
+        Self { known_impulses, known_latches }
+    }
 
-        // Self
-        // {
-        //     block_types
-        // }
-        Self
+    fn parse(&self, mut lexed: CircuitLex) -> Result<CircuitParse, ParseError>
+    {
+        let mut depths = HashMap::new();
+        let mut stack = Vec::new();
+        for entry in lexed.auto_entries.iter()
         {
+            if !lexed.blocks.contains_key(entry)
+            {
+                return Err(ParseError::AutoEntryPointsToUndefinedBlock { block_name: entry.to_string() });
+            }
 
+            depths.entry(*entry).or_insert(0u32);
+            stack.push(*entry);
         }
+        for (signal, entries) in lexed.signal_entries.iter()
+        {
+            for entry in entries
+            {
+                if !lexed.blocks.contains_key(entry)
+                {
+                    return Err(ParseError::SignalEntryPointsToUndefinedBlock { signal: signal.to_string(), block_name: entry.to_string() });
+                }
+
+                depths.entry(*entry).or_insert(0u32);
+                stack.push(*entry);
+            }
+        }
+
+        while let Some(block_name) = stack.pop()
+        {
+            let block = lexed.blocks.get(&block_name)
+                .expect("Block should not be pushed onto depth stack if it doesn't exist");
+
+            if let BlockKind::Impulse = block.kind &&
+                !block.latching_outlets.is_empty()
+            {
+                return Err(ParseError::ImpulseBlockContainsLatchingOutlets { block_name: block_name.to_string() });
+            }
+
+            let depth = depths.get(&block_name).unwrap() + 1;
+            for (outlet_name, plugs) in block.pulsed_outlets.iter()
+            {
+                for PlugLex { target_block_name, inlet } in plugs.iter()
+                {
+                    let Some(target_block) = lexed.blocks.get(target_block_name)
+                    else { return Err(ParseError::PulsedPlugPointsToUndefinedBlock
+                    {
+                        block_name: block_name.to_string(),
+                        outlet_name: outlet_name.to_string(),
+                        target_block_name: target_block_name.to_string(),
+                    }) };
+
+                    if let Inlet::PowerOff = inlet &&
+                        let BlockKind::Impulse = target_block.kind
+                    {
+                        return Err(ParseError::ImpulsesDoNotHavePowerOffInlets
+                        {
+                            block_name: block_name.to_string(),
+                            outlet_name: outlet_name.to_string(),
+                            target_block_name: target_block_name.to_string(),
+                        });
+                    }
+
+                    let target_depth = depths.entry(*target_block_name).or_insert(u32::MAX);
+                    if *target_depth > depth
+                    {
+                        *target_depth = depth;
+                        stack.push(*target_block_name);
+                    }
+                }
+            }
+
+            for (outlet_name, plugs) in block.latching_outlets.iter()
+            {
+                for PlugLex { target_block_name, inlet } in plugs.iter()
+                {
+                    let Some(target_block) = lexed.blocks.get(target_block_name)
+                    else { return Err(ParseError::LatchingPlugPointsToUndefinedBlock
+                    {
+                        block_name: block_name.to_string(),
+                        outlet_name: outlet_name.to_string(),
+                        target_block_name: target_block_name.to_string(),
+                    }) };
+
+                    if let Inlet::PowerOff = inlet &&
+                        let BlockKind::Impulse = target_block.kind
+                    {
+                        return Err(ParseError::ImpulsesDoNotHavePowerOffInlets
+                        {
+                            block_name: block_name.to_string(),
+                            outlet_name: outlet_name.to_string(),
+                            target_block_name: target_block_name.to_string(),
+                        });
+                    }
+
+                    let target_depth = depths.entry(*target_block_name).or_insert(u32::MAX);
+                    if *target_depth > depth
+                    {
+                        *target_depth = depth;
+                        stack.push(*target_block_name);
+                    }
+                }
+            }
+        }
+
+        let mut impulses = Vec::new();
+        let mut latches = Vec::new();
+        for (block_name, block) in lexed.blocks.iter()
+        {
+            let Some(depth) = depths.get(block_name) else { continue };
+            match block.kind
+            {
+                BlockKind::Impulse => impulses.push((*block_name, depth)),
+                BlockKind::Latch => latches.push((*block_name, depth)),
+            }
+        }
+        // these will sort stable and fallback to insertion order (maintained by the indexmap) if the same
+        impulses.sort_by(|a, b| a.1.cmp(&b.1));
+        latches.sort_by(|a, b| a.1.cmp(&b.1));
+
+        let block_ids =
+            {
+                let mut blids = HashMap::new();
+                for (i, (name, _)) in impulses.iter().enumerate()
+                {
+                    blids.insert(name, BlockId::impulse(i as u32));
+                }
+                for (i, (name, _)) in latches.iter().enumerate()
+                {
+                    blids.insert(name, BlockId::latch(i as u32));
+                }
+                blids
+            };
+
+        let impulse_types: HashMap<_, _> = inventory::iter::<BlockDesignMeta<0>>()
+            .map(|b| (UniCase::unicode(b.type_name), b)).collect();
+        let latch_types: HashMap<_, _> = inventory::iter::<BlockDesignMeta<1>>()
+            .map(|b| (UniCase::unicode(b.type_name), b)).collect();
+
+        let map_plugs = |plugs: &Vec<PlugLex>|
+            {
+                plugs.iter().map(|plug|
+                {
+                    Plug
+                    {
+                        block: *block_ids.get(&plug.target_block_name).unwrap(), // guaranteed to exist earlier
+                        inlet: plug.inlet,
+                    }
+                }).collect()
+            };
+
+        let mut block_mem = Vec::new();
+
+        let mut impulse_blocks = Vec::with_capacity(impulses.len());
+        for (block_name, _) in impulses.iter()
+        {
+            let mut block = lexed.blocks.get_mut(block_name).unwrap();
+            let mut hydrate = HydrateBlock
+            {
+                pulsed_outlets: block.pulsed_outlets.iter().map(|(k,v)|
+                    {
+                        (*k, PulsedOutlet { plugs: map_plugs(v) })
+                    }).collect(),
+                latching_outlets: Default::default(),
+                fields: std::mem::take(&mut block.fields)
+            };
+
+            let Some(meta) = impulse_types.get(&block.type_name)
+            else { return Err(ParseError::UnknownBlockType { type_name: block.type_name.to_string() }); };
+
+            let mut encoded = (meta.hydrate_and_encode_fn)(&mut hydrate)
+                .map_err(|e| ParseError::BlockDeserializeError { block_name: block_name.to_string(), error: e })?;
+            let size = encoded.len();
+            block_mem.append(&mut encoded);
+
+            impulse_blocks.push((meta.type_name_hash, size as u64));
+        }
+
+        let mut latch_blocks = Vec::with_capacity(latches.len());
+        for (block_name, _) in latches.iter()
+        {
+            let mut block = lexed.blocks.get_mut(block_name).unwrap();
+            let mut hydrate = HydrateBlock
+            {
+                pulsed_outlets: block.pulsed_outlets.iter().map(|(k,v)|
+                    {
+                        (*k, PulsedOutlet { plugs: map_plugs(v) })
+                    }).collect(),
+                latching_outlets: block.latching_outlets.iter().map(|(k,v)|
+                    {
+                        (*k, LatchingOutlet { plugs: map_plugs(v) })
+                    }).collect(),
+                fields: std::mem::take(&mut block.fields)
+            };
+
+            let Some(meta) = latch_types.get(&block.type_name)
+            else { return Err(ParseError::UnknownBlockType { type_name: block.type_name.to_string() }); };
+
+            let mut encoded = (meta.hydrate_and_encode_fn)(&mut hydrate)
+                .map_err(|e| ParseError::BlockDeserializeError { block_name: block_name.to_string(), error: e })?;
+            let size = encoded.len();
+            block_mem.append(&mut encoded);
+
+            latch_blocks.push((meta.type_name_hash, size as u64));
+        }
+
+        Ok(CircuitParse
+        {
+            circuit: CircuitFile
+            {
+                auto_entries: lexed.auto_entries.iter().map(|entry|
+                {
+                    block_ids.get(entry).unwrap().clone()
+                }).collect(),
+                signaled_entries: lexed.signal_entries.iter().map(|(name, entries)|
+                {
+                    let signal = <Signal as Symbol>::INVALID; // TODO
+                    let sigentries = entries.iter().map(|entry| block_ids.get(entry).unwrap().clone()).collect();
+                    (signal, sigentries)
+                }).collect(),
+                impulses: impulse_blocks.into_boxed_slice(),
+                latches: latch_blocks.into_boxed_slice(),
+                num_local_vars: 0, // todo
+            },
+            block_mem,
+        })
     }
 }
 impl AssetBuilderMeta for CircuitBuilder
@@ -64,23 +315,27 @@ impl AssetBuilder for CircuitBuilder
 
     fn build_assets(&self, config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
-        // todo: lex DSL
-        // order blocks based on depth
-        // generate properties for outlets on blocks
-        // deserialize blocks
-        // deserialize circuit
-        // split out debug data
+        // TODO: split out debug data
 
-        let mut str = String::new();
-        input.read_to_string(&mut str)?;
-        let lexed = lex_circuit_dsl(&str);
-        todo!()
+        outputs.add_output(AssetTypeId::Circuit, |output|
+            {
+                let mut str = String::new();
+                input.read_to_string(&mut str)?;
+                let lexed = lex_circuit_dsl(&str)?;
+                let circuit = self.parse(lexed)?;
+                output.serialize(&circuit.circuit)?;
+                output.write_all(&circuit.block_mem)?;
+
+                // TODO: debug data
+                Ok(())
+            })?;
+        Ok(())
     }
 }
 
 #[derive(Logos)]
 #[logos(skip r"[ \t\r\f]+")]
-#[logos(skip r"#[^\n]*")] // TODO: should this consume the newline?
+#[logos(skip r"#[^\n]*")]
 #[logos(extras = FilePos)]
 enum Token<'p>
 {
@@ -104,7 +359,7 @@ enum Token<'p>
     AutoEntry,
 
     #[token("=", lex_toml)]
-    Assignment(Result<Box<dyn erased_serde::Deserializer<'p> + 'p>, LexerError<'p>>),
+    Assignment(Result<Box<dyn erased_serde::Deserializer<'p> + 'p>, LexerError>),
 
     #[token("\n", newline_callback)]
     NewLine,
@@ -112,7 +367,8 @@ enum Token<'p>
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
     Identifier(&'p str),
 }
-fn lex_toml<'p>(lex: &mut Lexer<'p, Token<'p>>) -> Result<Box<dyn erased_serde::Deserializer<'p> + 'p>, LexerError<'p>>
+
+fn lex_toml<'p>(lex: &mut Lexer<'p, Token<'p>>) -> Result<Box<dyn erased_serde::Deserializer<'p> + 'p>, LexerError>
 {
     // todo: this would be cleaner as a nested lexer
 
@@ -136,10 +392,10 @@ fn lex_toml<'p>(lex: &mut Lexer<'p, Token<'p>>) -> Result<Box<dyn erased_serde::
                 Ok(v) => v,
                 Err(e) => return Err(LexerError
                 {
-                    kind: LexerErrorKind::InvalidTomlValue { value: s, error: e },
+                    kind: LexerErrorKind::InvalidTomlValue { value: s.to_string(), error: e },
                     line: lex.extras.line,
                     column: lex.extras.column,
-                    token: lex.slice(),
+                    token: lex.slice().to_string(),
                 })
             };
             lex.bump(s.len() + 1);
@@ -150,7 +406,7 @@ fn lex_toml<'p>(lex: &mut Lexer<'p, Token<'p>>) -> Result<Box<dyn erased_serde::
             kind: LexerErrorKind::ExpectedFieldValue,
             line: lex.extras.line,
             column: lex.extras.column,
-            token: lex.slice(),
+            token: lex.slice().to_string(),
         })
     };
 
@@ -164,10 +420,10 @@ fn lex_toml<'p>(lex: &mut Lexer<'p, Token<'p>>) -> Result<Box<dyn erased_serde::
                 Ok(v) => v,
                 Err(e) => return Err(LexerError
                 {
-                    kind: LexerErrorKind::InvalidTomlValue { value: s, error: e },
+                    kind: LexerErrorKind::InvalidTomlValue { value: s.to_string(), error: e },
                     line: lex.extras.line,
                     column: lex.extras.column,
-                    token: lex.slice(),
+                    token: lex.slice().to_string(),
                 })
             };
             lex.bump(n + 2);
@@ -181,7 +437,7 @@ fn lex_toml<'p>(lex: &mut Lexer<'p, Token<'p>>) -> Result<Box<dyn erased_serde::
         kind: LexerErrorKind::ExpectedTomlValueTerminator,
         line: lex.extras.line,
         column: lex.extras.column,
-        token: lex.slice(),
+        token: lex.slice().to_string(),
     });
 }
 fn newline_callback<'p>(lexer: &mut Lexer<'p, Token<'p>>)
@@ -190,40 +446,41 @@ fn newline_callback<'p>(lexer: &mut Lexer<'p, Token<'p>>)
     lexer.extras.column = lexer.span().start;
 }
 
+// TODO: owned
 #[derive(Debug, Clone, PartialEq)]
-pub enum LexerErrorKind<'p>
+pub enum LexerErrorKind
 {
     UnknownToken,
-    InvalidTomlValue { value: &'p str, error: toml::de::Error },
-    MissingPropertyValue { property: &'p str },
+    InvalidTomlValue { value: String, error: toml::de::Error },
+    MissingPropertyValue { property: String },
     ExpectedTargetBlock,
     ExpectedBlockType,
     ExpectedBlockName,
     ExpectedBlockDefTerminator,
-    ImpulseBlockLatchedOutlet { block_name: &'p str },
+    ImpulseBlockLatchedOutlet { block_name: String },
     ExpectedEndOfLine,
     ExpectedSignalName,
     DuplicateAutoEntry,
-    DuplicateBlockName { block_name: &'p str },
-    DuplicateField { field: &'p str },
+    DuplicateBlockName { block_name: String },
+    DuplicateField { field: String },
     ExpectedTomlValueTerminator,
     UnexpectedKeyValue,
     ExpectedFieldValue,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct LexerError<'p>
+struct LexerError
 {
-    pub kind: LexerErrorKind<'p>,
+    pub kind: LexerErrorKind,
     pub line: usize,
     pub column: usize,
-    pub token: &'p str,
+    pub token: String,
 }
-impl Display for LexerError<'_>
+impl Display for LexerError
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { std::fmt::Debug::fmt(&self, f) }
 }
-impl std::error::Error for LexerError<'_> { }
+impl std::error::Error for LexerError { }
 
 struct FilePos
 {
@@ -238,16 +495,16 @@ impl Default for FilePos
     }
 }
 
-struct PlugRef<'p>
+struct PlugLex<'p>
 {
     pub target_block_name: UniCase<&'p str>,
     pub inlet: Inlet,
 }
 
-type Outlets<'p> = HashMap<UniCase<&'p str>, Vec<PlugRef<'p>>>;
+type Outlets<'p> = HashMap<UniCase<&'p str>, Vec<PlugLex<'p>>>;
 type Fields<'p> = HashMap<UniCase<&'p str>, Box<dyn erased_serde::Deserializer<'p> + 'p>>;
 
-struct BlockDef<'p>
+struct BlockLex<'p>
 {
     pub type_name: UniCase<&'p str>,
     pub kind: BlockKind,
@@ -257,10 +514,10 @@ struct BlockDef<'p>
     pub fields: Fields<'p>,
 }
 
-struct CircuitDef<'p>
+struct CircuitLex<'p>
 {
     pub metadata: Fields<'p>,
-    pub blocks: IndexMap<UniCase<&'p str>, BlockDef<'p>>,
+    pub blocks: IndexMap<UniCase<&'p str>, BlockLex<'p>>,
     pub auto_entries: Vec<UniCase<&'p str>>,
     pub signal_entries: HashMap<&'p str, SmallVec<[UniCase<&'p str>; 4]>>,
 }
@@ -268,15 +525,15 @@ struct CircuitDef<'p>
 enum LexerState<'p>
 {
     Metadata,
-    ImpulseBlock(BlockDef<'p>),
-    LatchBlock(BlockDef<'p>),
+    ImpulseBlock(BlockLex<'p>),
+    LatchBlock(BlockLex<'p>),
     AutoEntry,
     SignalEntry(&'p str, SmallVec<[UniCase<&'p str>; 4]>),
 }
 
 type CircuitLexer<'p> = Lexer<'p, Token<'p>>;
 
-pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
+fn lex_circuit_dsl<'p>(input: &'p str) -> Result<CircuitLex<'p>, LexerError>
 {
     let mut lexer = CircuitLexer::with_extras(&input, FilePos::default());
 
@@ -295,7 +552,7 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
             kind: $err,
             line: lexer.extras.line,
             column: lexer.extras.column,
-            token: lexer.slice(),
+            token: lexer.slice().to_string(),
         })
     } }
 
@@ -305,13 +562,13 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
         {
             Some(Ok(Token::Identifier(target_block_name))) =>
             {
-                Ok(PlugRef { target_block_name: UniCase::unicode(target_block_name), inlet: Inlet::Pulse })
+                Ok(PlugLex { target_block_name: UniCase::unicode(target_block_name), inlet: Inlet::Pulse })
             },
             Some(Ok(Token::PowerOff)) =>
             {
                 let Some(Ok(Token::Identifier(target_block_name))) = lexer.next()
                     else { error!(LexerErrorKind::ExpectedTargetBlock); };
-                Ok(PlugRef { target_block_name: UniCase::unicode(target_block_name), inlet: Inlet::PowerOff })
+                Ok(PlugLex { target_block_name: UniCase::unicode(target_block_name), inlet: Inlet::PowerOff })
             }
             _ => error!(LexerErrorKind::ExpectedTargetBlock)
         }
@@ -340,7 +597,7 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
         let Some(Ok(Token::Identifier(block_name))) = lexer.next()
             else { error!(LexerErrorKind::ExpectedBlockName) };
 
-        Ok(BlockDef
+        Ok(BlockLex
         {
             type_name: UniCase::unicode(block_type),
             kind: $block_kind,
@@ -368,7 +625,7 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
                 let name = impulse.name;
                 if let Some(_) = blocks.insert(name, impulse)
                 {
-                    error!(LexerErrorKind::DuplicateBlockName { block_name: name.into_inner() });
+                    error!(LexerErrorKind::DuplicateBlockName { block_name: name.to_string() });
                 }
             },
             LexerState::LatchBlock(latch) =>
@@ -376,7 +633,7 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
                 let name = latch.name;
                 if let Some(_) = blocks.insert(name, latch)
                 {
-                    error!(LexerErrorKind::DuplicateBlockName { block_name: name.into_inner() });
+                    error!(LexerErrorKind::DuplicateBlockName { block_name: name.to_string() });
                 }
             },
             LexerState::SignalEntry(signal, entries) =>
@@ -452,7 +709,7 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
                             };
                             if existing.is_some()
                             {
-                                error!(LexerErrorKind::DuplicateField { field: id });
+                                error!(LexerErrorKind::DuplicateField { field: id.to_string() });
                             }
                         }
 
@@ -496,15 +753,13 @@ pub fn lex_circuit_dsl(input: &str) -> Result<CircuitDef<'_>, LexerError<'_>>
     }
 
     set_state!(LexerState::Metadata);
-    Ok(CircuitDef { metadata, blocks, auto_entries, signal_entries })
+    Ok(CircuitLex { metadata, blocks, auto_entries, signal_entries })
 }
 
 #[cfg(test)]
 mod tests
 {
     use super::*;
-    use latch_3l14::{BlockId, Circuit, ImpulseBlock, LatchBlock, LatchingOutlet, Plug};
-    use nab_3l14::utils::alloc_slice::alloc_slice_uninit;
 
     #[test]
     fn basic()
@@ -547,234 +802,8 @@ Print1
 "#;
 
         let lexed = lex_circuit_dsl(input).unwrap();
-        println!("{:#?}", parse(lexed).unwrap());
+        // println!("{:#?}", parse_circuit_dsl(lexed).unwrap());
 
-        #[derive(Debug)]
-        enum ParseError<'p>
-        {
-            AutoEntryPointsToUndefinedBlock { block_name: &'p str },
-            SignalEntryPointsToUndefinedBlock { signal: &'p str, block_name: &'p str },
-            OutletPointsToUndefinedBlock { block_name: &'p str },
-            ImpulseBlockContainsLatchingOutlets { block_name: &'p str },
-            PulsedPlugPointsToUndefinedBlock { block_name: &'p str, outlet_name: &'p str, target_block_name: &'p str },
-            LatchingPlugPointsToUndefinedBlock { block_name: &'p str, outlet_name: &'p str, target_block_name: &'p str },
-            ImpulsesDoNotHavePowerOffInlets { block_name: &'p str, outlet_name: &'p str, target_block_name: &'p str },
-            BlockDeserializeError { block_name: &'p str, error: erased_serde::Error },
-            UnknownBlockType { type_name: UniCase<&'p str> },
-        }
-
-        fn parse(mut lexed: CircuitDef) -> Result<Circuit, ParseError>
-        {
-            let mut depths = HashMap::new();
-            let mut stack = Vec::new();
-            for entry in lexed.auto_entries
-            {
-                if !lexed.blocks.contains_key(&entry)
-                {
-                    return Err(ParseError::AutoEntryPointsToUndefinedBlock { block_name: entry.into_inner() });
-                }
-
-                depths.entry(entry).or_insert(0u32);
-                stack.push(entry);
-            }
-            for (signal, entries) in lexed.signal_entries
-            {
-                for entry in entries
-                {
-                    if !lexed.blocks.contains_key(&entry)
-                    {
-                        return Err(ParseError::SignalEntryPointsToUndefinedBlock { signal, block_name: entry.into_inner() });
-                    }
-
-                    depths.entry(entry).or_insert(0u32);
-                    stack.push(entry);
-                }
-            }
-
-            while let Some(block_name) = stack.pop()
-            {
-                let block = lexed.blocks.get(&block_name)
-                    .expect("Block should not be pushed onto depth stack if it doesn't exist");
-
-                if let BlockKind::Impulse = block.kind &&
-                    !block.latching_outlets.is_empty()
-                {
-                    return Err(ParseError::ImpulseBlockContainsLatchingOutlets { block_name: block_name.into_inner() });
-                }
-
-                let depth = depths.get(&block_name).unwrap() + 1;
-                for (outlet_name, plugs) in block.pulsed_outlets.iter()
-                {
-                    for PlugRef { target_block_name, inlet } in plugs.iter()
-                    {
-                        let Some(target_block) = lexed.blocks.get(target_block_name)
-                            else { return Err(ParseError::PulsedPlugPointsToUndefinedBlock
-                            {
-                                block_name: block_name.into_inner(),
-                                outlet_name: outlet_name.into_inner(),
-                                target_block_name: target_block_name.into_inner(),
-                            }) };
-
-                        if let Inlet::PowerOff = inlet &&
-                            let BlockKind::Impulse = target_block.kind
-                        {
-                            return Err(ParseError::ImpulsesDoNotHavePowerOffInlets
-                            {
-                                block_name: block_name.into_inner(),
-                                outlet_name: outlet_name.into_inner(),
-                                target_block_name: target_block_name.into_inner(),
-                            });
-                        }
-
-                        let target_depth = depths.entry(*target_block_name).or_insert(u32::MAX);
-                        if *target_depth > depth
-                        {
-                            *target_depth = depth;
-                            stack.push(*target_block_name);
-                        }
-                    }
-                }
-
-                for (outlet_name, plugs) in block.latching_outlets.iter()
-                {
-                    for PlugRef { target_block_name, inlet } in plugs.iter()
-                    {
-                        let Some(target_block) = lexed.blocks.get(target_block_name)
-                            else { return Err(ParseError::LatchingPlugPointsToUndefinedBlock
-                            {
-                                block_name: block_name.into_inner(),
-                                outlet_name: outlet_name.into_inner(),
-                                target_block_name: target_block_name.into_inner(),
-                            }) };
-
-                        if let Inlet::PowerOff = inlet &&
-                            let BlockKind::Impulse = target_block.kind
-                        {
-                            return Err(ParseError::ImpulsesDoNotHavePowerOffInlets
-                            {
-                                block_name: block_name.into_inner(),
-                                outlet_name: outlet_name.into_inner(),
-                                target_block_name: target_block_name.into_inner(),
-                            });
-                        }
-
-                        let target_depth = depths.entry(*target_block_name).or_insert(u32::MAX);
-                        if *target_depth > depth
-                        {
-                            *target_depth = depth;
-                            stack.push(*target_block_name);
-                        }
-                    }
-                }
-            }
-
-            let mut impulses = Vec::new();
-            let mut latches = Vec::new();
-            for (block_name, block) in lexed.blocks.iter()
-            {
-                let Some(depth) = depths.get(block_name) else { continue };
-                match block.kind
-                {
-                    BlockKind::Impulse => impulses.push((*block_name, depth)),
-                    BlockKind::Latch => latches.push((*block_name, depth)),
-                }
-            }
-            // these will sort stable and fallback to insertion order (maintained by the indexmap) if the same
-            impulses.sort_by(|a, b| a.1.cmp(&b.1));
-            latches.sort_by(|a, b| a.1.cmp(&b.1));
-
-            let block_ids =
-            {
-                let mut blids = HashMap::new();
-                for (i, (name, _)) in impulses.iter().enumerate()
-                {
-                    blids.insert(name, BlockId::impulse(i as u32));
-                }
-                for (i, (name, _)) in latches.iter().enumerate()
-                {
-                    blids.insert(name, BlockId::latch(i as u32));
-                }
-                blids
-            };
-
-            let impulse_types: HashMap<_, _> = inventory::iter::<BlockMeta<0>>()
-                .map(|b| (UniCase::unicode(b.type_name), b)).collect();
-            let latch_types: HashMap<_, _> = inventory::iter::<BlockMeta<1>>()
-                .map(|b| (UniCase::unicode(b.type_name), b)).collect();
-
-            let map_plugs = |plugs: &Vec<PlugRef>|
-            {
-                plugs.iter().map(|plug|
-                    {
-                        Plug
-                        {
-                            block: *block_ids.get(&plug.target_block_name).unwrap(), // guaranteed to exist earlier
-                            inlet: plug.inlet,
-                        }
-                    }).collect()
-            };
-
-            let mut impulse_blocks = Vec::with_capacity(impulses.len());
-            for (block_name, _) in impulses.iter()
-            {
-                let mut block = lexed.blocks.swap_remove(block_name).unwrap();
-                let mut hydrate = HydrateBlock
-                {
-                    pulsed_outlets: block.pulsed_outlets.iter().map(|(k,v)|
-                    {
-                        (*k, PulsedOutlet { plugs: map_plugs(v)  })
-                    }).collect(),
-                    latching_outlets: Default::default(),
-                    fields: block.fields
-                };
-
-                let Some(meta) = impulse_types.get(&block.type_name)
-                    else { return Err(ParseError::UnknownBlockType { type_name: block.type_name }); };
-
-                let hydrated = (meta.hydrate_fn)(&mut hydrate)
-                    .map_err(|e| ParseError::BlockDeserializeError { block_name, error: e })?;
-
-                impulse_blocks.push(hydrated);
-            }
-
-            let mut latch_blocks = Vec::with_capacity(latches.len());
-            for (block_name, _) in latches.iter()
-            {
-                for (block_name, _) in impulses.iter()
-                {
-                    let mut block = lexed.blocks.swap_remove(block_name).unwrap();
-                    let mut hydrate = HydrateBlock
-                    {
-                        pulsed_outlets: block.pulsed_outlets.iter().map(|(k,v)|
-                        {
-                            (*k, PulsedOutlet { plugs: map_plugs(v) })
-                        }).collect(),
-                        latching_outlets: block.latching_outlets.iter().map(|(k,v)|
-                        {
-                            (*k, LatchingOutlet { plugs: map_plugs(v) })
-                        }).collect(),
-                        fields: block.fields
-                    };
-
-                    let Some(meta) = latch_types.get(&block.type_name)
-                    else { return Err(ParseError::UnknownBlockType { type_name: block.type_name }); };
-
-                    let hydrated = (meta.hydrate_fn)(&mut hydrate)
-                        .map_err(|e| ParseError::BlockDeserializeError { block_name, error: e })?;
-
-                    latch_blocks.push(hydrated);
-                }
-            }
-
-            Ok(Circuit
-            {
-                auto_entries: Box::new([]),
-                signaled_entries: Box::new([]),
-                impulses: impulse_blocks.into_boxed_slice(),
-                latches: latch_blocks.into_boxed_slice(),
-                num_local_vars: 0,
-            })
-        }
     }
 
     #[test]
@@ -788,7 +817,7 @@ Print1
     }
 }
 
-#[derive(Debug, CircuitBlock, Decode)]
+#[derive(Debug, CircuitBlock, Encode, Decode)]
 pub struct DebugLog
 {
     pub message: String,

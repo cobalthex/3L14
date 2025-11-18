@@ -1,10 +1,11 @@
+use bitcode::{Decode, Encode};
 use nab_3l14::utils::ShortTypeName;
 use proc_macros_3l14::CircuitBlock;
 use crate::vars::VarChange;
 use super::{LatchingOutlet, PulsedOutlet, Scope, LatchBlock, BlockVisitor, LatchActions, VarValue, VarId, ContextfulLatchBlock};
 
 // A no-op, always-active after power-on latch
-#[derive(CircuitBlock, Debug)]
+#[derive(CircuitBlock, Debug, Encode, Decode)]
 pub struct Latch
 {
     // on_power?
@@ -25,7 +26,7 @@ impl LatchBlock for Latch
     }
 }
 
-#[derive(CircuitBlock, Debug)]
+#[derive(CircuitBlock, Debug, Encode, Decode)]
 pub struct ConditionLatch
 {
     pub condition: VarId, // TODO: expression
@@ -38,7 +39,7 @@ pub struct ConditionLatch
 
     pub powered_outlet: LatchingOutlet,
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Encode, Decode)]
 pub struct ConditionLatchContext
 {
     known_value: bool,

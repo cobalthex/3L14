@@ -1,8 +1,9 @@
 use std::fmt::{Debug, Formatter};
+use bitcode::{Decode, Encode};
+use serde::Deserialize;
 use super::{BlockId, InstRunId, ContextfulLatchBlock, BlockKind};
 use smallvec::SmallVec;
 use nab_3l14::utils::alloc_slice::alloc_slice_default;
-use serde::Deserialize;
 use crate::instance::LatchContextStorage;
 use crate::runtime::BlockRef;
 
@@ -13,7 +14,7 @@ pub enum VarScope
     Shared = 1,
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Copy, Deserialize, Encode, Decode)]
 pub struct VarId(u32);
 impl VarId
 {
@@ -63,7 +64,7 @@ pub struct Var
     pub(super) listeners: SmallVec<[BlockRef; 2]>,
 }
 
-#[derive(Default, Debug, PartialEq, Clone, Deserialize)]
+#[derive(Default, Debug, PartialEq, Clone, Encode, Decode, Deserialize)]
 pub enum VarValue
 {
     #[default]
@@ -76,11 +77,10 @@ pub enum VarValue
     Vec3 { x: f32, y: f32, z: f32 },
     Vec4 { x: f32, y: f32, z: f32, w: f32 },
 
-    List(Vec<VarValue>), // TODO: this needs to not be copied
     // Vec2, Vec3, Vec4
     // Entity
     // Asset?
-    // Array
+    // Array/List
     // Map
 }
 

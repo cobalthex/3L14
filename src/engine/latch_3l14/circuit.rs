@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::error::Error;
-use crate::block_meta::BlockMeta;
+use crate::block_meta::{BlockDesignMeta, BlockRuntimeMeta};
 use crate::blocks::PlugList;
 use crate::vars::ScopeChanges;
 use crate::{BlockId, ImpulseActions, ImpulseBlock, InstRunId, LatchActions, LatchBlock, LocalScope, Runtime, Scope, SharedScope};
 use nab_3l14::Signal;
 use std::fmt::Debug;
-use std::hash::Hasher;
+use bitcode::{Decode, Encode};
 use triomphe::Arc;
 use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use debug_3l14::debug_gui::DebugGui;
@@ -22,20 +22,42 @@ pub struct Circuit
     pub num_local_vars: u32,
 }
 
+#[derive(Encode, Decode)]
+pub struct CircuitFile
+{
+    pub auto_entries: EntryPoints,
+    pub signaled_entries: Box<[(Signal, EntryPoints)]>,
+    pub impulses: Box<[(u64, u64)]>,
+    pub latches: Box<[(u64, u64)]>,
+    pub num_local_vars: u32,
+}
+
+#[derive(Encode, Decode)]
+pub struct BlockDebugData<'b>
+{
+    name: &'b str,
+}
+
+#[derive(Encode, Decode)]
+pub struct CircuitDebugData<'d>
+{
+    block_names: &'d[&'d str]
+}
+
 pub type EntryPoints = Box<[BlockId]>;
 
 struct CircuitLifecycler
 {
-    known_impulses: HashMap<u64, &'static BlockMeta<0>>,
-    known_latches: HashMap<u64, &'static BlockMeta<1>>,
+    known_impulses: HashMap<u64, &'static BlockRuntimeMeta<0>>,
+    known_latches: HashMap<u64, &'static BlockRuntimeMeta<1>>,
 }
 impl Default for CircuitLifecycler
 {
     fn default() -> Self
     {
-        let known_impulses = inventory::iter::<BlockMeta<0>>()
+        let known_impulses = inventory::iter::<BlockRuntimeMeta<0>>()
             .map(|b| (b.type_name_hash, b)).collect();
-        let known_latches = inventory::iter::<BlockMeta<1>>()
+        let known_latches = inventory::iter::<BlockRuntimeMeta<1>>()
             .map(|b| (b.type_name_hash, b)).collect();
         Self { known_impulses, known_latches }
     }

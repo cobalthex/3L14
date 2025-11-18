@@ -106,7 +106,7 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
                     Some(mut v) => ::erased_serde::deserialize(&mut v)?,
                     None =>
                     {
-                         const CAN_DEFAULT: bool = #path_impls!(#fty: Default);
+                        const CAN_DEFAULT: bool = #path_impls!(#fty: Default);
                         #path_default_if::<_, CAN_DEFAULT>()
                     }
                 }
@@ -128,10 +128,12 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
 
     let path_hydrate = path("block_meta::HydrateBlock");
     let path_block = path("Block");
-    let path_latchblock = path("LatchBlock");
     let path_impulseblock = path("ImpulseBlock");
-    let path_blockmeta = path("block_meta::BlockMeta");
+    let path_latchblock = path("LatchBlock");
+    let path_blockdesignmeta = path("block_meta::BlockDesignMeta");
+    let path_blockruntimemeta = path("block_meta::BlockRuntimeMeta");
 
+    // TODO: dedupe block kind
     let ts = quote!
     {
         impl #path_block for #typename_ident
@@ -139,20 +141,41 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
         }
         ::inventory::submit!
         {
-            const BLOCK_KIND_VAL: u8 = #path_impls!(#typename_ident: #path_latchblock) as u8;
-            #path_blockmeta::<BLOCK_KIND_VAL>
+            const BLOCK_KIND: u8 =
+            {
+                let is_latch = #path_impls!(#typename_ident: #path_latchblock);
+                is_latch as u8
+            };
+            #path_blockdesignmeta::<BLOCK_KIND>
             {
                 type_name: #typename_str,
                 type_name_hash: #type_name_hash,
-                hydrate_fn: |hydration: &mut #path_hydrate|
+                hydrate_and_encode_fn: |hydration: &mut #path_hydrate|
                 {
-                    Ok(Box::new(#typename_ident
+                    Ok(::bitcode::encode(&#typename_ident
                     {
                         #(#hydrate_fn_lines),*
                     }))
                 },
             }
-        }
+        };
+        ::inventory::submit!
+        {
+            const BLOCK_KIND: u8 =
+            {
+                let is_latch = #path_impls!(#typename_ident: #path_latchblock);
+                is_latch as u8
+            };
+            #path_blockruntimemeta::<BLOCK_KIND>
+            {
+                type_name_hash: #type_name_hash,
+                decode_fn: |bytes|
+                {
+                    let decoded: #typename_ident = bitcode::decode(bytes)?;
+                    Ok(Box::new(decoded))
+                }
+            }
+        };
     }.into();
     ts
 }

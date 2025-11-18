@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use bitcode::Decode;
+use bitcode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use triomphe::Arc;
 use smallvec::SmallVec;
 use crate::{Runtime, Scope, VarChange};
@@ -13,7 +14,7 @@ pub enum BlockKind
     Latch = 1,
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Copy, Decode)]
+#[derive(Hash, PartialEq, Eq, Clone, Copy, Encode, Decode)]
 pub struct BlockId(u32);
 impl BlockId
 {
@@ -48,6 +49,7 @@ impl Debug for BlockId
         f.write_fmt(format_args!("[{:?}|{}]", self.kind(), self.value()))
     }
 }
+
 pub trait Block: Debug + Send
 {
 }
@@ -171,7 +173,7 @@ impl<L: ContextfulLatchBlock> LatchBlock for L
 }
 
 // How the target block should behave on pulse
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Decode)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Encode, Decode)]
 pub enum Inlet
 {
     #[default]
@@ -180,7 +182,7 @@ pub enum Inlet
 }
 
 // Where an outlet points to
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
 pub struct Plug
 {
     pub block: BlockId,
@@ -196,7 +198,7 @@ impl Plug
 }
 
 // Outlets that pass-thru incoming pulses (but not power-offs)
-#[derive(Default, Debug, Decode)]
+#[derive(Default, Debug, Encode, Decode)]
 pub struct PulsedOutlet
 {
     pub plugs: Box<[Plug]>,
@@ -204,7 +206,7 @@ pub struct PulsedOutlet
 
 // Outlets that carry the parent signal and respond to power-offs
 // note: Latchin
-#[derive(Default, Debug, Decode)]
+#[derive(Default, Debug, Encode, Decode)]
 pub struct LatchingOutlet
 {
     pub plugs: Box<[Plug]>,
