@@ -1,0 +1,7 @@
+<DebugLog> Print1
+message = "Hello!"
+Outlet > Print2
+<DebugLog> Print2
+message = "Goodbye!"
+@
+Print1

@@ -2,10 +2,12 @@ use super::*;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use debug_3l14::debug_gui::DebugGui;
 use egui::Ui;
+use nab_3l14::utils::alloc_slice::alloc_slice_uninit;
 use nab_3l14::utils::array::init_array;
 use parking_lot::Mutex;
 use std::any::TypeId;
 use std::collections::HashMap;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::thread::{Builder, JoinHandle};
 use std::time::Duration;
@@ -176,9 +178,13 @@ impl AssetsStorage
     }
 
     #[inline]
-    fn open_asset_from_file<P: AsRef<Path>>(file_path: P) -> Result<impl AssetRead, std::io::Error>
+    fn open_asset_from_file<P: AsRef<Path>>(file_path: P) -> Result<AssetRead, std::io::Error>
     {
-        std::fs::File::open(file_path)
+        let len = std::fs::metadata(&file_path)?.len();
+        let mut f = std::fs::File::open(file_path)?;
+        let mut buf = unsafe { alloc_slice_uninit(len as usize) };
+        f.read_exact(&mut buf)?;
+        Ok(AssetRead::new(buf))
     }
 
     fn asset_worker_fn(this: Arc<Self>, request_recv: Receiver<AssetLifecycleRequest>) -> impl FnOnce()
@@ -233,12 +239,12 @@ impl AssetsStorage
                                     .expect("Unsupported asset type!").lifecycler; // this should fail in load()
 
                                 #[cfg(feature = "asset_debug_data")]
-                                let debug_asset_data: Option<Box<dyn AssetRead>> =
+                                let debug_asset_data: Option<AssetRead> =
                                 {
                                     let asset_debug_path = this.asset_key_to_file_path(inner.key(), AssetFileType::DebugData);
                                     match Self::open_asset_from_file(asset_debug_path)
                                     {
-                                        Ok(dbg_data) => Some(Box::new(dbg_data)),
+                                        Ok(dbg_data) => Some(dbg_data),
                                         Err(_) => None, // log specific errors?
                                     }
                                 };
@@ -249,8 +255,9 @@ impl AssetsStorage
                                     Ok(read) => lifecycler.load_untyped(
                                         this.clone(),
                                         untyped_handle,
-                                        Box::new(read),
-                                        #[cfg(feature = "asset_debug_data")] debug_asset_data),
+                                        read,
+                                        #[cfg(feature = "asset_debug_data")] debug_asset_data
+                                    ),
                                     Err(err) =>
                                     {
                                         log::warn!("Failed to read {:?} asset file {:?}: {err}",
@@ -448,10 +455,10 @@ impl Assets
     pub fn load_from<A: Asset>(
         &self,
         asset_key: AssetKey,
-        input_data: impl AssetRead + 'static // static not ideal here
+        input_data: AssetRead
     ) -> Ash<A>
     {
-        AssetsStorage::enqueue_load(&self.storage, asset_key, |h| AssetLifecycleRequest::LoadFromMemory(h, Box::new(input_data)))
+        AssetsStorage::enqueue_load(&self.storage, asset_key, |h| AssetLifecycleRequest::LoadFromMemory(h, input_data))
     }
 
     #[must_use]
@@ -459,7 +466,7 @@ impl Assets
     pub fn load_direct_from<A: Asset>(
         &self,
         asset_key: AssetKey,
-        input_data: impl AssetRead + 'static // static not ideal here
+        input_data: AssetRead
     ) -> Ash<A>
     {
         let lifecycler = self.storage.get_lifecycler::<A>().expect("No lifecycler found for asset type");
@@ -578,7 +585,7 @@ impl Drop for Assets
         {
             self.fs_watcher = None;
         }
-        
+
         self.shutdown();
 
         for thread in &mut self.worker_threads

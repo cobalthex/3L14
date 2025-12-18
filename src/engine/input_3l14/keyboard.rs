@@ -11,10 +11,11 @@ pub type ScanCode = sdl2::keyboard::Scancode;
 pub struct KeyState
 {
     pub key_code: KeyCode,
-    pub scan_code: ScanCode,
+    pub scan_code: Option<ScanCode>,
     pub state: ButtonState,
     pub set_time: Instant,
 }
+
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash)]
 pub struct KeyMods(u8);

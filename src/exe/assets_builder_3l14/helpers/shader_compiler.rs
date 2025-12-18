@@ -2,15 +2,16 @@ use std::fmt::{Debug, Formatter};
 use std::error::Error;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use enumflags2::{bitflags, BitFlags};
 use graphics_3l14::assets::ShaderStage;
 use hassle_rs::{Dxc, DxcCompiler, DxcIncludeHandler, DxcLibrary, DxcValidator, Dxil, HassleError};
 use parking_lot::Mutex;
 use nab_3l14::utils::ShortTypeName;
-use proc_macros_3l14::Flags;
 
+#[bitflags]
 #[repr(u8)]
-#[derive(Flags, Hash)]
-pub enum ShaderCompileFlags
+#[derive(Hash, Copy, Clone, Debug)]
+pub enum ShaderCompileFlag
 {
     Debug       = 0b0001,
     EmitSymbols = 0b0010,
@@ -21,7 +22,7 @@ pub struct ShaderCompilation<'s>
     pub source_text: &'s str,
     pub filename: &'s Path,
     pub stage: ShaderStage,
-    pub flags: ShaderCompileFlags,
+    pub flags: BitFlags<ShaderCompileFlag>,
     pub defines: Vec<(&'s str, Option<&'s str>)>,
 }
 impl<'s> Debug for ShaderCompilation<'s>
@@ -106,13 +107,13 @@ impl ShaderCompiler
             "-fspv-target-env=universal1.5",
         ];
 
-        if compilation.flags.has_flag(ShaderCompileFlags::Debug)
+        if compilation.flags.contains(ShaderCompileFlag::Debug)
         {
             compilation.defines.push(("DEBUG", Some("1")));
             dxc_args.push("-Od");
         }
 
-        if compilation.flags.has_flag(ShaderCompileFlags::EmitSymbols)
+        if compilation.flags.contains(ShaderCompileFlag::EmitSymbols)
         {
             dxc_args.push("-Zi");
             dxc_args.push("-Zss");

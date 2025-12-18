@@ -14,10 +14,10 @@ use crate::camera::{Camera, CameraProjection, CameraUniform};
 use crate::pipeline_cache::{DebugMode, PipelineCache};
 use crate::uniforms_pool::{UniformsPoolEntryGuard, WgpuBufferWriter, BufferWrite};
 
-struct CurrentUniformsWriter<'f>
+struct CurrentUniformsWriter
 {
     renderer: Arc<Renderer>,
-    writer: QueueWriteBufferView<'f>,
+    writer: QueueWriteBufferView,
     next_slot: usize,
 }
 

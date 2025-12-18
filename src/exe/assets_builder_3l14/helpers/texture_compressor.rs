@@ -1,4 +1,4 @@
-use proc_macros_3l14::Flags;
+use enumflags2::bitflags;
 
 // TODO: go back to intel_tex_2? (ISPC is deprecated)
 
@@ -20,8 +20,9 @@ pub enum TextureType
     Text,
 }
 
+#[bitflags]
 #[repr(u8)]
-#[derive(Flags)]
+#[derive(Copy, Clone)]
 pub enum ChannelMapping
 {
     Red   = 0b0001,

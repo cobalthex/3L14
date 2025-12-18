@@ -22,19 +22,22 @@ pub struct HydrateBlock<'de>
     pub fields: HashMap<UniCase<&'de str>, Box<Des<'de>>>,
 }
 
-pub struct BlockDesignMeta<const BLOCK_KIND: u8>
+pub struct BlockBuildMeta<const BLOCK_KIND: u8>
     where BlockKindMapper<BLOCK_KIND>: WhichBlock
 {
     pub type_name: &'static str,
     pub type_name_hash: u64,
     pub hydrate_and_encode_fn: fn(&mut HydrateBlock) -> Result<Vec<u8>, erased_serde::Error>,
 }
-::inventory::collect!(BlockDesignMeta<0>);
-::inventory::collect!(BlockDesignMeta<1>);
+::inventory::collect!(BlockBuildMeta<0>);
+::inventory::collect!(BlockBuildMeta<1>);
 
 pub struct BlockRuntimeMeta<const BLOCK_KIND: u8>
     where BlockKindMapper<BLOCK_KIND>: WhichBlock
 {
+    #[cfg(debug_assertions)]
+    pub type_name: &'static str,
+    
     pub type_name_hash: u64,
     pub decode_fn: fn(&[u8]) -> Result<Box<<BlockKindMapper<BLOCK_KIND> as WhichBlock>::Out>, bitcode::Error>,
 }

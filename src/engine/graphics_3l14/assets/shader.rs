@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crate::{debug_label, Renderer};
 use bitcode::{Decode, Encode};
 use proc_macros_3l14::{asset, FancyEnum};
@@ -7,7 +8,6 @@ use std::error::Error;
 use triomphe::Arc;
 use wgpu::util::{make_spirv, make_spirv_raw};
 use wgpu::{ShaderModuleDescriptor, ShaderModuleDescriptorPassthrough};
-use wgpu::wgt::ShaderModuleDescriptorSpirV;
 use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use debug_3l14::debug_gui::DebugGui;
 
@@ -67,15 +67,18 @@ impl AssetLifecycler for ShaderLifecycler
 
         let module = match
             cfg!(feature = "load_shaders_directly") &&
-            self.renderer.supports_feature(wgpu::Features::SPIRV_SHADER_PASSTHROUGH)
+            self.renderer.supports_feature(wgpu::Features::EXPERIMENTAL_PASSTHROUGH_SHADERS)
         {
             true => unsafe
             {
-                self.renderer.device().create_shader_module_passthrough(ShaderModuleDescriptorPassthrough::SpirV(
-                ShaderModuleDescriptorSpirV {
+                assert!(shader_file.module_bytes.len().is_multiple_of(size_of::<u32>()));
+                self.renderer.device().create_shader_module_passthrough(ShaderModuleDescriptorPassthrough
+                {
                     label: debug_label!(&format!("{:?} ({:?})", request.asset_key, shader_file.stage)),
-                    source: make_spirv_raw(&shader_file.module_bytes),
-                }))
+                    runtime_checks: Default::default(),
+                    spirv: Some(Cow::Borrowed(std::mem::transmute(shader_file.module_bytes.as_ref()))),
+                    .. Default::default()
+                })
             },
             false =>
             {

@@ -89,14 +89,13 @@ impl AssetLifecycler for TextureLifecycler
     {
         let tex_file: TextureFile = request.deserialize()?;
 
-        let mut texel_bytes = Vec::new();
-        request.input.read_to_end(&mut texel_bytes)?;
-
+        let asskey = request.asset_key;
+        let texel_bytes = request.read_to_end()?;
         let gpu_tex = self.renderer.device().create_texture_with_data(
             self.renderer.queue(),
             &TextureDescriptor
             {
-                label: debug_label!(&format!("{:?}", request.asset_key)),
+                label: debug_label!(&format!("{:?}", asskey)),
                 size: Extent3d
                 {
                     width: tex_file.width,
@@ -120,7 +119,7 @@ impl AssetLifecycler for TextureLifecycler
                 view_formats: &[],
             },
             TextureDataOrder::LayerMajor,
-            texel_bytes.as_slice());
+            texel_bytes);
 
         let view = gpu_tex.create_view(&TextureViewDescriptor
         {

@@ -25,14 +25,14 @@ impl ImpulseBlock for NoOp
 }
 
 #[derive(CircuitBlock, Debug, Encode, Decode)]
-pub struct DebugPrint
+pub struct DebugLog
 {
     pub message: String,
     // todo: format strings
 
     pub outlet: PulsedOutlet,
 }
-impl ImpulseBlock for DebugPrint
+impl ImpulseBlock for DebugLog
 {
     fn pulse(&self, _scope: Scope, mut actions: ImpulseActions)
     {
@@ -134,9 +134,9 @@ mod tests
     }
 
     #[test]
-    fn debug_print()
+    fn debug_log()
     {
-        let debug_print = DebugPrint
+        let debug_log = DebugLog
         {
             message: "Hello, world!".to_string(),
             outlet: PulsedOutlet
@@ -148,7 +148,7 @@ mod tests
         // TODO: test inspect()
         
         let mut tc = TestContext::default();
-        tc.pulse(debug_print);
+        tc.pulse(debug_log);
         assert_eq!(tc.pulse_outlets.as_slice(), &[Plug::new(BlockId::impulse(1), Inlet::Pulse)]);
     }
     

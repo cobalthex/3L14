@@ -1,8 +1,9 @@
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildError, BuildOutputs, SourceInput, VersionBuilder};
-use crate::helpers::shader_compiler::{ShaderCompilation, ShaderCompileFlags, ShaderCompiler};
+use crate::helpers::shader_compiler::{ShaderCompilation, ShaderCompileFlag, ShaderCompiler};
 use arrayvec::ArrayVec;
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use debug_3l14::debug_gui::DebugGuiBase;
+use enumflags2::BitFlags;
 use glam::{Mat4, Quat, Vec3};
 use gltf::animation::util::{ReadOutputs, Translations};
 use gltf::image::Format;
@@ -38,7 +39,7 @@ struct ShaderHash
     material_class: MaterialClass,
     vertex_layout_hash: u64, // all the layouts used hashed together
     // custom file name
-    compile_flags: ShaderCompileFlags,
+    compile_flags: BitFlags<ShaderCompileFlag>,
 }
 
 // bit flags for which vertex types are avail?
@@ -167,7 +168,7 @@ impl ModelBuilder
 
         // TODO: split up this file
 
-        let mut vertex_layout = VertexLayout::Static;
+        let mut vertex_layout: BitFlags<_> = VertexLayout::Static.into();
         let maybe_skel_info = if let Some(skin) = &in_skin
         {
             vertex_layout |= VertexLayout::Skinned;
@@ -361,7 +362,7 @@ impl ModelBuilder
                 Ok(())
             })?;
 
-            let shader_compile_flags = ShaderCompileFlags::none(); // Debug
+            let shader_compile_flags = BitFlags::<ShaderCompileFlag>::empty(); // Debug
 
             // todo: better asset key
             let vertex_shader_key = AssetKeySynthHash::generate(ShaderHash
@@ -482,7 +483,7 @@ impl ModelBuilder
             {
                 bounds_aabb: model_bounds_aabb,
                 bounds_sphere: model_bounds_sphere,
-                vertex_layout: vertex_layout.into(),
+                vertex_layout: vertex_layout.bits(),
                 index_format: IndexFormat::U16,
                 vertices: vertex_data.into_boxed_slice(),
                 indices: index_data.into_boxed_slice(),

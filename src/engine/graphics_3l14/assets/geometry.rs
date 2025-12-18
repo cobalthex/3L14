@@ -1,32 +1,34 @@
 use crate::{debug_label, Renderer};
 use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use bitcode::{Decode, Encode};
+use enumflags2::{bitflags, BitFlag, BitFlags};
+use enumflags2::_internal::RawBitFlags;
 use debug_3l14::debug_gui::DebugGui;
 use math_3l14::{Sphere, AABB};
-use proc_macros_3l14::{asset, Flags};
+use proc_macros_3l14::asset;
 use triomphe::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{Buffer, BufferUsages};
-use nab_3l14::FlagsEnum;
 use crate::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
 
 // The vertex buffers used for a particular piece of geometry.
 // vertex buffer attrib locations are ordered based on attributes present
 // Buffers with lower VertexLqyout values are ordered first, numbers are sequential
 // TODO: possibly could specify fixed locations, but often limited to 32 locations on GPU
-#[derive(Flags)]
+#[bitflags]
+#[derive(Copy, Clone)]
 #[repr(u16)]
 pub enum VertexLayout
 {
     Static      = 0b00000001,
     Skinned     = 0b00000010,
 }
-impl From<VertexLayout> for VertexLayoutBuilder
+impl From<BitFlags<VertexLayout>> for VertexLayoutBuilder
 {
-    fn from(value: VertexLayout) -> Self
+    fn from(value: BitFlags<VertexLayout>) -> Self
     {
         let mut builder = VertexLayoutBuilder::default();
-        for layout in value.iter_set_flags()
+        for layout in value.iter()
         {
             match layout
             {
@@ -65,7 +67,7 @@ pub struct GeometryFile
     // TODO: convert all boxes to offsets in the src payload
     pub bounds_aabb: AABB,
     pub bounds_sphere: Sphere,
-    pub vertex_layout: <VertexLayout as FlagsEnum<VertexLayout>>::Repr, // must store as underlying type due to limitation of bitcode
+    pub vertex_layout: <VertexLayout as RawBitFlags>::Numeric, // must store as underlying type due to limitation of bitcode
     pub index_format: IndexFormat,
     pub vertices: Box<[u8]>, // Contains composite vertices of type vertex_layout
     pub indices: Box<[u8]>, // contains indices of type index_format
@@ -86,7 +88,7 @@ pub struct Geometry
 {
     pub bounds_aabb: AABB, // note; these are untransformed
     pub bounds_sphere: Sphere,
-    pub vertex_layout: VertexLayout,
+    pub vertex_layout: BitFlags<VertexLayout>,
     pub index_format: wgpu::IndexFormat,
     // all meshes in this model are slices of this buffer
     pub vertices: Buffer,
@@ -130,7 +132,7 @@ impl AssetLifecycler for GeometryLifecycler
         {
             bounds_aabb: gf.bounds_aabb,
             bounds_sphere: gf.bounds_sphere,
-            vertex_layout: gf.vertex_layout.into(),
+            vertex_layout: unsafe { BitFlags::from_bits_unchecked(gf.vertex_layout) },
             index_format: match gf.index_format
             {
                 IndexFormat::U16 => wgpu::IndexFormat::Uint16,

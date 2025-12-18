@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::error::Error;
-use crate::block_meta::{BlockDesignMeta, BlockRuntimeMeta};
+use crate::block_meta::BlockRuntimeMeta;
 use crate::blocks::PlugList;
 use crate::vars::ScopeChanges;
 use crate::{BlockId, ImpulseActions, ImpulseBlock, InstRunId, LatchActions, LatchBlock, LocalScope, Runtime, Scope, SharedScope};
@@ -8,8 +8,7 @@ use nab_3l14::Signal;
 use std::fmt::Debug;
 use bitcode::{Decode, Encode};
 use triomphe::Arc;
-use asset_3l14::{AssetLifecycler, AssetLoadRequest};
-use debug_3l14::debug_gui::DebugGui;
+use asset_3l14::{AssetLifecycler, AssetLoadError, AssetLoadRequest};
 
 #[proc_macros_3l14::asset]
 #[derive(Debug)]
@@ -23,30 +22,37 @@ pub struct Circuit
 }
 
 #[derive(Encode, Decode)]
+pub struct CircuitFileBlock
+{
+    pub type_name_hash: u64,
+    pub packed_size: u64, // 32 bit?
+}
+
+#[derive(Encode, Decode)]
 pub struct CircuitFile
 {
     pub auto_entries: EntryPoints,
     pub signaled_entries: Box<[(Signal, EntryPoints)]>,
-    pub impulses: Box<[(u64, u64)]>,
-    pub latches: Box<[(u64, u64)]>,
+    pub impulses: Box<[CircuitFileBlock]>,
+    pub latches: Box<[CircuitFileBlock]>,
     pub num_local_vars: u32,
 }
 
 #[derive(Encode, Decode)]
 pub struct BlockDebugData<'b>
 {
-    name: &'b str,
+    pub name: &'b str,
 }
 
 #[derive(Encode, Decode)]
 pub struct CircuitDebugData<'d>
 {
-    block_names: &'d[&'d str]
+    pub blocks: Box<[BlockDebugData<'d>]>,
 }
 
 pub type EntryPoints = Box<[BlockId]>;
 
-struct CircuitLifecycler
+pub struct CircuitLifecycler
 {
     known_impulses: HashMap<u64, &'static BlockRuntimeMeta<0>>,
     known_latches: HashMap<u64, &'static BlockRuntimeMeta<1>>,
@@ -66,9 +72,39 @@ impl AssetLifecycler for CircuitLifecycler
 {
     type Asset = Circuit;
 
-    fn load(&self, request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
+    fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
     {
-        todo!()
+        let file: CircuitFile = request.deserialize()?;
+
+        let circuit = Circuit
+        {
+            auto_entries: file.auto_entries,
+            signaled_entries: file.signaled_entries,
+            impulses: file.impulses.iter().map(|def|
+            {
+                let buf = request.read_n_bytes(def.packed_size as usize)?;
+                let Some(blk_meta) = self.known_impulses.get(&def.type_name_hash) else
+                {
+                    log::error!("Failed to find impulse block definition for {:x}", def.type_name_hash);
+                    let stupid_fuck: Box<dyn Error> = Box::new(AssetLoadError::Parse);
+                    return Err(stupid_fuck);
+                };
+                Ok((blk_meta.decode_fn)(buf)?)
+            }).collect::<Result<_, Box<dyn Error>>>()?,
+            latches: file.latches.iter().map(|def|
+            {
+                let buf = request.read_n_bytes(def.packed_size as usize)?;
+                let Some(blk_meta) = self.known_latches.get(&def.type_name_hash) else
+                {
+                    log::error!("Failed to find latch block definition for {:x}", def.type_name_hash);
+                    let stupid_fuck: Box<dyn Error> = Box::new(AssetLoadError::Parse);
+                    return Err(stupid_fuck);
+                };
+                Ok((blk_meta.decode_fn)(buf)?)
+            }).collect::<Result<_, _>>()?,
+            num_local_vars: file.num_local_vars,
+        };
+        Ok(circuit)
     }
 }
 

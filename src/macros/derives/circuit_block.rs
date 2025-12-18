@@ -54,16 +54,16 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
 
     let (latch_crate_name, type_name_hash) =
     {
-        let name = std::env::var("CARGO_PKG_NAME").unwrap();
+        let crate_name = std::env::var("CARGO_PKG_NAME").unwrap();
         let name_hash =
         {
             let mut hasher = MetroHash64::with_seed(0);
-            hasher.write(name.as_bytes());
-            hasher.write(name.to_string().as_bytes());
+            hasher.write(crate_name.as_bytes());
+            hasher.write(typename_ident.to_string().as_bytes());
             hasher.finish()
         };
 
-        (if name == "latch_3l14" { "crate" } else { "latch_3l14" }, name_hash)
+        (if crate_name == "latch_3l14" { "crate" } else { "latch_3l14" }, name_hash)
     };
 
     let path = |mod_path: &str| -> Path { parse_str(&format!("{latch_crate_name}::{mod_path}")).unwrap() };
@@ -130,10 +130,9 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
     let path_block = path("Block");
     let path_impulseblock = path("ImpulseBlock");
     let path_latchblock = path("LatchBlock");
-    let path_blockdesignmeta = path("block_meta::BlockDesignMeta");
+    let path_blockbuildmeta = path("block_meta::BlockBuildMeta");
     let path_blockruntimemeta = path("block_meta::BlockRuntimeMeta");
 
-    // TODO: dedupe block kind
     let ts = quote!
     {
         impl #path_block for #typename_ident
@@ -146,7 +145,7 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
                 let is_latch = #path_impls!(#typename_ident: #path_latchblock);
                 is_latch as u8
             };
-            #path_blockdesignmeta::<BLOCK_KIND>
+            #path_blockbuildmeta::<BLOCK_KIND>
             {
                 type_name: #typename_str,
                 type_name_hash: #type_name_hash,
@@ -158,7 +157,7 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
                     }))
                 },
             }
-        };
+        }
         ::inventory::submit!
         {
             const BLOCK_KIND: u8 =
@@ -168,6 +167,8 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
             };
             #path_blockruntimemeta::<BLOCK_KIND>
             {
+                #[cfg(debug_assertions)]
+                type_name: #typename_str,
                 type_name_hash: #type_name_hash,
                 decode_fn: |bytes|
                 {
@@ -175,7 +176,7 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
                     Ok(Box::new(decoded))
                 }
             }
-        };
+        }
     }.into();
     ts
 }

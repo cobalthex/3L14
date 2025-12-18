@@ -3,17 +3,17 @@ use bitcode::{Decode, DecodeOwned};
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::error::Error;
-use std::io::{Read, Seek};
+use std::io::{Cursor, Read, Seek, SeekFrom};
+use enumflags2::{bitflags, BitFlags};
 use debug_3l14::debug_gui::DebugGui;
 use nab_3l14::utils::alloc_slice::alloc_slice_uninit;
 use nab_3l14::utils::{varint, ShortTypeName};
-use proc_macros_3l14::Flags;
 use triomphe::Arc;
 
 pub struct AssetLoadRequest
 {
     pub asset_key: AssetKey,
-    pub input: Box<dyn AssetRead>, // TODO: memory mapped buffer?
+    pub input: AssetRead, // TODO: memory mapped buffer?
 
     storage: Arc<AssetsStorage>,
 
@@ -24,7 +24,7 @@ pub struct AssetLoadRequest
 impl AssetLoadRequest
 {
     // TODO: unify implementations between this and asset builder
-    fn deserialize_data<T: DecodeOwned>(input: &mut dyn AssetRead) -> Result<T, Box<dyn Error>>
+    fn deserialize_data<T: DecodeOwned>(input: &mut AssetRead) -> Result<T, Box<dyn Error>>
     {
         let size = varint::decode_from(input)?;
         let mut bytes = unsafe { alloc_slice_uninit(size as usize) }; // todo: cache this (bitcode Buffer)
@@ -39,13 +39,28 @@ impl AssetLoadRequest
     }
 
     // read a size-prefixed span of bytes, all or nothing
-    pub fn read_sized(&mut self) -> Result<Box<[u8]>, Box<dyn Error>>
+    pub fn read_sized(&mut self) -> Result<&[u8], Box<dyn Error>>
     {
         let size = varint::decode_from(&mut self.input)?;
-        let mut input = unsafe { alloc_slice_uninit(size as usize) }; // todo: cache this
-        self.input.read_exact(&mut input)?;
-        Ok(input)
+        self.read_n_bytes(size as usize)
     }
+
+    pub fn read_n_bytes(&mut self, n: usize) -> Result<&[u8], Box<dyn Error>>
+    {
+        let pos = self.input.position() as usize;
+        self.input.seek(SeekFrom::Current(n as i64))?;
+        let buf = self.input.get_ref();
+        Ok(&buf[pos..(pos + n)])
+    }
+
+    pub fn read_to_end(&mut self) -> Result<&[u8], Box<dyn Error>>
+    {
+        let pos = self.input.position() as usize;
+        self.input.seek(SeekFrom::End(0))?;
+        let buf = self.input.get_ref();
+        Ok(&buf[pos..self.input.position() as usize])
+    }
+
     //
     // // Load another asset, but don't reload this asset if the requested asset is reloaded
     // #[must_use]
@@ -103,8 +118,8 @@ pub(super) trait UntypedAssetLifecycler: Sync + Send
         &self,
         storage: Arc<AssetsStorage>,
         untyped_handle: UntypedAssetHandle,
-        input: Box<dyn AssetRead>,
-        #[cfg(feature = "asset_debug_data")] maybe_debug_input: Option<Box<dyn AssetRead>>);
+        input: AssetRead,
+        #[cfg(feature = "asset_debug_data")] maybe_debug_input: Option<AssetRead>);
 
     fn error_untyped(
         &self,
@@ -119,8 +134,8 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
         &self,
         storage: Arc<AssetsStorage>,
         untyped_handle: UntypedAssetHandle,
-        input: Box<dyn AssetRead>,
-        #[cfg(feature = "asset_debug_data")] mut maybe_debug_input: Option<Box<dyn AssetRead>>)
+        input: AssetRead,
+        #[cfg(feature = "asset_debug_data")] mut maybe_debug_input: Option<AssetRead>)
     {
         // TODO: asset storage should prevent this from running on multiple threads for the same asset concurrently
 
@@ -176,9 +191,10 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
     }
 }
 
-#[derive(Flags)]
+#[bitflags]
+#[derive(Copy, Clone)]
 #[repr(u8)]
-pub(super) enum AssetLifecyclerFeatures
+pub(super) enum AssetLifecyclerFeature
 {
     HasDebugGui = 0b0000_0001,
 }
@@ -188,7 +204,7 @@ pub(super) struct RegisteredAssetLifecycler
     pub lifecycler: Box<dyn UntypedAssetLifecycler>,
     #[cfg(debug_assertions)]
     pub type_id: TypeId,
-    pub features: AssetLifecyclerFeatures,
+    pub features: BitFlags<AssetLifecyclerFeature>,
     pub debug_gui_fn: Option<usize>, // TODO: use *mut () instead of usize
 }
 
@@ -215,7 +231,7 @@ impl AssetLifecyclers
             lifecycler: Box::new(lifecycler),
             #[cfg(debug_assertions)]
             type_id: TypeId::of::<L>(),
-            features: AssetLifecyclerFeatures::none(),
+            features: BitFlags::empty(),
             debug_gui_fn: None,
         });
         self.registered_asset_types.insert(A::asset_type(), RegisteredAssetType
@@ -240,7 +256,7 @@ impl AssetLifecyclers
             lifecycler: Box::new(lifecycler),
             #[cfg(debug_assertions)]
             type_id: TypeId::of::<L>(),
-            features: AssetLifecyclerFeatures::HasDebugGui,
+            features: AssetLifecyclerFeature::HasDebugGui.into(),
             debug_gui_fn: Some(debug_gui_fn),
         });
         self.registered_asset_types.insert(A::asset_type(), RegisteredAssetType
@@ -253,15 +269,13 @@ impl AssetLifecyclers
     }
 }
 
-pub trait AssetRead: Read + Seek + Send { }
-impl<T: Read + Seek + Send> AssetRead for T { }
-
+pub type AssetRead = Cursor<Box<[u8]>>;
 pub(super) enum AssetLifecycleRequest
 {
     StopWorkers,
     Drop(UntypedAssetHandle),
     LoadFileBacked(UntypedAssetHandle), // loads the file pointed by the asset path
-    LoadFromMemory(UntypedAssetHandle, Box<dyn AssetRead>),
+    LoadFromMemory(UntypedAssetHandle, AssetRead),
 }
 
 

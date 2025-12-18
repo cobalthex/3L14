@@ -132,17 +132,18 @@ fn main() -> ExitReason
                 ui.heading("Assets");
                 let text_style = egui::TextStyle::Body;
                 let row_height = ui.text_style_height(&text_style);
-                egui::ScrollArea::vertical().show_rows(ui, row_height, assets_list.len(),|sui, vis|
+                let z = egui::ScrollArea::vertical().show_rows(ui, row_height, assets_list.len(),|sui, vis|
                 {
-                   for (i, asset) in assets_list[vis].iter().enumerate()
+                   for (i, asset) in assets_list[vis.clone()].iter().enumerate()
                    {
-                       let is_selected = i == selected_asset_index;
+                       let idx = i + vis.start;
+                       let is_selected = idx == selected_asset_index;
                        let resp = sui.selectable_label(is_selected, asset.display_name.as_str());
-                       if resp.clicked_by(egui::PointerButton::Primary)
+                       if resp.clicked()
                        {
-                           selected_asset_index = i;
+                           selected_asset_index = idx;
                        }
-                       else if resp.clicked_by(egui::PointerButton::Secondary)
+                       else if resp.secondary_clicked()
                        {
                            let text = format!("{:#x}", asset.meta.key);
                            // egui clipboard not working
@@ -167,6 +168,14 @@ fn main() -> ExitReason
                     ui.monospace(format!("      Name: {}", asset.meta.name.as_deref().unwrap_or_default()));
                     ui.monospace(format!("       Key: {:#x}", asset.meta.key));
                     ui.monospace(format!("Build time: {}", build_time.format("%Y-%m-%d %H:%M:%S").to_string()));
+
+                    // if ui.button("debug").clicked()
+                    // {
+                    //     #[cfg(target_arch = "x86_64")]
+                    //     unsafe { std::arch::asm!("int3"); }
+                    //     #[cfg(target_arch = "aarch64")]
+                    //     unsafe { std::arch::asm!("brk #0xf000"); }
+                    // }
                 }
                 else
                 {

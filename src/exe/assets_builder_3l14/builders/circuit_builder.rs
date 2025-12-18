@@ -2,11 +2,12 @@ use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, Ver
 use asset_3l14::AssetTypeId;
 use bitcode::{Decode, Encode};
 use indexmap::IndexMap;
-use latch_3l14::block_meta::{BlockDesignMeta, HydrateBlock};
-use latch_3l14::{BlockId, BlockKind, BlockVisitor, Circuit, CircuitFile, ImpulseActions, ImpulseBlock, Inlet, LatchingOutlet, Plug, PulsedOutlet, Scope};
+use latch_3l14::block_meta::{BlockBuildMeta, HydrateBlock};
+use latch_3l14::{BlockId, BlockKind, BlockVisitor, CircuitDebugData, CircuitFile, CircuitFileBlock, ImpulseActions, ImpulseBlock, Inlet, LatchingOutlet, Plug, PulsedOutlet, Scope};
 use logos::{Lexer, Logos};
 use nab_3l14::{Signal, Symbol};
 use proc_macros_3l14::CircuitBlock;
+use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::error::Error;
@@ -36,31 +37,34 @@ impl Display for ParseError
 }
 impl Error for ParseError { }
 
-struct CircuitParse
+struct CircuitParse<'p>
 {
     circuit: CircuitFile,
-    // TODO: debug data
+    debug: CircuitDebugData<'p>,
     block_mem: Vec<u8>,
 }
 
+#[derive(Default, Serialize, Deserialize)]
+pub struct CircuitBuilderConfig { }
+
 pub struct CircuitBuilder
 {
-    known_impulses: HashMap<UniCase<&'static str>, &'static BlockDesignMeta<0>>,
-    known_latches: HashMap<UniCase<&'static str>, &'static BlockDesignMeta<1>>,
+    known_impulses: HashMap<UniCase<&'static str>, &'static BlockBuildMeta<0>>,
+    known_latches: HashMap<UniCase<&'static str>, &'static BlockBuildMeta<1>>,
 }
 impl CircuitBuilder
 {
     #[must_use]
     pub fn new() -> Self
     {
-        let known_impulses = inventory::iter::<BlockDesignMeta<0>>()
+        let known_impulses = inventory::iter::<BlockBuildMeta<0>>()
             .map(|b| (UniCase::unicode(b.type_name), b)).collect();
-        let known_latches = inventory::iter::<BlockDesignMeta<1>>()
+        let known_latches = inventory::iter::<BlockBuildMeta<1>>()
             .map(|b| (UniCase::unicode(b.type_name), b)).collect();
         Self { known_impulses, known_latches }
     }
 
-    fn parse(&self, mut lexed: CircuitLex) -> Result<CircuitParse, ParseError>
+    fn parse(&self, mut lexed: CircuitLex) -> Result<CircuitParse<'_>, ParseError>
     {
         let mut depths = HashMap::new();
         let mut stack = Vec::new();
@@ -194,22 +198,22 @@ impl CircuitBuilder
                 blids
             };
 
-        let impulse_types: HashMap<_, _> = inventory::iter::<BlockDesignMeta<0>>()
+        let impulse_types: HashMap<_, _> = inventory::iter::<BlockBuildMeta<0>>()
             .map(|b| (UniCase::unicode(b.type_name), b)).collect();
-        let latch_types: HashMap<_, _> = inventory::iter::<BlockDesignMeta<1>>()
+        let latch_types: HashMap<_, _> = inventory::iter::<BlockBuildMeta<1>>()
             .map(|b| (UniCase::unicode(b.type_name), b)).collect();
 
         let map_plugs = |plugs: &Vec<PlugLex>|
+        {
+            plugs.iter().map(|plug|
             {
-                plugs.iter().map(|plug|
+                Plug
                 {
-                    Plug
-                    {
-                        block: *block_ids.get(&plug.target_block_name).unwrap(), // guaranteed to exist earlier
-                        inlet: plug.inlet,
-                    }
-                }).collect()
-            };
+                    block: *block_ids.get(&plug.target_block_name).unwrap(), // guaranteed to exist earlier
+                    inlet: plug.inlet,
+                }
+            }).collect()
+        };
 
         let mut block_mem = Vec::new();
 
@@ -220,9 +224,9 @@ impl CircuitBuilder
             let mut hydrate = HydrateBlock
             {
                 pulsed_outlets: block.pulsed_outlets.iter().map(|(k,v)|
-                    {
-                        (*k, PulsedOutlet { plugs: map_plugs(v) })
-                    }).collect(),
+                {
+                    (*k, PulsedOutlet { plugs: map_plugs(v) })
+                }).collect(),
                 latching_outlets: Default::default(),
                 fields: std::mem::take(&mut block.fields)
             };
@@ -235,7 +239,7 @@ impl CircuitBuilder
             let size = encoded.len();
             block_mem.append(&mut encoded);
 
-            impulse_blocks.push((meta.type_name_hash, size as u64));
+            impulse_blocks.push(CircuitFileBlock { type_name_hash: meta.type_name_hash, packed_size: size as u64 });
         }
 
         let mut latch_blocks = Vec::with_capacity(latches.len());
@@ -245,13 +249,13 @@ impl CircuitBuilder
             let mut hydrate = HydrateBlock
             {
                 pulsed_outlets: block.pulsed_outlets.iter().map(|(k,v)|
-                    {
-                        (*k, PulsedOutlet { plugs: map_plugs(v) })
-                    }).collect(),
+                {
+                    (*k, PulsedOutlet { plugs: map_plugs(v) })
+                }).collect(),
                 latching_outlets: block.latching_outlets.iter().map(|(k,v)|
-                    {
-                        (*k, LatchingOutlet { plugs: map_plugs(v) })
-                    }).collect(),
+                {
+                    (*k, LatchingOutlet { plugs: map_plugs(v) })
+                }).collect(),
                 fields: std::mem::take(&mut block.fields)
             };
 
@@ -263,7 +267,7 @@ impl CircuitBuilder
             let size = encoded.len();
             block_mem.append(&mut encoded);
 
-            latch_blocks.push((meta.type_name_hash, size as u64));
+            latch_blocks.push(CircuitFileBlock { type_name_hash: meta.type_name_hash, packed_size: size as u64 });
         }
 
         Ok(CircuitParse
@@ -284,6 +288,10 @@ impl CircuitBuilder
                 latches: latch_blocks.into_boxed_slice(),
                 num_local_vars: 0, // todo
             },
+            debug: CircuitDebugData
+            {
+                blocks: Box::new([]),
+            },
             block_mem,
         })
     }
@@ -292,7 +300,7 @@ impl AssetBuilderMeta for CircuitBuilder
 {
     fn supported_input_file_extensions() -> &'static [&'static str]
     {
-        todo!()
+        &["latch"]
     }
 
     fn builder_version(vb: &mut VersionBuilder)
@@ -311,7 +319,7 @@ impl AssetBuilderMeta for CircuitBuilder
 }
 impl AssetBuilder for CircuitBuilder
 {
-    type BuildConfig = ();
+    type BuildConfig = CircuitBuilderConfig;
 
     fn build_assets(&self, config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
@@ -775,10 +783,10 @@ mod tests
 // x = 5
 
 // <DebugLog> Print1
-// Text = "Hola!"
+// message = "Hola!"
 
 // <DebugLog> Print2
-// Text = "Hola!"
+// message = "Hola!"
 // outlet > Print3
 
 // <DebugLog> Print3
@@ -814,25 +822,6 @@ Print1
         lex_circuit_dsl("a = { x = 1, y = true }").unwrap();
         lex_circuit_dsl("a = [ 1, 2, 3 ]").unwrap();
 
-    }
-}
-
-#[derive(Debug, CircuitBlock, Encode, Decode)]
-pub struct DebugLog
-{
-    pub message: String,
-    // todo: format strings
-
-    pub outlet: PulsedOutlet,
-}
-impl ImpulseBlock for DebugLog
-{
-    fn pulse(&self, scope: Scope, actions: ImpulseActions) {
-        todo!()
-    }
-
-    fn inspect(&self, visit: BlockVisitor) {
-        todo!()
     }
 }
 

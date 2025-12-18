@@ -65,7 +65,7 @@ struct Visit
 
 pub struct Instance
 {
-    circuit: Circuit,
+    circuit: Arc<Circuit>,
     scope: LocalScope,
 
     hydrated_latches: HashMap<u32, HydratedLatch>, // array?
@@ -77,7 +77,7 @@ pub struct Instance
 impl Instance
 {
     #[inline] #[must_use]
-    pub fn new(circuit: Circuit) -> Self
+    pub fn new(circuit: Arc<Circuit>) -> Self
     {
         Self
         {

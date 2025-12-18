@@ -178,17 +178,17 @@ impl DebugGui for UniformsPool
     }
 }
 
-pub type UniformsPoolEntryGuard<'a> = ObjectPoolEntryGuard<'a, UniformBufferEntry>;
+pub type UniformsPoolEntryGuard<'p> = ObjectPoolEntryGuard<'p, UniformBufferEntry>;
 
-pub trait WgpuBufferWriter<'q>
+pub trait WgpuBufferWriter
 {
-    fn record(&'q self, queue: &'q wgpu::Queue) -> QueueWriteBufferView<'q>;
+    fn record(&self, queue: &wgpu::Queue) -> QueueWriteBufferView;
 
     fn bind(&self, render_pass: &mut RenderPass, bind_index: u32, buffer_index: u8);
 }
-impl<'p> WgpuBufferWriter<'p> for UniformsPoolEntryGuard<'p>
+impl WgpuBufferWriter for UniformsPoolEntryGuard<'_>
 {
-    fn record(&'p self, queue: &'p wgpu::Queue) -> QueueWriteBufferView<'p>
+    fn record(&self, queue: &wgpu::Queue) -> QueueWriteBufferView
     {
         let buf_size = unsafe { BufferSize::new_unchecked(self.buffer.size()) };
         queue.write_buffer_with(&self.buffer, 0, buf_size).unwrap()
@@ -212,7 +212,7 @@ pub trait BufferWrite
     fn write_slice<T>(&mut self, index: usize, slice: &[T]);
 }
 
-impl BufferWrite for QueueWriteBufferView<'_>
+impl BufferWrite for QueueWriteBufferView
 {
     #[inline]
     fn write_slice<T>(&mut self, index: usize, slice: &[T])

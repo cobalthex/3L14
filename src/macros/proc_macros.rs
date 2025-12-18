@@ -1,5 +1,5 @@
 use proc_macro::TokenStream;
-use derives::{fancy_enum, flags_enum, type_layout_hash};
+use derives::{fancy_enum, type_layout_hash};
 use attribs::asset;
 use crate::derives::circuit_block;
 
@@ -13,13 +13,6 @@ mod case_conv;
 pub fn derive_fancy_enum(input: TokenStream) -> TokenStream
 {
     fancy_enum::fancy_enum(input)
-}
-
-// Adds standard bit ops and .has_flag(..) to enums
-#[proc_macro_derive(Flags)]
-pub fn derive_flags_enum(input: TokenStream) -> TokenStream
-{
-    flags_enum::flags_enum(input)
 }
 
 #[proc_macro_derive(LayoutHash)]

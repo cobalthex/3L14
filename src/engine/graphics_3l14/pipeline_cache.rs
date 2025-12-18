@@ -10,6 +10,7 @@ use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use triomphe::Arc;
 use arrayvec::ArrayVec;
+use enumflags2::BitFlags;
 use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutEntry, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerDescriptor, StencilState, TextureFormat, VertexBufferLayout, VertexState};
 use crate::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
 
@@ -101,7 +102,7 @@ impl PipelineCache
     #[must_use]
     fn create_pipeline(
         &self,
-        vertex_layout: VertexLayout,
+        vertex_layout: BitFlags<VertexLayout>,
         material: &Material,
         vertex_shader: &Shader,
         pixel_shader: &Shader,

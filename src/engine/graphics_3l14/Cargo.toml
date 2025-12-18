@@ -25,6 +25,7 @@ arrayvec.workspace = true
 bitcode.workspace = true
 egui-wgpu.workspace = true
 egui.workspace = true
+enumflags2.workspace = true
 futures.workspace = true
 glam.workspace = true
 log.workspace = true

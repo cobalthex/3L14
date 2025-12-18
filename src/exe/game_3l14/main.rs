@@ -28,6 +28,7 @@ use std::ops::Deref;
 use triomphe::Arc;
 use std::time::Duration;
 use wgpu::{BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
+use latch_3l14::{Circuit, CircuitLifecycler, Runtime};
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -89,6 +90,7 @@ fn main() -> ExitReason
             .add_lifecycler(GeometryLifecycler::new(renderer.clone()))
             .add_lifecycler(SkeletonLifecycler::default())
             .add_lifecycler(SkeletalAnimationLifecycler)
+            .add_lifecycler(CircuitLifecycler::default())
         , assets_config);
 
     {
@@ -107,6 +109,10 @@ fn main() -> ExitReason
         let model_key = AssetKey::from(0x00900000835b1860);
         let base_anim_key = AssetKey::from(0x00a00260835b1860);
         let overlay_anim_key = AssetKey::from(0x00a00030835b1860);
+
+        let latch_key = AssetKey::from(0x00c000009de1ba60);
+        let test_circuit = assets.load::<Circuit>(latch_key);
+        let mut latch_rt = Runtime::new();
 
         let test_model = assets.load::<Model>(model_key);
         let test_base_anim = assets.load::<SkeletalAnimation>(base_anim_key);
@@ -247,6 +253,12 @@ fn main() -> ExitReason
                 let mut cam = camera.clone();
                 cam.update_projection(cam.projection().clone(), 0.1, 50.0);
                 clip_camera = Some(cam);
+            }
+
+            if kbd.is_press(KeyCode::F) &&
+                let AssetPayload::Available(circuit) = test_circuit.payload()
+            {
+                Runtime::spawn(&latch_rt, circuit, None);
             }
 
             if let CameraProjection::Perspective { fov, aspect_ratio} = camera.projection()

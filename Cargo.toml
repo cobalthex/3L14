@@ -44,26 +44,27 @@ arrayvec = { version = "0.7.6", features = ["serde", "std"] } # re-evaluate
 base64 = "0.22.1"
 bitcode = { version = "0.6.7", features = ["arrayvec", "glam", "std"] }
 chrono = { version = "0.4.42", features = ["serde"] }
-clap = { version = "4.5.48", features = ["derive"] }
+clap = { version = "4.5.53", features = ["derive"] }
 colog = "1.4.0"
 crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
 dashmap = { version = "6.1.0" }
 #egui = { version = "0.32.3", features = ["persistence"] }
 #egui-wgpu = { version = "0.32.3" }
-egui = { git = "https://github.com/torokati44/egui", branch = "wgpu-26", features = ["persistence"] }
-egui-wgpu = { git = "https://github.com/torokati44/egui", branch = "wgpu-26" }
+egui = { version = "0.33.3", features = ["persistence"] }
+egui-wgpu = { version = "0.33.3" }
+enumflags2 = "0.7.12"
 erased-serde = "0.4.9"
 futures = { version = "0.3.31", features = ["thread-pool"] }
 glam = { version = "0.30.9", features = ["serde", "approx"] }
 gltf = "1.4.1"
 half = "2.7.1"
 hassle-rs = "0.12.0"
-image = "0.25.8"
+image = "0.25.9"
 impls = "1.0.3"
-indexmap = "2.12.0"
+indexmap = "2.12.1"
 inventory = "0.3.21"
 is-root = "0.1.3"
-log = { version = "0.4.28", features = ["std", "kv", "max_level_debug"] }
+log = { version = "0.4.29", features = ["std", "kv", "max_level_debug"] }
 logos = { version = "0.15.1", features = ["logos-derive"] }
 metrohash = "1.0.7"
 notify = "8.2.0"
@@ -82,7 +83,7 @@ toml = { version = "0.9.8", features = ["parse"] }
 triomphe = { version = "0.1.15", features = ["arc-swap"] }
 unicase = "2.8.1"
 walkdir = "2.5.0"
-wgpu = { version = "26.0.1", features = ["spirv"] }
+wgpu = { version = "27.0.1", features = ["spirv"] }
 
 # workspace dev-dependencies
 

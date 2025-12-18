@@ -19,6 +19,7 @@ containers_3l14 = { workspace = true, features = [] }
 debug_3l14 = { workspace = true, features = [] }
 graphics_3l14 = { workspace = true, features = ["debug_gpu_labels"] }
 input_3l14 = { workspace = true, features = [] }
+latch_3l14 = { workspace = true, features = [] }
 math_3l14 = { workspace = true, features = [] }
 nab_3l14 = { workspace = true, features = [] }
 world_3l14 = { workspace = true, features = [] }

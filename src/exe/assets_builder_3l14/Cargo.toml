@@ -12,19 +12,20 @@ name = "assets_builder"
 path = "main.rs"
 
 [dependencies]
-nab_3l14.workspace = true
-asset_3l14.workspace = true
-debug_3l14.workspace = true
-graphics_3l14.workspace = true
-latch_3l14.workspace = true
-math_3l14.workspace = true
-proc_macros_3l14.workspace = true
+nab_3l14 = { workspace = true, features = [] }
+asset_3l14 = { workspace = true, features = ["asset_names"] }
+debug_3l14 = { workspace = true, features = [] }
+graphics_3l14 = { workspace = true, features = ["debug_gpu_labels"] }
+latch_3l14 = { workspace = true, features = [] }
+math_3l14 = { workspace = true, features = [] }
+proc_macros_3l14 = { workspace = true, features = [] }
 
 arrayvec.workspace = true
 bitcode.workspace = true
 chrono.workspace = true
 clap.workspace = true
 erased-serde.workspace = true
+enumflags2.workspace = true
 glam.workspace = true
 gltf.workspace = true
 hassle-rs.workspace = true

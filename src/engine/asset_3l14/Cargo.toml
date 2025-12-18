@@ -23,6 +23,7 @@ bitcode.workspace = true
 chrono.workspace = true
 crossbeam.workspace = true
 egui.workspace = true
+enumflags2.workspace = true
 futures.workspace = true
 log.workspace = true
 metrohash.workspace = true

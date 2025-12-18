@@ -100,7 +100,7 @@ impl Runtime
     }
 
     // spawn a new instance of the specified circuit (async)
-    pub fn spawn(runtime: &Arc<Self>, circuit: Circuit, parent: Option<BlockRef>) -> InstRunId
+    pub fn spawn(runtime: &Arc<Self>, circuit: Arc<Circuit>, parent: Option<BlockRef>) -> InstRunId
     {
         let signals: SmallVec<[_; 8]> = circuit.signaled_entries
             .iter().enumerate()

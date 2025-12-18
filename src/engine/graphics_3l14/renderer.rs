@@ -120,8 +120,9 @@ impl Renderer
                     | Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
                     | Features::PUSH_CONSTANTS
                     | Features::VERTEX_WRITABLE_STORAGE
-                    | (if cfg!(feature = "load_shaders_directly") { Features::SPIRV_SHADER_PASSTHROUGH } else { Features::empty() })
+                    | (if cfg!(feature = "load_shaders_directly") { Features::EXPERIMENTAL_PASSTHROUGH_SHADERS } else { Features::empty() })
                     ,
+                experimental_features: unsafe { ExperimentalFeatures::enabled() }, // TODO: only if feature enabled?
                 // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
                 required_limits: Limits
                 {
@@ -191,9 +192,13 @@ impl Renderer
         let debug_gui_renderer = egui_wgpu::Renderer::new(
             &device,
             surface_config.format,
-            None,
-            1, //current_sample_count,
-            true); // what is dithering?
+            egui_wgpu::RendererOptions
+            {
+                msaa_samples: 1,
+                depth_stencil_format: None,
+                dithering: true,
+                predictable_texture_filtering: false,
+            });
 
         // todo: recreate on resize
         let depth_buffer_desc = TextureDescriptor
@@ -354,7 +359,11 @@ impl Renderer
             let rf_data = &render_frames[frame_number.0 as usize % render_frames.len()];
             if let Some(i) = &rf_data.last_submission
             {
-                let _ = self.device.poll(PollType::WaitForSubmissionIndex(i.clone()));
+                let _ = self.device.poll(PollType::Wait
+                {
+                    submission_index: Some(i.clone()),
+                    timeout: None, // TODO: timeout
+                });
                 // TODO: handle poll error
             };
             depth_buffer_view = rf_data.depth_buffer.create_view(&TextureViewDescriptor::default());
