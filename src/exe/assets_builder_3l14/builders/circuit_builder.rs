@@ -1,12 +1,10 @@
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionBuilder};
 use asset_3l14::AssetTypeId;
-use bitcode::{Decode, Encode};
 use indexmap::IndexMap;
 use latch_3l14::block_meta::{BlockBuildMeta, HydrateBlock};
-use latch_3l14::{BlockId, BlockKind, BlockVisitor, CircuitDebugData, CircuitFile, CircuitFileBlock, ImpulseActions, ImpulseBlock, Inlet, LatchingOutlet, Plug, PulsedOutlet, Scope};
+use latch_3l14::{BlockDebugData, BlockId, BlockKind, CircuitDebugData, CircuitFile, CircuitFileBlock, Inlet, LatchingOutlet, Plug, PulsedOutlet};
 use logos::{Lexer, Logos};
 use nab_3l14::{Signal, Symbol};
-use proc_macros_3l14::CircuitBlock;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::collections::HashMap;
@@ -64,7 +62,7 @@ impl CircuitBuilder
         Self { known_impulses, known_latches }
     }
 
-    fn parse(&self, mut lexed: CircuitLex) -> Result<CircuitParse<'_>, ParseError>
+    fn parse<'p>(&self, mut lexed: CircuitLex<'p>) -> Result<CircuitParse<'p>, ParseError>
     {
         let mut depths = HashMap::new();
         let mut stack = Vec::new();
@@ -290,7 +288,16 @@ impl CircuitBuilder
             },
             debug: CircuitDebugData
             {
-                blocks: Box::new([]),
+                impulse_blocks: Box::default(),
+                latch_blocks: Box::default(),
+                // impulse_blocks: impulses.iter().map(|(name, _)| BlockDebugData
+                // {
+                //     name: name.as_ref(),
+                // }).collect(),
+                // latch_blocks: latches.iter().map(|(name, _)| BlockDebugData
+                // {
+                //     name: name.as_ref(),
+                // }).collect(),
             },
             block_mem,
         })

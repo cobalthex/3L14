@@ -669,7 +669,7 @@ mod traversal_tests
     use super::*;
     use nab_3l14::utils::ShortTypeName;
 
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     struct TestImpulse
     {
         #[allow(dead_code)]
@@ -689,6 +689,7 @@ mod traversal_tests
             visit.visit_pulses("Outlet", &self.outlet);
         }
     }
+    impl Block for TestImpulse { }
 
     #[derive(Default, Debug)]
     struct TestLatchContext
@@ -696,7 +697,7 @@ mod traversal_tests
         test: usize,
     }
 
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     struct TestLatch
     {
         #[allow(dead_code)]
@@ -748,6 +749,7 @@ mod traversal_tests
             visit.visit_latches("Powered", &self.powered_outlet);
         }
     }
+    impl Block for TestLatch { }
 
     #[test]
     fn combo_traversal()
@@ -842,7 +844,7 @@ mod traversal_tests
             num_local_vars: 0,
         };
 
-        let mut instance = Instance::new(circuit);
+        let mut instance = Instance::new(Arc::new(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
 
@@ -943,7 +945,7 @@ mod traversal_tests
             num_local_vars: 0,
         };
 
-        let mut instance = Instance::new(circuit);
+        let mut instance = Instance::new(Arc::new(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
 
@@ -1000,7 +1002,7 @@ mod traversal_tests
             num_local_vars: 0,
         };
 
-        let mut instance = Instance::new(circuit);
+        let mut instance = Instance::new(Arc::new(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
 
@@ -1069,7 +1071,7 @@ mod traversal_tests
             num_local_vars: 0,
         };
 
-        let mut instance = Instance::new(circuit);
+        let mut instance = Instance::new(Arc::new(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
 
@@ -1167,7 +1169,7 @@ mod traversal_tests
             num_local_vars: 0,
         };
 
-        let mut instance = Instance::new(circuit);
+        let mut instance = Instance::new(Arc::new(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
 
@@ -1245,8 +1247,8 @@ mod traversal_tests
             latches: Box::new([]),
             num_local_vars: 0,
         };
-        
-        let mut instance = Instance::new(circuit);
+
+        let mut instance = Instance::new(Arc::new(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
         instance.power_on(run_cxt.clone());
@@ -1261,6 +1263,7 @@ mod var_tests
     use super::*;
     use nab_3l14::utils::ShortTypeName;
 
+    #[derive(Debug)]
     struct TestImpulse
     {
         pub var: VarId,
@@ -1270,7 +1273,9 @@ mod var_tests
         fn pulse(&self, scope: Scope, _actions: ImpulseActions) { println!("Var {:?} = {:?}", self.var, scope.get(self.var)); }
         fn inspect(&self, _visit: BlockVisitor) { }
     }
+    impl Block for TestImpulse { }
 
+    #[derive(Debug)]
     struct WriteLatch
     {
         pub var: VarId,
@@ -1286,7 +1291,9 @@ mod var_tests
         fn power_off(&self, _scope: Scope) { }
         fn inspect(&self, _visit: BlockVisitor) { }
     }
+    impl Block for WriteLatch { }
 
+    #[derive(Debug)]
     struct ReadLatch
     {
         pub var: VarId,
@@ -1313,6 +1320,7 @@ mod var_tests
             visit.visit_pulses("On Read", &self.on_read);
         }
     }
+    impl Block for ReadLatch { }
 
     #[test]
     fn no_propagation_while_powered_off()
@@ -1349,7 +1357,7 @@ mod var_tests
             num_local_vars: 1,
         };
 
-        let mut instance = Instance::new(circuit);
+        let mut instance = Instance::new(Arc::new(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
 
@@ -1409,7 +1417,7 @@ mod var_tests
             num_local_vars: 1,
         };
 
-        let mut instance = Instance::new(circuit);
+        let mut instance = Instance::new(Arc::new(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
 

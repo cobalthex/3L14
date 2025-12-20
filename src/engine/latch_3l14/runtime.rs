@@ -216,6 +216,12 @@ impl Runtime
                 InstanceAction::ReEnter(block_id) => inst_mut.re_enter(block_id, context.clone()),
             }
         }
+
+        // TODO: auto-destroy if no way to re-enter?
+        // if !inst_mut.any_latches_powered() &&
+        //     inst_mut.circuit().signaled_entries.is_empty()
+        // {
+        // }
     }
 }
 
@@ -244,7 +250,7 @@ mod tests
             num_local_vars: 0,
         };
 
-        Runtime::spawn(&Runtime::new(), circuit, None);
+        Runtime::spawn(&Runtime::new(), Arc::new(circuit), None);
     }
 }
 

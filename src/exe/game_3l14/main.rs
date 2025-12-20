@@ -258,7 +258,14 @@ fn main() -> ExitReason
             if kbd.is_press(KeyCode::F) &&
                 let AssetPayload::Available(circuit) = test_circuit.payload()
             {
-                Runtime::spawn(&latch_rt, circuit, None);
+                if kbd.has_keymod(KeyMods::SHIFT)
+                {
+                       
+                }
+                else
+                {
+                    let _inst = Runtime::spawn(&latch_rt, circuit, None);
+                }
             }
 
             if let CameraProjection::Perspective { fov, aspect_ratio} = camera.projection()

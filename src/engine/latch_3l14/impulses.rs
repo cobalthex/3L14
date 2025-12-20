@@ -34,9 +34,9 @@ pub struct DebugLog
 }
 impl ImpulseBlock for DebugLog
 {
-    fn pulse(&self, _scope: Scope, mut actions: ImpulseActions)
+    fn pulse(&self, scope: Scope, mut actions: ImpulseActions)
     {
-        log::debug!("LATCH> {}", self.message);
+        log::debug!("LATCH>{:?}> {}", scope.run_id, self.message);
         actions.pulse(&self.outlet);
     }
 

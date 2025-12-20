@@ -47,7 +47,8 @@ pub struct BlockDebugData<'b>
 #[derive(Encode, Decode)]
 pub struct CircuitDebugData<'d>
 {
-    pub blocks: Box<[BlockDebugData<'d>]>,
+    pub impulse_blocks: Box<[BlockDebugData<'d>]>,
+    pub latch_blocks: Box<[BlockDebugData<'d>]>,
 }
 
 pub type EntryPoints = Box<[BlockId]>;
@@ -85,6 +86,7 @@ impl AssetLifecycler for CircuitLifecycler
                 let buf = request.read_n_bytes(def.packed_size as usize)?;
                 let Some(blk_meta) = self.known_impulses.get(&def.type_name_hash) else
                 {
+                    // this may be due to a block being inaccessible during runtime but accessible during build
                     log::error!("Failed to find impulse block definition for {:x}", def.type_name_hash);
                     let stupid_fuck: Box<dyn Error> = Box::new(AssetLoadError::Parse);
                     return Err(stupid_fuck);
@@ -96,6 +98,7 @@ impl AssetLifecycler for CircuitLifecycler
                 let buf = request.read_n_bytes(def.packed_size as usize)?;
                 let Some(blk_meta) = self.known_latches.get(&def.type_name_hash) else
                 {
+                    // this may be due to a block being inaccessible during runtime but accessible during build
                     log::error!("Failed to find latch block definition for {:x}", def.type_name_hash);
                     let stupid_fuck: Box<dyn Error> = Box::new(AssetLoadError::Parse);
                     return Err(stupid_fuck);
