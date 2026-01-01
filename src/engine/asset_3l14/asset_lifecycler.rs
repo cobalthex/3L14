@@ -240,6 +240,7 @@ impl AssetLifecyclers
         self.registered_asset_types.insert(A::asset_type(), RegisteredAssetType
         {
             type_id: TypeId::of::<A>(),
+            #[cfg(debug_assertions)]
             type_name: A::short_type_name(),
             dealloc_fn: |h| unsafe { h.dealloc::<A>() },
         });
@@ -265,6 +266,7 @@ impl AssetLifecyclers
         self.registered_asset_types.insert(A::asset_type(), RegisteredAssetType
         {
             type_id: TypeId::of::<A>(),
+            #[cfg(debug_assertions)]
             type_name: A::short_type_name(),
             dealloc_fn: |h| unsafe { h.dealloc::<A>() },
         });

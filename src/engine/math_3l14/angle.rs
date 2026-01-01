@@ -32,6 +32,7 @@ impl Angle
         let diff = (to.0 - self.0) % Self::TWO_PI.0;
         let dist = ((2.0 * diff) % Self::TWO_PI.0) - diff;
         Self(self.0 + dist * t)
+        // TODO: add tests
     }
 
     // modifies the value to be between -PI and PI

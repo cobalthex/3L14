@@ -1,5 +1,5 @@
-mod angles;
-pub use angles::*;
+mod angle;
+pub use angle::*;
 
 mod aabb;
 pub use aabb::*;
