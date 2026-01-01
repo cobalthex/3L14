@@ -4,16 +4,15 @@ use bitcode::Encode;
 use clap::ValueEnum;
 use metrohash::MetroHash64;
 use nab_3l14::utils::inline_hash::InlineWriteHash;
-use nab_3l14::utils::{hash_bstrings, varint, ShortTypeName};
-use std::cell::{LazyCell, UnsafeCell};
+use nab_3l14::utils::{varint, ShortTypeName};
+use std::cell::UnsafeCell;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
-use std::hash::Hasher;
 use std::io;
-use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
+use std::io::{Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
@@ -161,9 +160,20 @@ impl AssetsBuilder
         let source_meta_file_path = canonical_path.with_extension(
             format!("{}.{}", file_ext.as_ref(), AssetsBuilderConfig::SOURCE_META_FILE_EXTENSION));
 
-        let source_meta = match File::open(&source_meta_file_path)
+        let build_time = chrono::Utc::now();
+
+        let (source_meta, meta_modtime) = match File::open(&source_meta_file_path)
         {
-            Ok(mut fin) => SourceMetadata::load(&mut fin).map_err(BuildError::SourceMetaError)?,
+            Ok(mut fin) =>
+            {
+                let meta_modtime = fin.metadata()
+                    .map_err(BuildError::SourceMetaIOError)?
+                    .modified()
+                    .map_err(BuildError::SourceMetaIOError)?;
+
+                let meta = SourceMetadata::load(&mut fin).map_err(BuildError::SourceMetaError)?;
+                (meta, meta_modtime)
+            },
             Err(err) if err.kind() == ErrorKind::NotFound =>
             {
                 // TODO: assert that thread_rng impls CryptoRng
@@ -177,11 +187,12 @@ impl AssetsBuilder
                 };
 
                 {
-                    let mut meta_writer = File::create(&source_meta_file_path).map_err(|e| BuildError::SourceMetaError(Box::new(e)))?;
-                    new_meta.save(true, &mut meta_writer).map_err(|e| BuildError::SourceMetaError(e))?;
+                    let mut meta_writer = File::create(&source_meta_file_path)
+                        .map_err(|e| BuildError::SourceMetaIOError(e))?;
+                    new_meta.save(true, &mut meta_writer).map_err(BuildError::SourceMetaError)?;
                 }
 
-                new_meta
+                (new_meta, build_time.into())
             },
             Err(err) =>
             {
@@ -193,6 +204,19 @@ impl AssetsBuilder
         let mut source_read =
         {
             let fin = File::open(&canonical_path).map_err(BuildError::SourceIOError)?;
+
+            let src_modtime = fin.metadata()
+                .map_err(BuildError::SourceIOError)?
+                .modified()
+                .map_err(BuildError::SourceIOError)?;
+            // note: ideally this checks for matching outputs but 1-many makes that hard
+            if let BuildRule::OnlyIfChanged = build_rule &&
+                src_modtime <= meta_modtime
+            {
+                log::debug!("Skipped (up-to-date) {source_path:?}");
+                return Ok(BuildResults::default());
+            }
+
             InlineWriteHash::<MetroHash64, _>::new(Box::new(fin)) // note: seek() makes this hash a bit nondeterministic, but it should be stable as long as the builder/file hasn't changed
         };
 
@@ -208,7 +232,7 @@ impl AssetsBuilder
         {
             build_rule,
             source_id: source_meta.source_id,
-            timestamp: chrono::Utc::now(),
+            timestamp: build_time,
             rel_source_path: rel_path,
             abs_output_dir: self.config.assets_root.as_path(),
             builder_hash: builder.builder_hash,
@@ -221,13 +245,41 @@ impl AssetsBuilder
         {
             Ok(_) =>
             {
+                // todo: hash can be used for versioning/uniquifying built asssets
                 let _input_hash = source_read.finish();
+
+                // bump the modtime for up-to-date tracking
+                match File::options().write(true).open(&source_meta_file_path)
+                {
+                    Ok(fin) =>
+                    {
+                        if let Err(_) = fin.set_modified(outputs.timestamp.into())
+                        {
+                            log::error!("Failed to update {source_meta_file_path:?} write-time");
+                        };
+                    }
+                    Err(_) => log::error!("Failed to open {source_meta_file_path:?} to update write-time"),
+                }
+
                 Ok(outputs.results)
             },
             Err(err) => Err(BuildError::BuilderError(err)),
         }
     }
 
+    // Build all (known) assets. Files without an accompanying .sork are skipped
+    pub fn build_all(&self, build_rule: BuildRule) -> Result<(), ()> // TODO
+    {
+        // TODO: parallelize
+        for source in self.scan_sources()
+        {
+            let Ok((source, _)) = source else { continue };
+            let result = self.build_source(source, build_rule); // TODO
+            println!("{:?}", result);
+        }
+
+        Ok(())
+    }
     // rebuild_asset(ext, base_id, file_bytes() ?
 }
 
@@ -240,6 +292,9 @@ pub enum BuildError
     NoBuilderForSource(String),
     SourceIOError(io::Error),
     SourceMetaError(Box<dyn Error>),
+    SourceMetaIOError(io::Error),
+    AssetMetaIOError(io::Error),
+    AssetMetaError(Box<dyn Error>),
     TooManyDerivedIDs,
     BuilderError(Box<dyn Error>),
     OutputMetaError(Box<dyn Error>),
@@ -416,7 +471,6 @@ impl<'b> BuildOutputs<'b>
     #[inline] #[must_use]
     pub fn source_path(&self) -> &Path { self.rel_source_path }
 
-
     // Produce an output from this build. Assets of the same type have sequential derived IDs
     #[inline]
     pub fn add_output(
@@ -457,23 +511,41 @@ impl<'b> BuildOutputs<'b>
         -> Result<AssetKey, BuildError>
     {
         let output_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::Asset));
+        let output_meta_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::MetaData));
 
         let should_build = match build_rule
         {
             BuildRule::OnlyIfChanged =>
             {
-                !output_path.exists()
-                // TODO: check if actually different (only for synthetic assets)
+                !output_path.exists() ||
+                {
+                    match File::open(&output_meta_path)
+                    {
+                        Ok(mut fin) =>
+                        {
+                            let mut bytes = Vec::new();
+                            fin.read_to_end(&mut bytes)
+                                .map_err(BuildError::AssetMetaIOError)?;
+                            let meta = AssetMetadata::load(&mut Cursor::new(bytes))
+                                .map_err(BuildError::AssetMetaError)?;
+
+                            // log for each reason?
+                            meta.builder_hash != self.builder_hash ||
+                            meta.format_hash != self.format_hash
+                            // check timestamps?
+                        }
+                        Err(e) if e.kind() == io::ErrorKind::NotFound => true,
+                        Err(e) => return Err(BuildError::AssetMetaIOError(e)),
+                    }
+                }
             },
             BuildRule::ForceBuildAll => true,
         };
-        if should_build && !self.results.contains(&asset_key)
+
+        if !self.results.contains(&asset_key) && should_build
         {
             let output_writer = File::create(&output_path).map_err(BuildError::OutputIOError)?;
-
-            let output_meta_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::MetaData));
             let output_meta_writer = File::create(&output_meta_path).map_err(BuildError::OutputIOError)?;
-
             let output_debug_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::DebugData));
 
             let mut output = BuildOutput

@@ -1,5 +1,7 @@
 use enumflags2::bitflags;
 
+use crate::core::VersionBuilder;
+
 // TODO: go back to intel_tex_2? (ISPC is deprecated)
 
 pub enum CompressionQuality
@@ -40,9 +42,18 @@ pub struct TextureInput
 pub struct TextureCompressor;
 impl TextureCompressor
 {
+    pub fn version(vb: &mut VersionBuilder)
+    {
+        vb.append(
+            &[
+                // TODO: version of compressor lib
+                b"Texture compressor initial",
+            ],
+        );
+    }
+
     pub fn guess_quality(&self, input: &TextureInput) -> CompressionQuality
     {
-
         todo!()
     }
 

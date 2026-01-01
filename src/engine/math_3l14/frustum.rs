@@ -114,13 +114,13 @@ impl IsOnOrInside<Sphere> for Frustum
 mod tests
 {
     use glam::Vec3;
-    use crate::Radians;
+    use crate::Angle;
     use super::*;
 
     #[test]
     fn planes()
     {
-        let projection = Mat4::perspective_lh(Radians::PI_OVER_TWO.0, 1.0, 1.0, 10.0);
+        let projection = Mat4::perspective_lh(Angle::PI_OVER_TWO.to_radians(), 1.0, 1.0, 10.0);
         let view = Mat4::look_at_lh(
             Vec3::ZERO,
             Vec3::Z,
@@ -162,7 +162,7 @@ mod tests
     #[test]
     fn sphere_inside()
     {
-        let projection = Mat4::perspective_lh(Radians::PI_OVER_TWO.0, 16.0 / 9.0, 0.1, 100.0);
+        let projection = Mat4::perspective_lh(Angle::PI_OVER_TWO.to_radians(), 16.0 / 9.0, 0.1, 100.0);
         let view = Mat4::look_at_lh(
             Vec3::new(0.0, 0.0, -10.0),
             Vec3::Z,

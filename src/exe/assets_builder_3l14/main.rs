@@ -5,6 +5,7 @@ mod helpers;
 use crate::core::{validate_symbols, AssetsBuilder, AssetsBuilderConfig, BuildRule, ScanError};
 use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
+use latch_3l14::block_meta::BlockBuildMeta;
 use log::log;
 use nab_3l14::app::{set_panic_hook, AppRun};
 
@@ -32,7 +33,9 @@ pub enum CliCommands
     Sources,
     #[clap(about = "List known assets and info about them")]
     Assets,
-    
+
+    #[clap(about = "List all known latch types")]
+    DumpLatchTypes
     // server mode - watch for fs changes and auto build new assets
 }
 
@@ -54,7 +57,7 @@ fn main()
 
     let Ok(assets_root) = Path::new("assets").canonicalize() else { return; }; // TODO: error handling
     let src_assets_root = assets_root.join("src");
-    let built_assets_root = assets_root.join("build");
+    let built_assets_root = assets_root.join("built");
 
     let mut builder_cfg = AssetsBuilderConfig::new(&src_assets_root, &built_assets_root);
     // TODO: use inventory crate here for autodiscovery?
@@ -64,10 +67,9 @@ fn main()
 
     match &app_run.args.command
     {
-        CliCommands::Build { all: true, .. } =>
+        CliCommands::Build { all: true, rule, .. } =>
         {
-            // TODO: scan assets and build, validate symbols
-            todo!();
+            let _todo = builder.build_all(rule.unwrap_or_default());
         },
         CliCommands::Build { symbols: true, .. } =>
         {
@@ -112,6 +114,20 @@ fn main()
                         ass.1.source_path),
                     Err(err) => println!("{err}"),
                 }
+            }
+        }
+
+        CliCommands::DumpLatchTypes =>
+        {
+            println!("Impulses\n========");
+            for impulse in inventory::iter::<BlockBuildMeta<0>>()
+            {
+                println!("{}", impulse.type_name);
+            }
+            println!("\nLatches\n=======");
+            for latch in inventory::iter::<BlockBuildMeta<1>>()
+            {
+                println!("{}", latch.type_name);
             }
         }
     }

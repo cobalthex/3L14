@@ -31,6 +31,7 @@ containers_3l14 = { path = "./src/engine/containers_3l14" }
 debug_3l14 = { path = "./src/engine/debug_3l14" }
 graphics_3l14 = { path = "./src/engine/graphics_3l14" }
 input_3l14 = { path = "./src/engine/input_3l14" }
+interop_3l14 = { path = "./src/engine/interop_3l14" }
 latch_3l14 = { path = "./src/engine/latch_3l14" }
 math_3l14 = { path = "./src/engine/math_3l14" }
 nab_3l14 = { path = "./src/engine/nab_3l14" }
@@ -83,6 +84,7 @@ toml = { version = "0.9.8", features = ["parse"] }
 triomphe = { version = "0.1.15", features = ["arc-swap"] }
 unicase = "2.8.1"
 walkdir = "2.5.0"
+windows = { version = "0.62.2", features = ["Win32_Storage_FileSystem"] }
 wgpu = { version = "27.0.1", features = ["spirv"] }
 
 # workspace dev-dependencies

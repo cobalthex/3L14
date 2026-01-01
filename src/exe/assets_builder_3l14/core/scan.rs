@@ -65,9 +65,9 @@ impl Iterator for ScanSources
                 {
                     Ok(sm) => sm,
                     Err(err) =>
-                        {
-                            return Some(Err(err));
-                        }
+                    {
+                        return Some(Err(err));
+                    }
                 };
 
                 // append the extension instead and check that meta file exists?
@@ -120,7 +120,7 @@ impl Iterator for ScanAssets
                 {
                     continue;
                 }
-                
+
                 // todo: flip this around to find all asset files and then verify meta file
 
                 let asset_meta = match Self::read_asset_meta(entry.path())

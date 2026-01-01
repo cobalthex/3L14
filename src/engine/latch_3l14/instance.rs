@@ -194,7 +194,7 @@ impl Instance
                     local_changes: &mut local_changes,
                     shared_scope: context.shared_scope,
                     shared_changes: &mut shared_changes,
-                    latch_context: unsafe { $runtime_state as *mut _ },
+                    latch_context: $runtime_state as *mut _,
                 }
             } }
             macro_rules! process_pulses { ($option_parent_latch:expr) =>

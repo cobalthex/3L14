@@ -1,12 +1,12 @@
 use crate::assets::ShaderStage;
 use crate::camera::Camera;
-use crate::{colors, debug_label, Renderer, Rgba};
+use crate::{debug_label, Renderer, Rgba};
 use debug_3l14::debug_gui::DebugGui;
 use egui::{Align2, Color32, FontId, Painter, Pos2, Ui};
 use glam::{FloatExt, Mat4, Quat, Vec2, Vec3, Vec4};
-use math_3l14::{Degrees, Plane, Radians, WORLD_FORWARD, WORLD_RIGHT, WORLD_UP};
+use math_3l14::Angle;
 use std::sync::atomic::{AtomicBool, Ordering};
-use wgpu::{include_spirv, BlendState, BufferDescriptor, BufferUsages, ColorTargetState, ColorWrites, Face, FragmentState, FrontFace, IndexFormat, MultisampleState, PolygonMode, PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor, VertexState};
+use wgpu::{include_spirv, BlendState, ColorTargetState, ColorWrites, FragmentState, FrontFace, MultisampleState, PolygonMode, PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor, VertexState};
 use crate::dynamic_geo::DynamicGeo;
 
 const CUBOID_VERTICES: [Vec4; 8] =
@@ -533,14 +533,14 @@ impl DebugDraw
 
     pub fn draw_arrow(&mut self, tail: Vec3, nose: Vec3, wing_normal: Vec3, color: Rgba)
     {
-        const WING_ANGLE: Radians = Degrees(30.0).to_radians();
+        const WING_ANGLE: Angle = Angle::from_degrees(30.0);
 
         let wing_length = (tail - nose).length();
         let wing_tangent = (tail - nose) / 3.0;
 
         // todo: can prob just use (a+b)/2 to make diagonals
-        let left = nose + Quat::from_axis_angle(wing_normal, -WING_ANGLE.0) * wing_tangent;
-        let right = nose + Quat::from_axis_angle(wing_normal, WING_ANGLE.0) * wing_tangent;
+        let left = nose + Quat::from_axis_angle(wing_normal, -WING_ANGLE.to_radians()) * wing_tangent;
+        let right = nose + Quat::from_axis_angle(wing_normal, WING_ANGLE.to_radians()) * wing_tangent;
         self.draw_polyline(&[tail, nose, left, nose, right], false, color);
     }
 

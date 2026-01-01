@@ -9,10 +9,9 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use triomphe::Arc;
-use arrayvec::ArrayVec;
 use enumflags2::BitFlags;
-use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutEntry, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerDescriptor, StencilState, TextureFormat, VertexBufferLayout, VertexState};
-use crate::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
+use wgpu::{AddressMode, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerDescriptor, StencilState, TextureFormat, VertexState};
+use crate::vertex_layouts::VertexLayoutBuilder;
 
 #[derive(Debug, Clone, Copy, Hash)]
 pub enum DebugMode // debug only?
@@ -45,7 +44,7 @@ impl PipelineCache
     pub fn new(renderer: Arc<Renderer>) -> Self
     {
         let default_sampler = Self::create_sampler(&renderer);
-        
+
         Self
         {
             renderer: renderer.clone(),

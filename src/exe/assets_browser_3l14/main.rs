@@ -36,41 +36,41 @@ fn main() -> ExitReason
     let windows = Windows::new(&sdl_video, &app_run);
     let mut input = Input::new(&sdl);
 
-    let mut assets_list = Vec::new();
-    (||
+    let meta_ext = AssetFileType::MetaData.file_extension();
+    let assets_list: Box<[_]> = std::fs::read_dir(app_run.get_app_folder(AppFolder::Assets))
+        .expect("Failed to read assets dir")
+        .filter_map(|entry|
     {
-        let meta_ext = AssetFileType::MetaData.file_extension();
-        for maybe_entry in std::fs::read_dir(app_run.get_app_folder(AppFolder::Assets))?
+        let Ok(entry) = entry else { return None; };
+        let Ok(ft) = entry.file_type() else { return None; };
+        if ft.is_file()
         {
-            let Ok(entry) = maybe_entry else { continue };
-            let Ok(ft) = entry.file_type() else { continue; };
-            if ft.is_file()
+            // to_str should be allowed but rust is dumb
+            let fname = entry.file_name().into_string().unwrap_or_default();
+            if fname.ends_with(&meta_ext)
             {
-                // to_str should be allowed but rust is dumb
-                let fname = entry.file_name().into_string().unwrap_or_default();
-                println!("> {fname}");
-                if fname.ends_with(&meta_ext)
+                let Ok(mut reader) = std::fs::File::open(entry.path())
+                    else { println!("Failed to open asset meta for {fname:?}"); return None; };
+                let Ok(asset_meta) = AssetMetadata::load(&mut reader)
+                    else { println!("Failed to parse asset meta for {fname:?}"); return None; };
+
+                return Some(AssetInfo
                 {
-                    let mut reader = std::fs::File::open(entry.path())?;
-                    let asset_meta = AssetMetadata::load(&mut reader)?;
-                    assets_list.push(AssetInfo
+                    display_name: match &asset_meta.name
                     {
-                        display_name: match &asset_meta.name
-                        {
-                            None => format!("{:#?}", asset_meta.key),
-                            Some(name) => format!("{name} ({:?})", asset_meta.key.asset_type()),
-                        },
-                        meta: asset_meta,
-                    });
-                }
+                        None => format!("{:#?}", asset_meta.key),
+                        Some(name) => format!("{name} ({:?})", asset_meta.key.asset_type()),
+                    },
+                    meta: asset_meta,
+                });
             }
-            // else if ft.is_dir()
-            // {
-            //
-            // }
         }
-        Ok::<(), Box<dyn Error>>(())
-    })().expect("Failed to load assets");
+        None
+        // else if ft.is_dir()
+        // {
+        //
+        // }
+    }).collect();
     let mut selected_asset_index = usize::MAX;
 
     let renderer = Renderer::new(windows.main_window());

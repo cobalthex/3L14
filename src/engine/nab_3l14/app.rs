@@ -101,6 +101,7 @@ impl<TCliArgs: CliArgs> AppRun<TCliArgs>
             .filter_module("debug_3l14", default_log_levels.1)
             .filter_module("graphics_3l14", default_log_levels.1)
             .filter_module("input_3l14", default_log_levels.1)
+            .filter_module("interop_3l14", default_log_levels.1)
             .filter_module("latch_3l14", default_log_levels.1)
             .filter_module("math_3l14", default_log_levels.1)
             .filter_module("nab_3l14", default_log_levels.1)

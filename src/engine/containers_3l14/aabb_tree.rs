@@ -1,9 +1,10 @@
+use bitcode::{Decode, Encode};
 use math_3l14::AABB;
-use std::fmt::{Debug, Formatter, Write};
+use std::fmt::{Debug, Formatter};
 use smallvec::{smallvec, SmallVec};
 use crate::NodeIndex;
 
-#[derive(Default)]
+#[derive(Default, Clone, Encode, Decode)]
 struct Node
 {
     bounds: AABB,
@@ -14,7 +15,7 @@ struct Node
     right_child_index: NodeIndex,
 }
 
-// AABBTree ?
+#[derive(Clone, Encode, Decode)]
 pub struct AabbTree<T>
 {
     nodes: Vec<Node>, // TODO: use a free list (and or slot map)
@@ -27,7 +28,7 @@ impl<T> AabbTree<T>
     #[inline] #[must_use]
     pub fn new() -> Self
     {
-        AabbTree
+        Self
         {
             nodes: Vec::new(),
             len: 0,
@@ -105,7 +106,7 @@ impl<T> AabbTree<T>
             let node = &self.nodes[node_index.0];
             let left_child_bounds = self.nodes[node.left_child_index.0].bounds;
             let right_child_bounds = self.nodes[node.right_child_index.0].bounds;
-            let mut node_mut = &mut self.nodes[node_index.0];
+            let node_mut = &mut self.nodes[node_index.0];
             node_mut.bounds = left_child_bounds.unioned_with(right_child_bounds);
 
             // if should_rotate
@@ -170,6 +171,7 @@ impl<T> AabbTree<T>
         return true;
     }
 
+    #[must_use]
     pub fn contains(&self, bounds: AABB) -> bool
     {
         let leaf_index = self.index_of(bounds);
@@ -344,6 +346,72 @@ impl<T> AabbTree<T>
             stack: if self.root_index.is_some() { smallvec![self.root_index.0] } else { SmallVec::new() },
         }
     }
+
+    // Re-order the tree for more efficient traversal
+    pub fn repack(&mut self)
+    {
+        // sort as DFS, as searches likely traverse down specific subtrees
+
+        if self.root_index.is_none()
+        {
+            debug_assert!(self.len() == 0);
+            return;
+        }
+
+        let mut nodes = Vec::with_capacity(self.len());
+
+        // TODO: sort values
+
+        let mut stack = vec![(NodeIndex::none(), 0, self.root_index)];
+        while let Some((parent_index, sibling_index, node_index)) = stack.pop()
+        {
+            let hydrated = &self.nodes[node_index.0];
+
+            let new_index = NodeIndex::some(nodes.len());
+            nodes.push(Node
+            {
+                bounds: hydrated.bounds,
+                leaf_index: hydrated.leaf_index,
+                parent_index,
+                left_child_index: NodeIndex::none(),
+                right_child_index: NodeIndex::none(),
+            });
+
+            if parent_index.is_some()
+            {
+                let pardrated = &mut nodes[parent_index.0];
+                match sibling_index
+                {
+                    0 => pardrated.left_child_index = new_index,
+                    1 => pardrated.right_child_index = new_index,
+                    _ => panic!("There are only two siblings per level"),
+                }
+            }
+
+            // if hydrated.leaf_index.is_some()
+            // {
+            //     // todo: set sort index for values here
+            // }
+            if hydrated.right_child_index.is_some() { stack.push((new_index, 1, hydrated.right_child_index)); }
+            if hydrated.left_child_index.is_some() { stack.push((new_index, 0, hydrated.left_child_index)); }
+        }
+
+        self.nodes = nodes; // in place sort?
+        self.values.shrink_to_fit(); // necessary if this is being used before serializing?
+    }
+
+    // Map the values of this aabb-tree to a different type without changing the hierarchy
+    #[must_use]
+    pub fn map<U>(mut self, f: impl FnMut(T) -> U) -> AabbTree<U>
+    {
+        AabbTree
+        {
+            len: self.len,
+            nodes: self.nodes, // shrink to fit?
+            root_index: self.root_index,
+            values: self.values.drain(..).map(f).collect(),
+        }
+    }
 }
 impl<T: Debug> Debug for AabbTree<T>
 {
@@ -355,8 +423,8 @@ impl<T: Debug> Debug for AabbTree<T>
             return Ok(());
         }
 
-        let mut queue = vec![(0, '^', self.root_index)];
-        while let Some((depth, l_r, node)) = queue.pop()
+        let mut stack = vec![(0, '^', self.root_index)];
+        while let Some((depth, l_r, node)) = stack.pop()
         {
             if f.alternate()
             {
@@ -375,18 +443,18 @@ impl<T: Debug> Debug for AabbTree<T>
             f.write_fmt(format_args!("[{l_r}] {:?}", hydrated.bounds))?;
             if hydrated.leaf_index.is_some()
             {
-                f.write_str(" (Leaf) value: ");
+                f.write_str(" (Leaf) value: ")?;
                 Debug::fmt(&self.values[hydrated.leaf_index.0], f)?;
             }
-            if hydrated.right_child_index.is_some() { queue.push((depth + 1, 'R', hydrated.right_child_index)); }
-            if hydrated.left_child_index.is_some() { queue.push((depth + 1, 'L', hydrated.left_child_index)); }
+            if hydrated.right_child_index.is_some() { stack.push((depth + 1, 'R', hydrated.right_child_index)); }
+            if hydrated.left_child_index.is_some() { stack.push((depth + 1, 'L', hydrated.left_child_index)); }
         }
 
         Ok(())
     }
 }
 
-struct AabbTreeIterOverlapping<'t, T>
+pub struct AabbTreeIterOverlapping<'t, T>
 {
     tree: &'t AabbTree<T>,
     aabb: AABB,

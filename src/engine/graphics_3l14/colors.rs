@@ -85,7 +85,7 @@ impl Rgba
 }
 impl Default for Rgba
 {
-    fn default() -> Self { colors::WHITE } 
+    fn default() -> Self { colors::WHITE }
 }
 impl From<u32> for Rgba
 {
@@ -201,6 +201,7 @@ pub const TRANSPARENT_WHITE: Rgba = Rgba { red: 255, green: 255, blue: 255, alph
 pub const BLACK: Rgba = Rgba { red: 0, green: 0, blue: 0, alpha: 255 };
 pub const WHITE: Rgba = Rgba { red: 255, green: 255, blue: 255, alpha: 255 };
 pub const GRAY: Rgba = Rgba { red: 144, green: 144, blue: 144, alpha: 255 };
+pub const DARK_GRAY: Rgba = Rgba { red: 24, green: 24, blue: 24, alpha: 255 };
 pub const RED: Rgba = Rgba { red: 255, green: 0, blue: 0, alpha: 255 };
 pub const YELLOW: Rgba = Rgba { red: 255, green: 255, blue: 0, alpha: 255 };
 pub const GREEN: Rgba = Rgba { red: 0, green: 255, blue: 0, alpha: 255 };

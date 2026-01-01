@@ -1,3 +1,5 @@
+pub use ::impls;
+
 mod circuit;
 pub use circuit::*;
 
@@ -18,4 +20,4 @@ pub mod block_meta;
 pub mod latches;
 pub mod impulses;
 
-pub use ::impls;
+pub mod data_source;

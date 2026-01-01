@@ -42,7 +42,7 @@ impl CameraClip
 
         let (half_fov, aspect_ratio) = match camera.projection()
         {
-            CameraProjection::Perspective { fov, aspect_ratio } => (fov.0 / 2.0, *aspect_ratio),
+            CameraProjection::Perspective { fov, aspect_ratio } => (fov.to_radians() / 2.0, *aspect_ratio),
             CameraProjection::Orthographic { left, top, right, bottom } =>
             {
                 // perspective: W = depth * tan(fov_x /2), H = depth * tan(fov_y / 2)

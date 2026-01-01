@@ -3,7 +3,7 @@ use proc_macro2::Span;
 use std::hash::Hasher;
 use metrohash::MetroHash64;
 use quote::quote;
-use syn::{parse_macro_input, parse_str, DeriveInput, Fields, Ident, Member, Path, Type};
+use syn::{parse_macro_input, parse_str, DeriveInput, Fields, Member, Path, Type};
 use syn::Data::Struct;
 
 fn path_contains(container: &Path, containing: &Path) -> bool

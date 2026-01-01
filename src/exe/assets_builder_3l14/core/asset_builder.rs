@@ -4,7 +4,7 @@ use metrohash::MetroHash64;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::error::Error;
-use std::hash::{Hash, Hasher};
+use std::hash::Hasher;
 use std::io::{Seek, Write};
 
 pub trait BuildOutputWrite: Write + Seek { }
@@ -75,12 +75,12 @@ impl VersionBuilder
         self.0.finish()
     }
 
-    pub fn push(&mut self, bstr: &'static [u8])
+    pub fn push(&mut self, bstr: &[u8])
     {
         self.1 += 1;
         self.0.write(bstr);
     }
-    pub fn append(&mut self, bstrs: &[&'static [u8]])
+    pub fn append(&mut self, bstrs: &[&[u8]])
     {
         self.1 += bstrs.len();
         bstrs.iter().for_each(|s| { self.0.write(s); });

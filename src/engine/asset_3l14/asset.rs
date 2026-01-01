@@ -1,8 +1,7 @@
 use crate::AssetTypeId;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
-use bitcode::{Decode, DecodeOwned, Encode};
-use unicase::UniCase;
+use bitcode::{DecodeOwned, Encode};
 use proc_macros_3l14::FancyEnum;
 
 #[derive(FancyEnum)]

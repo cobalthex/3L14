@@ -1,7 +1,7 @@
 use crate::{debug_label, Renderer};
 use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use bitcode::{Decode, Encode};
-use enumflags2::{bitflags, BitFlag, BitFlags};
+use enumflags2::{bitflags, BitFlags};
 use enumflags2::_internal::RawBitFlags;
 use debug_3l14::debug_gui::DebugGui;
 use math_3l14::{Sphere, AABB};
@@ -114,7 +114,7 @@ impl AssetLifecycler for GeometryLifecycler
     fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn std::error::Error>>
     {
         let gf = request.deserialize::<GeometryFile>()?;
-        
+
         let vertices = self.renderer.device().create_buffer_init(&BufferInitDescriptor
         {
             label: debug_label!(format!("{:?} static vertices", request.asset_key).as_str()),

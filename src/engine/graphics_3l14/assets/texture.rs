@@ -12,6 +12,7 @@ use crate::{debug_label, Renderer};
 
 pub const MAX_MIP_COUNT: usize = 16;
 
+// TODO: use wgpu format, but add a note in compiler that it could change when wgpu changes (though unlikely)
 #[repr(u8)]
 #[derive(Encode, Decode)]
 pub enum TextureFilePixelFormat

@@ -1,7 +1,7 @@
 use crate::{debug_label, Renderer, Rgba};
 use arrayvec::ArrayVec;
 use bitcode::{Decode, Encode};
-use proc_macros_3l14::{asset, FancyEnum};
+use proc_macros_3l14::FancyEnum;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use triomphe::Arc;
@@ -23,7 +23,7 @@ pub enum MaterialClass
 pub enum MaterialFeatureFlags
 {
     None = 0b0000000000000000,
-    
+
 }
 
 #[repr(C)]

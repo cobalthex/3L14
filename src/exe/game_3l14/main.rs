@@ -5,18 +5,16 @@ use debug_3l14::debug_menu::{DebugMenu, DebugMenuMemory};
 use debug_3l14::sparkline::Sparkline;
 use egui::Widget;
 use glam::{FloatExt, Mat4, Quat, Vec3};
-use graphics_3l14::assets::{AnimFrameNumber, GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, SkeletalAnimation, SkeletalAnimationLifecycler, SkeletonDebugData, SkeletonLifecycler, TextureLifecycler, MAX_SKINNED_BONES};
+use graphics_3l14::assets::{GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, SkeletalAnimation, SkeletalAnimationLifecycler, SkeletonLifecycler, TextureLifecycler};
 use graphics_3l14::camera::{Camera, CameraProjection};
 use graphics_3l14::debug_draw::DebugDraw;
 use graphics_3l14::pipeline_cache::{DebugMode, PipelineCache};
 use graphics_3l14::skeleton_poser::{PoseBlendMode, SkeletonPoser};
-use graphics_3l14::uniforms_pool::UniformsPool;
 use graphics_3l14::view::View;
 use graphics_3l14::windows::Windows;
 use graphics_3l14::{colors, render_passes, renderer, Renderer, Rgba};
 use input_3l14::{Input, KeyCode, KeyMods};
-use math_3l14::{Degrees, DualQuat, Frustum, Plane, Radians, Ratio, Transform};
-use metrohash::MetroHash64;
+use math_3l14::{Angle, Frustum, Transform};
 use nab_3l14::app::{AppFolder, AppRun, ExitReason};
 use nab_3l14::timing::Clock;
 use nab_3l14::utils::array::init_array;
@@ -25,9 +23,8 @@ use nab_3l14::{CompletionState, RenderFrameNumber, ToggleState};
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use sdl2::messagebox::MessageBoxFlag;
 use std::ops::Deref;
-use triomphe::Arc;
 use std::time::Duration;
-use wgpu::{BindingResource, BufferAddress, BufferBinding, BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor};
+use wgpu::CommandEncoderDescriptor;
 use latch_3l14::{Circuit, CircuitLifecycler, Runtime};
 
 #[derive(Debug, Parser)]
@@ -108,7 +105,7 @@ fn main() -> ExitReason
 
         let model_key = AssetKey::from(0x00900000835b1860);
         let base_anim_key = AssetKey::from(0x00a00260835b1860);
-        let overlay_anim_key = AssetKey::from(0x00a00030835b1860);
+        let overlay_anim_key = AssetKey::from(0x00a002a0835b1860);
 
         let latch_key = AssetKey::from(0x00c000009de1ba60);
         let test_circuit = assets.load::<Circuit>(latch_key);
@@ -121,7 +118,7 @@ fn main() -> ExitReason
         let mut camera = Camera::default();
         camera.update_projection(CameraProjection::Perspective
         {
-            fov: Degrees(90.0).into(),
+            fov: Angle::from_degrees(90.0),
             aspect_ratio: renderer.display_aspect_ratio(),
         }, 0.1, 1000.0);
         let mut cam_transform = Transform
@@ -134,7 +131,6 @@ fn main() -> ExitReason
 
         let pipeline_cache = PipelineCache::new(renderer.clone());
         // ꙮ
-        let uniforms_pool = UniformsPool::new(renderer.clone());
 
         let mut obj_rot = Quat::IDENTITY;
 
@@ -260,7 +256,7 @@ fn main() -> ExitReason
             {
                 if kbd.has_keymod(KeyMods::SHIFT)
                 {
-                       
+
                 }
                 else
                 {
@@ -270,9 +266,8 @@ fn main() -> ExitReason
 
             if let CameraProjection::Perspective { fov, aspect_ratio} = camera.projection()
             {
-                let mut fov2 = *fov;
                 let is_zoomed = kbd.is_down(KeyCode::Z);
-                fov2 = Degrees(f32::lerp(fov.to_degrees_f32(), if is_zoomed { 30.0 } else { 90.0 }, frame_time.delta_time.as_secs_f32() * 5.0)).into();
+                let fov2 = Angle::lerp(*fov, Angle::from_degrees(if is_zoomed { 30.0 } else { 90.0 }), frame_time.delta_time.as_secs_f32() * 5.0);
                 camera.update_projection(CameraProjection::Perspective { fov: fov2, aspect_ratio: *aspect_ratio }, camera.near_clip(), camera.far_clip());
             }
 
@@ -324,7 +319,7 @@ fn main() -> ExitReason
                         let mut scene_pass = render_passes::scene(
                             &render_frame,
                             &mut encoder,
-                            Some(colors::CORNFLOWER_BLUE));
+                            Some(colors::DARK_GRAY));
 
                         let view = &mut views[app_frame_number.0 as usize % views.len()];
                         view.begin(frame_time.total_runtime, &camera, clip_camera.as_ref().unwrap_or(&camera), DebugMode::None);

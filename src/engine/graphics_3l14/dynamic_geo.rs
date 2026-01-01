@@ -1,4 +1,4 @@
-use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferDescriptor, BufferUsages, IndexFormat, Queue, RenderPass, RenderPipeline};
+use wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferDescriptor, BufferUsages, IndexFormat, Queue, RenderPass};
 use nab_3l14::utils::{AsU8Slice, ShortTypeName};
 use crate::{debug_label, Renderer};
 

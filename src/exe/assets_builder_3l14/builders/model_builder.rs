@@ -1,34 +1,28 @@
-use crate::core::{AssetBuilder, AssetBuilderMeta, BuildError, BuildOutputs, SourceInput, VersionBuilder};
+use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionBuilder};
 use crate::helpers::shader_compiler::{ShaderCompilation, ShaderCompileFlag, ShaderCompiler};
+use crate::helpers::texture_compressor::TextureCompressor;
 use arrayvec::ArrayVec;
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
-use debug_3l14::debug_gui::DebugGuiBase;
 use enumflags2::BitFlags;
 use glam::{Mat4, Quat, Vec3};
-use gltf::animation::util::{ReadOutputs, Translations};
+use gltf::animation::util::ReadOutputs;
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
 use graphics_3l14::assets::{AnimFrameNumber, BoneId, GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, Shader, ShaderDebugData, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat, VertexLayout};
-use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayoutBuilder};
-use log::kv::Key;
+use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexLayoutBuilder};
 use math_3l14::{DualQuat, Ratio, Sphere, AABB};
 use metrohash::MetroHash64;
-use nab_3l14::timing::FSeconds;
-use nab_3l14::utils::alloc_slice::{alloc_slice_default, alloc_slice_uninit, alloc_u8_slice};
+use nab_3l14::utils::alloc_slice::{alloc_slice_default, alloc_u8_slice};
 use nab_3l14::utils::as_u8_array;
 use nab_3l14::utils::inline_hash::InlineWriteHash;
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
-use std::collections::{btree_map, BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
-use std::iter::Peekable;
 use std::path::{Path, PathBuf};
-use toml::value::Index;
 use unicase::UniCase;
-use wgpu::VertexBufferLayout;
 
 const DEFAULT_ANIM_SAMPLE_RATE: Ratio<u32> = Ratio::new(1, 30);
 
@@ -98,6 +92,8 @@ impl AssetBuilderMeta for ModelBuilder
         vb.append(&[
             b"Initial"
         ]);
+        ShaderCompiler::version(vb);
+        TextureCompressor::version(vb);
     }
 
     fn format_version(vb: &mut VersionBuilder)
@@ -720,7 +716,7 @@ impl ModelBuilder
                 poses[fr * bone_ids.len() + bone] = DualQuat::from_rot_trans(rotation, translation).into();
             }
         }
-        
+
         outputs.add_output(AssetTypeId::SkeletalAnimation, |anim_output|
         {
             in_anim.name().map(|n| anim_output.set_name(n));

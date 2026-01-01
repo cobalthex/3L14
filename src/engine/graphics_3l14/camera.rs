@@ -1,15 +1,15 @@
 use std::time::Duration;
 use egui::Ui;
-use glam::{Mat4, Vec3};
+use glam::Mat4;
 use debug_3l14::debug_gui::DebugGui;
-use math_3l14::{Frustum, Radians, Transform};
+use math_3l14::{Angle, Transform};
 
 #[derive(Debug, Clone)]
 pub enum CameraProjection
 {
     Perspective
     {
-        fov: Radians,
+        fov: Angle,
         aspect_ratio: f32, // width / height
     },
     Orthographic
@@ -28,7 +28,7 @@ impl CameraProjection
         {
             CameraProjection::Perspective { fov, aspect_ratio } =>
             {
-                Mat4::perspective_lh(fov.0, *aspect_ratio, near_clip, far_clip)
+                Mat4::perspective_lh(fov.to_radians(), *aspect_ratio, near_clip, far_clip)
             },
             CameraProjection::Orthographic { left, top, right, bottom } =>
             {
@@ -91,7 +91,7 @@ impl Default for Camera
 {
     fn default() -> Self
     {
-        let projection = CameraProjection::Perspective { fov: Radians(90.0), aspect_ratio: 16.0 / 9.0 };
+        let projection = CameraProjection::Perspective { fov: Angle::from_degrees(90.0), aspect_ratio: 16.0 / 9.0 };
         let transform = Transform::default();
         let clip_mtx = projection.to_matrix(0.1, 1000.0) * transform.to_view_mtx();
 

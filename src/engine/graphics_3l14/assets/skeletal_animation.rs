@@ -2,7 +2,7 @@ use asset_3l14::TrivialAssetLifecycler;
 use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
 use egui::Ui;
-use math_3l14::{DualQuat, Ratio, PackedTransform};
+use math_3l14::{Ratio, PackedTransform};
 use proc_macros_3l14::asset;
 use crate::assets::BoneId;
 

@@ -11,7 +11,6 @@
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=3L14",
                     "--package=game_3l14"
                 ],
                 "filter": {
@@ -25,13 +24,45 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable '3L14'",
+            "name": "Debug executable 'Assets builder'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--package=assets_builder_3l14"
+                ],
+                "filter": {
+                    "name": "3L14",
+                    "kind": "bin"
+                }
+            },
+            "args": ["build", "all"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'Assets browser'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--package=assets_browser_3l14"
+                ],
+                "filter": {
+                    "name": "3L14",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=3L14",
-                    "--package=game_3l14"
                 ],
                 "filter": {
                     "name": "3L14",

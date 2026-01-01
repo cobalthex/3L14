@@ -1,0 +1,15 @@
+[package]
+name = "interop_3l14"
+description = "OS/3P interop code"
+workspace = "../../.."
+edition.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+proc_macros_3l14.workspace = true
+
+nab_3l14.workspace = true
+
+windows.workspace = true

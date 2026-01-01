@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::error::Error;
 use triomphe::Arc;
-use wgpu::util::{make_spirv, make_spirv_raw};
+use wgpu::util::make_spirv;
 use wgpu::{ShaderModuleDescriptor, ShaderModuleDescriptorPassthrough};
 use asset_3l14::{AssetLifecycler, AssetLoadRequest};
 use debug_3l14::debug_gui::DebugGui;

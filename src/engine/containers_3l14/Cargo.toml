@@ -11,6 +11,7 @@ path = "lib.rs"
 math_3l14.workspace = true # needed by R* Trees, move that elsewhere?
 nab_3l14.workspace = true
 
+bitcode.workspace = true
 crossbeam.workspace = true
 glam.workspace = true
 smallvec.workspace = true

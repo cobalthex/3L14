@@ -1,11 +1,9 @@
 use serde::de::{DeserializeOwned, Error};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Debug, Formatter};
-use std::hash::Hasher;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use base64::Engine;
-use metrohash::MetroHash64;
 use crate::{AssetKey, AssetKeySourceId};
 
 // TODO: is this really better than just fs_read_to_string() and toml parse?

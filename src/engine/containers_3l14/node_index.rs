@@ -1,4 +1,6 @@
-#[derive(Copy, Clone, PartialEq, Eq)]
+use bitcode::{Decode, Encode};
+
+#[derive(Copy, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct NodeIndex(pub usize);
 impl NodeIndex
 {

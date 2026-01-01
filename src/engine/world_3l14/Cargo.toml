@@ -8,10 +8,14 @@ edition.workspace = true
 path = "lib.rs"
 
 [dependencies]
-nab_3l14.workspace = true
-math_3l14.workspace = true
-debug_3l14.workspace = true
 asset_3l14.workspace = true
+containers_3l14.workspace = true
+debug_3l14.workspace = true
 graphics_3l14.workspace = true
+math_3l14.workspace = true
+nab_3l14.workspace = true
+proc_macros_3l14.workspace = true
+
+bitcode.workspace = true
 egui.workspace = true
 glam.workspace = true

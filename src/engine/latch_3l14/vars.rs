@@ -3,6 +3,7 @@ use bitcode::{Decode, Encode};
 use serde::Deserialize;
 use super::{BlockId, InstRunId, ContextfulLatchBlock, BlockKind};
 use smallvec::SmallVec;
+use asset_3l14::AssetKey;
 use nab_3l14::utils::alloc_slice::alloc_slice_default;
 use crate::instance::LatchContextStorage;
 use crate::runtime::BlockRef;
@@ -72,6 +73,9 @@ pub enum VarValue
     Bool(bool),
     Int(i32),
     Float(f32),
+    String(String),
+    // string ref? (Arc<str>,range)
+    Asset(AssetKey),
     // use glam types?
     Vec2 { x: f32, y: f32 },
     Vec3 { x: f32, y: f32, z: f32 },
@@ -83,6 +87,8 @@ pub enum VarValue
     // Array/List
     // Map
 }
+
+// TODO: containers are ext referenced
 
 pub(super) type ScopeChanges = SmallVec<[VarChange; 4]>;
 

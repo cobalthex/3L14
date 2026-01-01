@@ -7,10 +7,9 @@ use nab_3l14::utils::array::init_array;
 use parking_lot::Mutex;
 use std::any::TypeId;
 use std::collections::HashMap;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::thread::{Builder, JoinHandle};
-use std::time::Duration;
 use triomphe::Arc;
 // TODO: probably don't pass around UniCase publicly
 
@@ -77,6 +76,7 @@ impl AssetsStorage
         let mut handle_bank = self.handles.lock(); // must lock before below to make sure that the handle doesn't get cloned between the drop and below
 
         let inner = untyped_handle.as_ref();
+        // note: there must be a load acquire for this to be sound -- .ref_count() below should do it
 
         // retrieve this info after locking the handle bank so a zero refcount cannot be added to by a load()
         if inner.ref_count() != 0
@@ -474,7 +474,7 @@ impl Assets
         lifecycler.lifecycler.load_untyped(
             self.storage.clone(),
             unsafe { handle.1.clone().into_inner() },
-            Box::new(input_data),
+            input_data,
             #[cfg(feature = "asset_debug_data")] None);
         handle.1
     }
@@ -646,7 +646,7 @@ mod tests
     #[derive(Debug)]
     struct TestAsset
     {
-        name: String,
+        value: u32,
         nested: Option<Ash<NestedAsset>>,
     }
     impl Asset for TestAsset
@@ -761,7 +761,7 @@ mod tests
     mod load
     {
         use super::*;
-        use std::io::Cursor;
+        use std::{io::Cursor, time::Duration};
         // TODO: disable threading and add 'loop_once' function for worker
 
         #[test]
@@ -770,7 +770,7 @@ mod tests
         {
             let assets = Assets::new(AssetLifecyclers::default(), AssetsConfig::test());
 
-            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(Box::new([])));
             await_asset(&req);
         }
 
@@ -801,7 +801,7 @@ mod tests
                 Err(Box::new(TestError))
             }));
 
-            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(Box::new([])));
             match await_asset(&req)
             {
                 AssetPayload::Unavailable(AssetLoadError::Parse) => {},
@@ -816,7 +816,7 @@ mod tests
                 .add_lifecycler(TestAssetLifecycler::default());
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
-            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(Box::new([])));
             match req.payload()
             {
                 AssetPayload::Pending => {},
@@ -838,19 +838,19 @@ mod tests
             set_passthru::<_, TestAssetLifecycler>(&assets, Some(|_req: AssetLoadRequest|
             {
                 let _ = READY_WAITER.lock();
-                Ok(TestAsset { name: "pending asset".to_string(), nested: None })
+                Ok(TestAsset { value: 134, nested: None })
             }));
 
             assert_eq!(Some(0), get_passthru_call_count::<TestAssetLifecycler>(&assets));
 
-            let _req1: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+            let _req1: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(Box::new([])));
             await_asset(&_req1);
             assert_eq!(Some(1), get_passthru_call_count::<TestAssetLifecycler>(&assets));
 
             let _req2: Ash<TestAsset>;
             {
                 let _ = READY_WAITER.lock();
-                _req2 = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+                _req2 = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(Box::new([])));
                 // TODO: this appears to be non-deterministic
                 assert_eq!(Some(1), get_passthru_call_count::<TestAssetLifecycler>(&assets));
             }
@@ -868,7 +868,7 @@ mod tests
 
             set_passthru::<_, TestAssetLifecycler>(&assets, Some(|_req: AssetLoadRequest|
             {
-                Ok(TestAsset { name: "test asset".to_string(), nested: None })
+                Ok(TestAsset { value: 987, nested: None })
             }));
             set_passthru::<_, NestedAssetLifecycler>(&assets, Some(|_req: AssetLoadRequest|
             {
@@ -876,10 +876,10 @@ mod tests
             }));
             // TODO: broken
 
-            let req: Ash<TestAsset> = assets.load_direct_from::<TestAsset>(TEST_ASSET_1, Cursor::new([]));
+            let req: Ash<TestAsset> = assets.load_direct_from::<TestAsset>(TEST_ASSET_1, Cursor::new(Box::new([])));
             assert!(req.is_loaded_recursive());
 
-            let req2: Ash<NestedAsset> = assets.load_from::<NestedAsset>(TEST_ASSET_2, Cursor::new([]));
+            let req2: Ash<NestedAsset> = assets.load_from::<NestedAsset>(TEST_ASSET_2, Cursor::new(Box::new([])));
             match await_asset(&req2)
             {
                 AssetPayload::Available(a) => assert_eq!(a.id, 123),
@@ -895,19 +895,20 @@ mod tests
                 .add_lifecycler(TestAssetLifecycler::default());
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
-            let loaded_asset_name = "loaded asset name";
+            let test_value = 357u32;
+            let loaded_asset_payload = Box::new(test_value.to_le_bytes());
             set_passthru::<_, TestAssetLifecycler>(&assets, Some(|mut req: AssetLoadRequest|
             {
-                let mut name = String::new();
-                req.input.read_to_string(&mut name)?;
-                Ok(TestAsset { name, nested: None })
+                let mut val = [0u8; 4];
+                req.input.read_exact(&mut val)?;
+                Ok(TestAsset { value: u32::from_le_bytes(val), nested: None })
             }));
 
-            let input_bytes = Cursor::new(loaded_asset_name.as_bytes());
-            let req = assets.load_from::<TestAsset>(TEST_ASSET_1, input_bytes);
+
+            let req = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(loaded_asset_payload));
             match await_asset(&req)
             {
-                AssetPayload::Available(a) => assert_eq!(a.name, loaded_asset_name),
+                AssetPayload::Available(a) => assert_eq!(a.value, test_value),
                 _ => panic!("Asset not available"),
             }
         }
@@ -919,30 +920,30 @@ mod tests
                 .add_lifecycler(TestAssetLifecycler::default());
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
-            let first_asset_name = "first";
-            let second_asset_name = "second";
+            let first_val = 1u32;
+            let second_val = 2u32;
 
             set_passthru::<_, TestAssetLifecycler>(&assets, Some(|mut req: AssetLoadRequest|
             {
-                let mut name = String::new();
-                req.input.read_to_string(&mut name)?;
-                Ok(TestAsset { name, nested: None })
+                let mut val = [0u8; 4];
+                req.input.read_exact(&mut val)?;
+                Ok(TestAsset { value: u32::from_le_bytes(val), nested: None })
             }));
 
-            let mut input_bytes = Cursor::new(first_asset_name.as_bytes());
-            let mut req = assets.load_from::<TestAsset>(TEST_ASSET_1, input_bytes);
+            let mut input_bytes = Box::new(first_val.to_le_bytes());
+            let mut req = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(input_bytes));
             match await_asset(&req)
             {
-                AssetPayload::Available(a) => assert_eq!(a.name, first_asset_name),
+                AssetPayload::Available(a) => assert_eq!(a.value, first_val),
                 _ => panic!("Asset not available"),
             }
 
-            input_bytes = Cursor::new(second_asset_name.as_bytes());
-            req = assets.load_from::<TestAsset>(TEST_ASSET_1, input_bytes);
+            input_bytes = Box::new(second_val.to_le_bytes());
+            req = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(input_bytes));
             std::thread::sleep(Duration::from_millis(10)); // TODO: HACK
             match await_asset(&req)
             {
-                AssetPayload::Available(a) => assert_eq!(a.name, second_asset_name),
+                AssetPayload::Available(a) => assert_eq!(a.value, second_val),
                 _ => panic!("Asset not available"),
             }
         }

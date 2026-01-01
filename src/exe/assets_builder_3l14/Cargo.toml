@@ -16,6 +16,7 @@ nab_3l14 = { workspace = true, features = [] }
 asset_3l14 = { workspace = true, features = ["asset_names"] }
 debug_3l14 = { workspace = true, features = [] }
 graphics_3l14 = { workspace = true, features = ["debug_gpu_labels"] }
+interop_3l14 = { workspace = true, features = [] }
 latch_3l14 = { workspace = true, features = [] }
 math_3l14 = { workspace = true, features = [] }
 proc_macros_3l14 = { workspace = true, features = [] }

@@ -7,6 +7,7 @@ use graphics_3l14::assets::ShaderStage;
 use hassle_rs::{Dxc, DxcCompiler, DxcIncludeHandler, DxcLibrary, DxcValidator, Dxil, HassleError};
 use parking_lot::Mutex;
 use nab_3l14::utils::ShortTypeName;
+use crate::core::VersionBuilder;
 
 #[bitflags]
 #[repr(u8)]
@@ -75,6 +76,16 @@ pub struct ShaderCompiler
 }
 impl ShaderCompiler
 {
+    pub fn version(vb: &mut VersionBuilder)
+    {
+        let dxc_version = interop_3l14::exe_version::get_exe_version("dxcompiler.dll").expect("Failed to get DXC version");
+        vb.append(
+        &[
+            b"DXC", &dxc_version.as_bytes(),
+            b"Shader compiler initial",
+        ]);
+    }
+
     pub fn new(shaders_root: impl AsRef<Path>, dxc_dir: Option<PathBuf>) -> Result<Self, Box<dyn Error>>
     {
         let dxc = Dxc::new(dxc_dir.clone())?;
@@ -219,7 +230,7 @@ mod tests
     //         return float4(in_position, 1.0);
     //     }
     //     "#;
-    // 
+    //
     //     // TODO: clean up, re-use vertion in build_main
     //     let dxc_dir =
     //         {
@@ -228,9 +239,9 @@ mod tests
     //             out_dir.push("../../.."); // gross
     //             out_dir.canonicalize().expect("! Failed to canonicalize Env:OUT_DIR")
     //         };
-    // 
+    //
     //     let compiler = ShaderCompiler::new("$$ INVALID $$", Some(dxc_dir)).unwrap();
-    // 
+    //
     //     let mut output = Vec::new();
     //     compiler.compile_hlsl(&mut output, ShaderCompilation
     //     {

@@ -1,5 +1,5 @@
 use super::*;
-use bitcode::{Decode, DecodeOwned};
+use bitcode::DecodeOwned;
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::error::Error;
@@ -211,6 +211,8 @@ pub(super) struct RegisteredAssetLifecycler
 pub(super) struct RegisteredAssetType
 {
     pub type_id: TypeId,
+    #[allow(dead_code)]
+    #[cfg(debug_assertions)] // use one of the features?
     pub type_name: &'static str,
     pub dealloc_fn: fn(UntypedAssetHandle),
 }
@@ -223,6 +225,7 @@ pub struct AssetLifecyclers
 }
 impl AssetLifecyclers
 {
+    #[allow(private_bounds)]
     pub fn add_lifecycler<A: Asset, L: AssetLifecycler<Asset=A> + UntypedAssetLifecycler + 'static>(mut self, lifecycler: L) -> Self
     {
         // warn/fail on duplicates?

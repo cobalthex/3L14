@@ -1,7 +1,7 @@
 use arrayvec::ArrayVec;
-use math_3l14::{Affine3, DualQuat, Ratio};
-use nab_3l14::{debug_panic, TickCount};
-use nab_3l14::timing::FSeconds;
+use glam::Vec3;
+use math_3l14::{DualQuat, Ratio};
+use nab_3l14::{TickCount};
 use crate::assets::{AnimFrameNumber, SkeletalAnimation, Skeleton, MAX_SKINNED_BONES};
 
 type PoseSet = ArrayVec<DualQuat, MAX_SKINNED_BONES>;
@@ -21,6 +21,7 @@ pub struct SkeletonPoser<'s>
 {
     poses: PoseSet, // extenral memory (and limit to # of bones)?
     skeleton: &'s Skeleton,
+    pub root_pos: Vec3,
 }
 impl<'s> SkeletonPoser<'s>
 {
@@ -42,6 +43,7 @@ impl<'s> SkeletonPoser<'s>
         {
             poses,
             skeleton,
+            root_pos: Vec3::ZERO,
         }
     }
 
@@ -51,7 +53,7 @@ impl<'s> SkeletonPoser<'s>
     pub fn blend(&mut self, animation: &SkeletalAnimation, mode: PoseBlendMode, time: TickCount, should_loop: bool)
     {
         puffin::profile_function!();
-        
+
         // TODO: blend mode (additive, replace, exlusive(?))
 
         // would this be faster to convert to float first? (floating point div may be faster)
@@ -88,7 +90,7 @@ impl<'s> SkeletonPoser<'s>
             // TODO: animation should store bone indices
             let Some(bone_idx) = self.skeleton.bone_ids.iter().position(|b| *b == animation.bones[i])
                 // else { panic!("Did not find matching bone for {:?} (#{i}) in skel:{:?}", anim.bones[i], skel.hierarchy); };
-                else { continue; }; // skip; TODO this is likely happening when skin.skeleton node is animated
+                else { panic!("!!! {bone_id:?}"); }; // skip; TODO this is likely happening when skin.skeleton node is animated
 
             // TODO: cache reconstructed dual-quats
             let lerped = DualQuat::nlerp(fp.clone().into(), tp.clone().into(), fraction);
