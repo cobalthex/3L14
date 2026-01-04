@@ -2,7 +2,7 @@ mod core;
 mod builders;
 mod helpers;
 
-use crate::core::{validate_symbols, AssetsBuilder, AssetsBuilderConfig, BuildRule, ScanError};
+use crate::core::{validate_symbols, AssetsBuilder, AssetsBuilderConfig, BuildError, BuildRule, ScanError};
 use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use latch_3l14::block_meta::BlockBuildMeta;
@@ -34,6 +34,13 @@ pub enum CliCommands
     #[clap(about = "List known assets and info about them")]
     Assets,
 
+    #[clap(about = "Reset the import settings of one or more source assets")]
+    ResetImport
+    {
+        #[arg(long, value_delimiter = 'v', num_args = 1..)]
+        source: Vec<String>,
+    },
+
     #[clap(about = "List all known latch types")]
     DumpLatchTypes
     // server mode - watch for fs changes and auto build new assets
@@ -60,8 +67,8 @@ fn main()
     let built_assets_root = assets_root.join("built");
 
     let mut builder_cfg = AssetsBuilderConfig::new(&src_assets_root, &built_assets_root);
-    // TODO: use inventory crate here for autodiscovery?
     builder_cfg.add_builder(builders::ModelBuilder::new(&assets_root));
+    builder_cfg.add_builder(builders::TextureBuilder::new());
     builder_cfg.add_builder(builders::CircuitBuilder::new());
     let builder = AssetsBuilder::new(builder_cfg);
 
@@ -95,6 +102,7 @@ fn main()
                 }
             }
         }
+
         CliCommands::Sources =>
         {
             for source in builder.scan_sources()
@@ -102,6 +110,7 @@ fn main()
                 println!("{source:?}");
             }
         }
+
         CliCommands::Assets =>
         {
             for asset in builder.scan_assets()
@@ -113,6 +122,18 @@ fn main()
                         ass.1.key,
                         ass.1.source_path),
                     Err(err) => println!("{err}"),
+                }
+            }
+        }
+
+        CliCommands::ResetImport { source: sources } =>
+        {
+            for source in sources
+            {
+                match builder.reset_import(Path::new(&source))
+                {
+                    Ok(_) => log::debug!("Regenerated source meta for {source}"),
+                    Err(err) => log::error!("Failed to regenerate source meta for {source}: {err}"),
                 }
             }
         }

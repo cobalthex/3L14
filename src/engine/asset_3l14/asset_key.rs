@@ -15,12 +15,7 @@ type AssetKeySourceIdRepr = u64;
 type AssetKeyRepr = u64;
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
-pub struct AssetKeyDerivedId(AssetKeyDerivedIdRepr); // only 15 bits are used.
-impl AssetKeyDerivedId
-{
-    #[cfg(test)]
-    pub const fn test() -> Self { Self(0) }
-}
+pub struct AssetKeyDerivedId(pub AssetKeyDerivedIdRepr); // only 15 bits are used.
 // Used to generate new derived IDs, next returns the existing value and increments self
 impl Iterator for AssetKeyDerivedId
 {
@@ -40,7 +35,7 @@ impl Debug for AssetKeyDerivedId
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct AssetKeySourceId(AssetKeySourceIdRepr); // only 100 bits are used.
+pub struct AssetKeySourceId(pub AssetKeySourceIdRepr); // only 100 bits are used.
 impl AssetKeySourceId
 {
     #[cfg(not(target_family="wasm"))] // todo?
@@ -49,12 +44,6 @@ impl AssetKeySourceId
         let mut bytes = [0u8; size_of::<Self>()];
         rand::RngCore::fill_bytes(&mut rand::rng(), &mut bytes[0..((AssetKey::SOURCE_ID_BITS / 8) as usize)]);
         Self(AssetKeySourceIdRepr::from_le_bytes(bytes))
-    }
-
-    #[cfg(test)]
-    pub const fn test(n: u8) -> Self
-    {
-        Self(n as AssetKeySourceIdRepr)
     }
 }
 // custom serialize/deserialize b/c TOML doesn't support u64
@@ -81,13 +70,13 @@ impl Debug for AssetKeySourceId
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
-        f.write_fmt(format_args!("{:026x}", self.0))
+        f.write_fmt(format_args!("{:0width$x}", self.0, width = format_width_hex_bytes(AssetKey::SOURCE_ID_BITS)))
     }
 }
 
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct AssetKeySynthHash(AssetKeySynthHashRepr);
+pub struct AssetKeySynthHash(pub AssetKeySynthHashRepr);
 impl AssetKeySynthHash
 {
     pub fn generate(hashable: impl Hash) -> Self
@@ -96,12 +85,6 @@ impl AssetKeySynthHash
         hashable.hash(&mut hasher);
         let n = hasher.finish();
         Self(n & AssetKey::SYNTH_HASH_MAX)
-    }
-
-    #[cfg(test)]
-    pub const fn test(n: AssetKeySynthHashRepr) -> Self
-    {
-        Self(n)
     }
 }
 impl Serialize for AssetKeySynthHash
@@ -336,7 +319,7 @@ mod tests
         let is_synthetic = true;
         let derived_id = AssetKeyDerivedId(0);
         let source_id = AssetKeySourceId(0);
-        let synth_hash = AssetKeySynthHash::test(0x123);
+        let synth_hash = AssetKeySynthHash(0x123);
 
         let k = AssetKey::synthetic(asset_type, synth_hash);
         assert_eq!(k.asset_type(), asset_type, "Asset type");

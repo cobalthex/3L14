@@ -1,3 +1,9 @@
 source_id = "08dd00f81"
+version_hash = "UZzirVnU4lY"
 
-[build_config]
+[build_config.import]
+geometry = true
+materials = true
+skeletal_animations = true
+skeleton = true
+textures = true

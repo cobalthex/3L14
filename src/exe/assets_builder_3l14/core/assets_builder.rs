@@ -1,5 +1,5 @@
 use super::*;
-use asset_3l14::{Asset, AssetFileType, AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetMetadata, AssetTypeId, BuilderHash, SourceMetadata, TomlRead, TomlWrite};
+use asset_3l14::{Asset, AssetFileType, AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetMetadata, AssetTypeId, VersionHash, SourceMetadata, TomlRead, TomlWrite};
 use bitcode::Encode;
 use clap::ValueEnum;
 use metrohash::MetroHash64;
@@ -16,6 +16,11 @@ use std::io::{Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+use chrono::DateTime;
+use dashmap::DashMap;
+use dashmap::mapref::one::Ref;
+use triomphe::Arc;
 use unicase::UniCase;
 use walkdir::WalkDir;
 // TODO: split this file out some?
@@ -24,8 +29,7 @@ struct AssetBuilderEntry
 {
     name: &'static str,
     builder: Box<dyn ErasedAssetBuilder>,
-    format_hash: BuilderHash,
-    builder_hash: BuilderHash,
+    version_hash: VersionHash,
 }
 
 #[derive(Debug, Default, Clone, Copy, ValueEnum)]
@@ -47,7 +51,7 @@ pub struct AssetsBuilderConfig
 }
 impl AssetsBuilderConfig
 {
-    pub const SOURCE_META_FILE_EXTENSION: UniCase<&'static str> = UniCase::unicode("sork");
+    pub const SOURCE_META_FILE_EXTENSION: UniCase<&'static str> = UniCase::unicode("sork"); // TODO: OsStr?
 
     pub fn new<P: Into<PathBuf>>(sources_root: P, assets_root: P) -> Self
     {
@@ -72,18 +76,15 @@ impl AssetsBuilderConfig
     // Register a builder for it's registered extensions. Will panic if a particular extension was already registered
     pub fn add_builder<B: AssetBuilder<BuildConfig=impl AssetBuildConfig> + AssetBuilderMeta + 'static>(&mut self, builder: B)
     {
-        let mut format_version = VersionBuilder::new(0);
-        let mut builder_version = VersionBuilder::new(self.builders_version_hash);
-
-        B::format_version(&mut format_version);
-        B::builder_version(&mut builder_version);
+        let mut versioner = VersionBuilder::new(self.builders_version_hash);
+        B::format_version(&mut versioner);
+        B::builder_version(&mut versioner);
 
         let b_index = self.asset_builders.len();
         self.asset_builders.push(AssetBuilderEntry
         {
             name: B::short_type_name(),
-            format_hash: format_version.build(),
-            builder_hash: builder_version.build(),
+            version_hash: versioner.build(),
             builder: Box::new(builder),
         });
 
@@ -106,6 +107,7 @@ impl AssetsBuilderConfig
 pub struct AssetsBuilder
 {
     config: AssetsBuilderConfig,
+    sources: DashMap<String, AssetKeySourceId>, // paths relative to assets root
 }
 impl AssetsBuilder
 {
@@ -117,7 +119,7 @@ impl AssetsBuilder
 
         Self
         {
-            config
+            config,
         }
     }
 
@@ -135,20 +137,69 @@ impl AssetsBuilder
         ScanAssets { walk_dir: walker.into_iter() }
     }
 
-    // transform a source file into one or more built asset, returns the built count
-    pub fn build_source<P: AsRef<Path> + Debug>(&self, source_path: P, build_rule: BuildRule) -> Result<BuildResults, BuildError>
+    fn canonicalize_path(&self, path: impl AsRef<Path>) -> io::Result<PathBuf>
     {
-        let canonical_path =
+        (if path.as_ref().is_relative()
         {
-            if source_path.as_ref().is_relative()
+            self.config.sources_root.join(path.as_ref())
+        }
+        else
+        {
+            path.as_ref().into()
+        }).canonicalize()
+    }
+
+    pub fn reset_import(&self, source_path: impl AsRef<Path>) -> Result<(), BuildError> // unique error?
+    {
+        let canonical_path = self.canonicalize_path(&source_path).map_err(BuildError::SourceIOError)?;
+        let file_ext = canonical_path.extension().unwrap_or(OsStr::new("")).to_string_lossy();
+        let source_meta_file_path = canonical_path.with_extension(
+            format!("{}.{}", file_ext.as_ref(), AssetsBuilderConfig::SOURCE_META_FILE_EXTENSION));
+
+        let b_index = self.config.file_ext_to_builder.get(&UniCase::from(file_ext.as_ref())).ok_or(BuildError::NoBuilderForSource(file_ext.to_string()))?;
+        let builder = self.config.asset_builders.get(*b_index).expect("Had builder ID but no matching builder!");
+        let source_meta= match File::open(&source_meta_file_path)
+        {
+            Ok(mut fin) =>
             {
-                self.config.sources_root.join(source_path.as_ref())
-            }
-            else
+                // overwrite on error? will generate new ID
+                let meta = SourceMetadata::load(&mut fin).map_err(BuildError::SourceMetaError)?;
+                SourceMetadata
+                {
+                    source_id: meta.source_id,
+                    version_hash: builder.version_hash,
+                    build_config: builder.builder.default_config()
+                }
+            },
+            Err(err) if err.kind() == ErrorKind::NotFound =>
             {
-                source_path.as_ref().into()
+                let source_id = AssetKeySourceId::generate();
+                SourceMetadata
+                {
+                    source_id,
+                    version_hash: builder.version_hash,
+                    build_config: builder.builder.default_config(),
+                }
+            },
+            Err(err) =>
+            {
+                log::warn!("Failed to open source asset meta-file for reading: {err}");
+                return Err(BuildError::SourceMetaError(Box::new(err)));
             }
-        }.canonicalize().map_err(BuildError::SourceIOError)?;
+        };
+
+        let mut writer = File::create(&source_meta_file_path)
+            .map_err(BuildError::SourceMetaIOError)?;
+
+        let mut meta_writer = File::create(&source_meta_file_path)
+            .map_err(BuildError::SourceMetaIOError)?;
+        source_meta.save(true, &mut meta_writer).map_err(BuildError::SourceMetaError)
+    }
+
+    // transform a source file into one or more built asset, returns the built count
+    pub fn build_source(&self, source_path: impl AsRef<Path>, build_rule: BuildRule) -> Result<BuildResults, BuildError>
+    {
+        let canonical_path = self.canonicalize_path(&source_path).map_err(BuildError::SourceIOError)?;
 
         let rel_path = canonical_path.strip_prefix(&self.config.sources_root).map_err(|_| BuildError::InvalidSourcePath)?;
 
@@ -177,22 +228,25 @@ impl AssetsBuilder
             Err(err) if err.kind() == ErrorKind::NotFound =>
             {
                 // TODO: assert that thread_rng impls CryptoRng
-                // loop while base ID is zero?
+                // loop while base ID is zero? -- ditto for in reset_import
                 let source_id = AssetKeySourceId::generate();
 
                 let new_meta = SourceMetadata
                 {
                     source_id,
+                    version_hash: builder.version_hash,
                     build_config: builder.builder.default_config(),
                 };
 
                 {
                     let mut meta_writer = File::create(&source_meta_file_path)
-                        .map_err(|e| BuildError::SourceMetaIOError(e))?;
+                        .map_err(BuildError::SourceMetaIOError)?;
                     new_meta.save(true, &mut meta_writer).map_err(BuildError::SourceMetaError)?;
                 }
 
-                (new_meta, build_time.into())
+                log::info!("{:?} is a new asset, assigned source ID: {source_id:?}", source_path.as_ref());
+
+                (new_meta, SystemTime::UNIX_EPOCH)
             },
             Err(err) =>
             {
@@ -210,10 +264,12 @@ impl AssetsBuilder
                 .modified()
                 .map_err(BuildError::SourceIOError)?;
             // note: ideally this checks for matching outputs but 1-many makes that hard
+            // TODO: this should actually get the min(built derived asset file times) and diff both src and meta time against it
             if let BuildRule::OnlyIfChanged = build_rule &&
+                source_meta.version_hash == builder.version_hash &&
                 src_modtime <= meta_modtime
             {
-                log::debug!("Skipped (up-to-date) {source_path:?}");
+                log::debug!("Skipped (up-to-date) {:?} ({:?})", source_path.as_ref(), source_meta.source_id);
                 return Ok(BuildResults::default());
             }
 
@@ -222,7 +278,7 @@ impl AssetsBuilder
 
         let mut input = SourceInput
         {
-            source_path: rel_path,
+            source_path: &canonical_path,
             file_extension: UniCase::from(file_ext),
             source_id: source_meta.source_id,
             input: &mut source_read,
@@ -235,8 +291,7 @@ impl AssetsBuilder
             timestamp: build_time,
             rel_source_path: rel_path,
             abs_output_dir: self.config.assets_root.as_path(),
-            builder_hash: builder.builder_hash,
-            format_hash: builder.format_hash,
+            version_hash: builder.version_hash,
             derived_ids: HashMap::new(),
             results: HashSet::new(),
         };
@@ -357,8 +412,7 @@ pub struct BuildOutput
     writer: Box<dyn BuildOutputWrite>,
     meta_writer: Box<dyn BuildOutputWrite>,
     debug_data_file_path: PathBuf,
-    builder_hash: BuilderHash,
-    format_hash: BuilderHash,
+    version_hash: VersionHash,
     asset_key: AssetKey,
     name: Option<String>,
     source_path: PathBuf,
@@ -376,13 +430,6 @@ impl Seek for BuildOutput
 impl BuildOutput
 {
     pub fn asset_key(&self) -> AssetKey { self.asset_key }
-
-    /* TODO: use savefile for serialization?
-    - versioned, can do migrations more easily
-        migrations would take the form of loading the old asset, applying any transforms, and re-baking
-    - useful?
-    - type hashing (type_hash)?
-     */
 
     pub fn set_name(&mut self, name: impl Into<String>) { self.name = Some(name.into()); }
 
@@ -436,8 +483,7 @@ impl BuildOutput
             name: self.name,
             source_path: self.source_path,
             build_timestamp: chrono::Utc::now(),
-            builder_hash: self.builder_hash,
-            format_hash: self.format_hash,
+            version_hash: self.version_hash,
             dependencies: self.dependencies.into_boxed_slice(),
         };
         // TODO: read old file and compare asset key
@@ -457,9 +503,9 @@ pub struct BuildOutputs<'b>
     rel_source_path: &'b Path,
     abs_output_dir: &'b Path,
 
-    builder_hash: BuilderHash,
-    format_hash: BuilderHash,
+    version_hash: VersionHash,
 
+    sources: Arc<SourceAssetDb>,
     derived_ids: HashMap<AssetTypeId, AssetKeyDerivedId>,
 
     results: BuildResults,
@@ -470,6 +516,14 @@ impl<'b> BuildOutputs<'b>
 
     #[inline] #[must_use]
     pub fn source_path(&self) -> &Path { self.rel_source_path }
+
+    pub fn add_dependency(&mut self, source_name: impl AsRef<Path>, asset_type: AssetTypeId, sub_index: u16) -> AssetKey
+    {
+        let derived_id = AssetKeyDerivedId(sub_index);
+        self.sources.get_or_create()
+
+        todo!()
+    }
 
     // Produce an output from this build. Assets of the same type have sequential derived IDs
     #[inline]
@@ -530,8 +584,7 @@ impl<'b> BuildOutputs<'b>
                                 .map_err(BuildError::AssetMetaError)?;
 
                             // log for each reason?
-                            meta.builder_hash != self.builder_hash ||
-                            meta.format_hash != self.format_hash
+                            meta.version_hash != self.version_hash
                             // check timestamps?
                         }
                         Err(e) if e.kind() == io::ErrorKind::NotFound => true,
@@ -553,8 +606,7 @@ impl<'b> BuildOutputs<'b>
                 writer: Box::new(output_writer),
                 meta_writer: Box::new(output_meta_writer),
                 debug_data_file_path: output_debug_path,
-                builder_hash: self.builder_hash,
-                format_hash: self.format_hash,
+                version_hash: self.version_hash,
                 asset_key,
                 name: None,
                 source_path: self.rel_source_path.to_path_buf(),
@@ -576,14 +628,19 @@ impl<T: Read + Seek> SourceInputRead for T { }
 
 pub struct SourceInput<'b>
 {
-    source_path: &'b Path, // Should only be used for debug purposes
+    source_path: &'b Path, // The full, absolute path of the source file
     file_extension: UniCase<String>, // does not include .
     source_id: AssetKeySourceId,
     input: &'b mut dyn SourceInputRead,
 }
 impl<'b> SourceInput<'b>
 {
+    // Return the full, absolute path of the source file
+    #[inline] #[must_use]
+    pub fn source_path(&self) -> &Path { self.source_path }
+    #[inline] #[must_use]
     pub fn source_path_string(&self) -> String { self.source_path.to_string_lossy().to_string() }
+    #[inline] #[must_use]
     pub fn file_extension(&self) -> &UniCase<String> { &self.file_extension }
 }
 impl<'b> Read for SourceInput<'b>

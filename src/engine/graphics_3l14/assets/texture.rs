@@ -147,7 +147,6 @@ impl AssetLifecycler for TextureLifecycler
         Ok(tex)
     }
 }
-
 impl DebugGui for TextureLifecycler
 {
     fn display_name(&self) -> &str { "Textures" }

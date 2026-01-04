@@ -83,6 +83,9 @@ mod tests
         assert_eq!(Angle::from_degrees(180.0), Angle::PI);
         assert_eq!(Angle::from_radians(std::f32::consts::PI), Angle::from_degrees(180.0));
 
+        assert_eq!(Angle::from_degrees(180.0).to_degrees(), 180.0);
+        assert_eq!(Angle::from_degrees(180.0).to_radians(), std::f32::consts::PI);
+
         println!("{}", Angle::from_degrees(25.0));
         println!("{:#}", Angle::from_degrees(25.0));
     }

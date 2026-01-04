@@ -19,17 +19,20 @@ graphics_3l14 = { workspace = true, features = ["debug_gpu_labels"] }
 interop_3l14 = { workspace = true, features = [] }
 latch_3l14 = { workspace = true, features = [] }
 math_3l14 = { workspace = true, features = [] }
+world_3l14 = { workspace = true, features = [] }
 proc_macros_3l14 = { workspace = true, features = [] }
 
 arrayvec.workspace = true
 bitcode.workspace = true
 chrono.workspace = true
 clap.workspace = true
+dashmap.workspace = true
 erased-serde.workspace = true
 enumflags2.workspace = true
 glam.workspace = true
 gltf.workspace = true
 hassle-rs.workspace = true
+image.workspace = true
 indexmap.workspace = true
 inventory.workspace = true
 log.workspace = true
@@ -40,6 +43,7 @@ regex.workspace = true
 serde.workspace = true
 smallvec.workspace = true
 toml.workspace = true
+triomphe.workspace = true
 unicase.workspace = true
 walkdir.workspace = true
 wgpu.workspace = true

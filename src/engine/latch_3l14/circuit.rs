@@ -9,6 +9,7 @@ use std::fmt::Debug;
 use bitcode::{Decode, Encode};
 use triomphe::Arc;
 use asset_3l14::{AssetLifecycler, AssetLoadError, AssetLoadRequest};
+use proc_macros_3l14::LayoutHash;
 
 #[proc_macros_3l14::asset]
 #[derive(Debug)]
@@ -28,7 +29,7 @@ pub struct CircuitFileBlock
     pub packed_size: u64, // 32 bit?
 }
 
-#[derive(Encode, Decode)]
+#[derive(LayoutHash, Encode, Decode)]
 pub struct CircuitFile
 {
     pub auto_entries: EntryPoints,

@@ -260,7 +260,7 @@ impl AssetsStorage
                                     ),
                                     Err(err) =>
                                     {
-                                        log::warn!("Failed to read {:?} asset file {:?}: {err}",
+                                        log::error!("Failed to read {:?} asset file {:?}: {err}",
                                             inner.asset_type(),
                                             this.asset_key_to_file_path(inner.key(), AssetFileType::Asset));
                                         lifecycler.error_untyped(untyped_handle, AssetLoadError::Fetch);

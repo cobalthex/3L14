@@ -312,16 +312,12 @@ impl AssetBuilderMeta for CircuitBuilder
 
     fn builder_version(vb: &mut VersionBuilder)
     {
-        vb.append(&[
-            b"Initial"
-        ]);
+        vb.push(b"Circuit builder - initial");
     }
 
     fn format_version(vb: &mut VersionBuilder)
     {
-        vb.append(&[
-            b"Initial"
-        ]);
+        vb.push_prehashed(CircuitFile::TYPE_LAYOUT_HASH);
     }
 }
 impl AssetBuilder for CircuitBuilder

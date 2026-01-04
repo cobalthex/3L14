@@ -1,6 +1,6 @@
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionBuilder};
 use crate::helpers::shader_compiler::{ShaderCompilation, ShaderCompileFlag, ShaderCompiler};
-use crate::helpers::texture_compressor::TextureCompressor;
+use crate::builders::texture_builder::TextureBuilder;
 use arrayvec::ArrayVec;
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use enumflags2::BitFlags;
@@ -57,11 +57,36 @@ impl Display for ModelImportError
 }
 impl Error for ModelImportError { }
 
+#[derive(Serialize, Deserialize)]
+pub struct ModelImportSettings
+{
+    geometry: bool,
+    skeleton: bool,
+    skeletal_animations: bool,
+    textures: bool,
+    materials: bool,
+}
+impl Default for ModelImportSettings
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            geometry: true,
+            skeleton: true,
+            skeletal_animations: true,
+            textures: true,
+            materials: true,
+        }
+    }
+}
+
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ModelBuildConfig
 {
     // optimize (meshoptimizer)
+    pub import: ModelImportSettings,
 }
 pub struct ModelBuilder
 {
@@ -90,18 +115,14 @@ impl AssetBuilderMeta for ModelBuilder
     fn builder_version(vb: &mut VersionBuilder)
     {
         vb.append(&[
-            b"Initial"
+            b"Model builder - initial"
         ]);
         ShaderCompiler::version(vb);
-        TextureCompressor::version(vb);
     }
 
     fn format_version(vb: &mut VersionBuilder)
     {
-        // TODO: hash the serialized type layouts
-        vb.append(&[
-            b"Initial"
-        ]);
+        vb.push_prehashed(ModelFile::TYPE_LAYOUT_HASH);
     }
 }
 impl AssetBuilder for ModelBuilder
@@ -110,18 +131,19 @@ impl AssetBuilder for ModelBuilder
 
     fn build_assets(
         &self,
-        _config: Self::BuildConfig,
+        config: Self::BuildConfig,
         input: &mut SourceInput,
         outputs: &mut BuildOutputs)
-    -> Result<(), Box<dyn Error>>
+        -> Result<(), Box<dyn Error>>
     {
         if input.file_extension() == &UniCase::new("glb") ||
             input.file_extension() == &UniCase::new("gltf")
         {
+            let src_dir = input.source_path().parent().map(|p| p.to_path_buf()); // clone here annoying
             let gltf::Gltf { document, blob } = gltf::Gltf::from_reader(input)?;
 
-            let buffers =  gltf::import_buffers(&document, None, blob)?;
-            let images = gltf::import_images(&document, None, &buffers)?;
+            let buffers =  gltf::import_buffers(&document, src_dir.as_deref(), blob)?;
+            let images = gltf::import_images(&document, src_dir.as_deref(), &buffers)?;
 
             let skeletons: Box<_> = document.skins()
                 .map(|in_skin| self.parse_gltf_skin(&in_skin, &buffers, outputs))
@@ -276,64 +298,64 @@ impl ModelBuilder
             let mut textures = ArrayVec::new();
 
             let pbr = in_prim.material().pbr_metallic_roughness();
-            if let Some(tex) = pbr.base_color_texture()
-            {
-                let tex_index = tex.texture().source().index();
-                let tex_data = &images[tex_index];
-
-                let tex_asset = outputs.add_output(AssetTypeId::Texture, |mut tex_output|
-                {
-                    tex.texture().name().map(|n| tex_output.set_name(n));
-
-                    let (pixel_format, need_conv) = match tex_data.format
-                    {
-                        Format::R8 => (TextureFilePixelFormat::R8, false),
-                        Format::R8G8 => (TextureFilePixelFormat::Rg8, false),
-                        Format::R8G8B8 => (TextureFilePixelFormat::Rgba8, true),
-                        Format::R8G8B8A8 => (TextureFilePixelFormat::Rgba8, false),
-                        Format::R16 => todo!("R16 textures"),
-                        Format::R16G16 => todo!("R16G16 textures"),
-                        Format::R16G16B16 => todo!("R16G16B16 textures"),
-                        Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
-                        Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
-                        Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
-                    };
-
-                    tex_output.serialize(&TextureFile
-                    {
-                        width: tex_data.width,
-                        height: tex_data.height,
-                        depth: 1,
-                        mip_count: 1,
-                        mip_offsets: Default::default(),
-                        pixel_format,
-                    })?;
-
-                    // TODO: texture compression
-                    if need_conv
-                    {
-                        match tex_data.format
-                        {
-                            Format::R8G8B8 =>
-                            {
-                                // todo: check length
-                                for i in 0..(tex_data.width * tex_data.height) as usize
-                                {
-                                    tex_output.write_all(&tex_data.pixels[(i * 3)..((i + 1) * 3)])?;
-                                    tex_output.write_all(&[u8::MAX])?;
-                                }
-                            }
-                            _ => todo!("Other texture format conversions"),
-                        }
-                    } else {
-                        tex_output.write_all(&tex_data.pixels)?;
-                    }
-
-                    Ok(())
-                })?;
-
-                textures.try_push(tex_asset)?;
-            }
+            // if let Some(tex) = pbr.base_color_texture()
+            // {
+            //     let tex_index = tex.texture().source().index();
+            //     let tex_data = &images[tex_index];
+            // 
+            //     let tex_asset = outputs.add_output(AssetTypeId::Texture, |mut tex_output|
+            //     {
+            //         tex.texture().name().map(|n| tex_output.set_name(n));
+            // 
+            //         let (pixel_format, need_conv) = match tex_data.format
+            //         {
+            //             Format::R8 => (TextureFilePixelFormat::R8, false),
+            //             Format::R8G8 => (TextureFilePixelFormat::Rg8, false),
+            //             Format::R8G8B8 => (TextureFilePixelFormat::Rgba8, true),
+            //             Format::R8G8B8A8 => (TextureFilePixelFormat::Rgba8, false),
+            //             Format::R16 => todo!("R16 textures"),
+            //             Format::R16G16 => todo!("R16G16 textures"),
+            //             Format::R16G16B16 => todo!("R16G16B16 textures"),
+            //             Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
+            //             Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
+            //             Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
+            //         };
+            // 
+            //         tex_output.serialize(&TextureFile
+            //         {
+            //             width: tex_data.width,
+            //             height: tex_data.height,
+            //             depth: 1,
+            //             mip_count: 1,
+            //             mip_offsets: Default::default(),
+            //             pixel_format,
+            //         })?;
+            // 
+            //         // TODO: texture compression
+            //         if need_conv
+            //         {
+            //             match tex_data.format
+            //             {
+            //                 Format::R8G8B8 =>
+            //                 {
+            //                     // todo: check length
+            //                     for i in 0..(tex_data.width * tex_data.height) as usize
+            //                     {
+            //                         tex_output.write_all(&tex_data.pixels[(i * 3)..((i + 1) * 3)])?;
+            //                         tex_output.write_all(&[u8::MAX])?;
+            //                     }
+            //                 }
+            //                 _ => todo!("Other texture format conversions"),
+            //             }
+            //         } else {
+            //             tex_output.write_all(&tex_data.pixels)?;
+            //         }
+            // 
+            //         Ok(())
+            //     })?;
+            // 
+            //     textures.try_push(tex_asset)?;
+            // }
 
             // TODO: read material info from gltf
             let material_class = MaterialClass::SimpleOpaque; // TODO

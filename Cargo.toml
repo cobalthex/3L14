@@ -40,12 +40,12 @@ world_3l14 = { path = "./src/engine/world_3l14" }
 #egui_wgpu_backend = "0.33.0"
 #puffin = "0.19.1"
 approx = "0.5.1"
-arc-swap = { version = "1.7.1", features = ["weak"] }
+arc-swap = { version = "1.8.0", features = ["weak"] }
 arrayvec = { version = "0.7.6", features = ["serde", "std"] } # re-evaluate
 base64 = "0.22.1"
-bitcode = { version = "0.6.7", features = ["arrayvec", "glam", "std"] }
+bitcode = { version = "0.6.9", features = ["arrayvec", "glam", "std"] }
 chrono = { version = "0.4.42", features = ["serde"] }
-clap = { version = "4.5.53", features = ["derive"] }
+clap = { version = "4.5.54", features = ["derive"] }
 colog = "1.4.0"
 crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
 dashmap = { version = "6.1.0" }

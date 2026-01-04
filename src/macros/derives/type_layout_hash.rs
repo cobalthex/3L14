@@ -2,18 +2,23 @@ use metrohash::MetroHash64;
 use proc_macro::TokenStream;
 use quote::quote;
 use std::hash::{Hash, Hasher};
-use syn::{parse_macro_input, DeriveInput};
-
-pub const TYPE_LAYOUT_HASH_SEED: u64 = 0x1337C0DE00000000; // NOTE: This will change all usages if this changes
+use syn::{parse_macro_input, Data, DeriveInput};
 
 pub fn type_layout_hash(input: TokenStream) -> TokenStream
 {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
 
+    // TODO: this should recurse down into types
+
     // u128?
-    let mut hasher = MetroHash64::with_seed(TYPE_LAYOUT_HASH_SEED);
-    input.hash(&mut hasher); // this may hash more data than necessary, but should be pretty good
+    let mut hasher = MetroHash64::with_seed(0);
+    match input.data
+    {
+        Data::Struct(s) => s.fields.hash(&mut hasher),
+        Data::Enum(e) => e.variants.hash(&mut hasher),
+        Data::Union(u) => u.fields.hash(&mut hasher),
+    }
     let hash = hasher.finish();
 
     // trait?

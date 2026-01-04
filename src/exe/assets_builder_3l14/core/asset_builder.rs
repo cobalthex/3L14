@@ -1,5 +1,5 @@
 use super::*;
-use asset_3l14::BuilderHash;
+use asset_3l14::VersionHash;
 use metrohash::MetroHash64;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -18,7 +18,10 @@ pub trait AssetBuilderMeta
     // Returns a list of binary strings, one per version, used to generate a hash versioning the builder
     fn builder_version(vb: &mut VersionBuilder);
     // Returns a list of binary strings, one per version, used to generate a hash versioning the format of the outputted asset data
-    fn format_version(vb: &mut VersionBuilder);
+    fn format_version(vb: &mut VersionBuilder)
+    {
+        vb.push(b"DEFLTFMT")
+    }
 }
 
 pub(super) type ErasedBuildConfig = toml::Value; // leaky abstraction
@@ -55,7 +58,7 @@ impl<AB: AssetBuilder<BuildConfig=impl AssetBuildConfig>> ErasedAssetBuilder for
     }
 }
 
-pub struct VersionBuilder(MetroHash64, usize);
+pub struct VersionBuilder(MetroHash64, u64);
 impl VersionBuilder
 {
     #[inline] #[must_use]
@@ -64,9 +67,9 @@ impl VersionBuilder
         Self(MetroHash64::with_seed(seed), 0)
     }
     #[inline] #[must_use]
-    pub(super) fn build(self) -> BuilderHash
+    pub(super) fn build(self) -> VersionHash
     {
-        BuilderHash(self.build_raw())
+        VersionHash(self.build_raw())
     }
     #[inline] #[must_use]
     pub(super) fn build_raw(self) -> u64
@@ -82,7 +85,13 @@ impl VersionBuilder
     }
     pub fn append(&mut self, bstrs: &[&[u8]])
     {
-        self.1 += bstrs.len();
+        self.1 += bstrs.len() as u64;
         bstrs.iter().for_each(|s| { self.0.write(s); });
+    }
+    
+    pub fn push_prehashed(&mut self, prehashed: u64)
+    {
+        self.1 += size_of::<u64>() as u64;
+        self.0.write_u64(prehashed);
     }
 }

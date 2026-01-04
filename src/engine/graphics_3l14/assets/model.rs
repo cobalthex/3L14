@@ -5,6 +5,7 @@ use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
 use std::error::Error;
 use triomphe::Arc;
+use proc_macros_3l14::LayoutHash;
 
 #[derive(Encode, Decode)]
 pub struct ModelFileSurface
@@ -14,7 +15,7 @@ pub struct ModelFileSurface
     pub pixel_shader: AssetKey,
 }
 
-#[derive(Encode, Decode)]
+#[derive(LayoutHash, Encode, Decode)]
 pub struct ModelFile
 {
     pub geometry: AssetKey,

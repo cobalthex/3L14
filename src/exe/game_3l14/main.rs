@@ -103,9 +103,9 @@ fn main() -> ExitReason
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        let model_key = AssetKey::from(0x00900000835b1860);
-        let base_anim_key = AssetKey::from(0x00a00260835b1860);
-        let overlay_anim_key = AssetKey::from(0x00a002a0835b1860);
+        let model_key = AssetKey::from(0x00900000542618f7);
+        let base_anim_key = AssetKey::from(0x00a00010542618f7);
+        let overlay_anim_key = AssetKey::from(0x00a00010542618f7);
 
         let latch_key = AssetKey::from(0x00c000009de1ba60);
         let test_circuit = assets.load::<Circuit>(latch_key);

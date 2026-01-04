@@ -1,12 +1,11 @@
-use std::error::Error;
-
 use bitcode::{Decode, Encode};
 use glam::Vec3;
 use asset_3l14::{Ash, AssetKey, AssetLifecycler};
 use containers_3l14::AabbTree;
 use graphics_3l14::assets::Model;
 use math_3l14::Angle;
-use proc_macros_3l14::asset;
+use proc_macros_3l14::{asset, LayoutHash};
+use std::error::Error;
 
 #[derive(Encode, Decode)]
 pub enum Light
@@ -38,8 +37,8 @@ pub struct Scene
 {
     statics: AabbTree<Statics>,
 }
-#[derive(Encode, Decode)]
-struct SceneFile
+#[derive(LayoutHash, Encode, Decode)]
+pub struct SceneFile
 {
     statics: AabbTree<StaticsFile>,
 }

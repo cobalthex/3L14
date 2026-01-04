@@ -46,20 +46,21 @@ impl TomlRead for SourceMetadataStub { }
 pub struct SourceMetadata
 {
     pub source_id: AssetKeySourceId,
+    pub version_hash: VersionHash,
     // is_dependent? (don't self build, omit source_id)
-    pub build_config: toml::Value,
+    pub build_config: toml::Value, // default to empty table?
 }
 impl TomlRead for SourceMetadata { }
 impl TomlWrite for SourceMetadata { }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct BuilderHash(pub u64);
-impl Debug for BuilderHash
+pub struct VersionHash(pub u64);
+impl Debug for VersionHash
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { std::fmt::LowerHex::fmt(&self.0, f) }
 }
 // custom serialize/deserialize b/c TOML doesn't support u64
-impl Serialize for BuilderHash
+impl Serialize for VersionHash
 {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>
     {
@@ -67,7 +68,7 @@ impl Serialize for BuilderHash
         str.serialize(serializer)
     }
 }
-impl<'de> Deserialize<'de> for BuilderHash
+impl<'de> Deserialize<'de> for VersionHash
 {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error>
     {
@@ -75,7 +76,7 @@ impl<'de> Deserialize<'de> for BuilderHash
         let mut dec = [0u8; size_of::<u64>()];
         match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode_slice(inp, &mut dec)
         {
-            Ok(_) => Ok(BuilderHash(u64::from_le_bytes(dec))),
+            Ok(_) => Ok(VersionHash(u64::from_le_bytes(dec))),
             Err(e) => Err(D::Error::custom(e)),
         }
     }
@@ -90,8 +91,7 @@ pub struct AssetMetadata
     pub name: Option<String>,
     pub source_path: PathBuf, // relative to the sources directory
     pub build_timestamp: chrono::DateTime<chrono::Utc>,
-    pub builder_hash: BuilderHash,
-    pub format_hash: BuilderHash,
+    pub version_hash: VersionHash,
     pub dependencies: Box<[AssetKey]>,
 }
 impl TomlRead for AssetMetadata { }
