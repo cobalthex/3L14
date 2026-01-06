@@ -2,12 +2,14 @@ use std::fmt::{Debug, Formatter};
 use std::error::Error;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use enumflags2::{bitflags, BitFlags};
-use graphics_3l14::assets::ShaderStage;
+use enumflags2::{bitflags, BitFlag, BitFlags};
+use graphics_3l14::assets::{ShaderFile, ShaderStage};
 use hassle_rs::{Dxc, DxcCompiler, DxcIncludeHandler, DxcLibrary, DxcValidator, Dxil, HassleError};
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
+use asset_3l14::AssetTypeId;
 use nab_3l14::utils::ShortTypeName;
-use crate::core::VersionBuilder;
+use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionBuilder};
 
 #[bitflags]
 #[repr(u8)]
@@ -18,6 +20,7 @@ pub enum ShaderCompileFlag
     EmitSymbols = 0b0010,
 }
 
+#[derive(Debug)]
 pub struct ShaderCompilation<'s>
 {
     pub source_text: &'s str,
@@ -26,21 +29,6 @@ pub struct ShaderCompilation<'s>
     pub flags: BitFlags<ShaderCompileFlag>,
     pub defines: Vec<(&'s str, Option<&'s str>)>,
 }
-impl<'s> Debug for ShaderCompilation<'s>
-{
-    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error>
-    {
-        fmt.debug_struct(Self::short_type_name())
-            .field("filename", &self.filename)
-            .field("stage", &self.stage)
-            .field("flags", &self.flags)
-            .field("defines", &self.defines)
-            .finish()
-    }
-}
-
-// shader feature flags (turn into constants)
-// pre-defined vertex layouts
 
 struct Includer
 {
@@ -63,8 +51,14 @@ impl DxcIncludeHandler for Includer
     }
 }
 
+#[derive(Default, Serialize, Deserialize)]
+pub struct ShaderBuildConfig
+{
+    pub stage: ShaderStage,
+    // TODO: feature flags
+}
 
-pub struct ShaderCompiler
+pub struct ShaderBuilder
 {
     includer: Mutex<Includer>,
     dxc_compiler: DxcCompiler,
@@ -74,19 +68,9 @@ pub struct ShaderCompiler
     dxc: Dxc,
     dxil: Dxil,
 }
-impl ShaderCompiler
+impl ShaderBuilder
 {
-    pub fn version(vb: &mut VersionBuilder)
-    {
-        let dxc_version = interop_3l14::exe_version::get_exe_version("dxcompiler.dll").expect("Failed to get DXC version");
-        vb.append(
-        &[
-            b"DXC", &dxc_version.as_bytes(),
-            b"Shader compiler initial",
-        ]);
-    }
-
-    pub fn new(shaders_root: impl AsRef<Path>, dxc_dir: Option<PathBuf>) -> Result<Self, Box<dyn Error>>
+    pub fn new(shaders_root: impl Into<PathBuf>, dxc_dir: Option<PathBuf>) -> Result<Self, Box<dyn Error>>
     {
         let dxc = Dxc::new(dxc_dir.clone())?;
         let dxc_compiler = dxc.create_compiler()?;
@@ -97,7 +81,7 @@ impl ShaderCompiler
 
         Ok(Self
         {
-            includer: Mutex::new(Includer { shaders_root: shaders_root.as_ref().to_path_buf() }),
+            includer: Mutex::new(Includer { shaders_root: shaders_root.into() }),
             dxc,
             dxil,
             dxc_compiler,
@@ -106,7 +90,7 @@ impl ShaderCompiler
         })
     }
 
-    pub fn compile_hlsl(&self, output: &mut impl Write, mut compilation: ShaderCompilation) -> Result<usize, Box<dyn Error>>
+    pub fn compile_hlsl(&self, mut compilation: ShaderCompilation) -> Result<Box<[u8]>, Box<dyn Error>>
     {
         // note: mut self only needed for include header, can split out if necessary
 
@@ -143,7 +127,8 @@ impl ShaderCompiler
 
         log::debug!("[DXC] Compiling {:?} with arguments {:?}", compilation, dxc_args);
 
-        let blob = self.dxc_library.create_blob_with_encoding_from_str(compilation.source_text).map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
+        let blob = self.dxc_library.create_blob_with_encoding_from_str(compilation.source_text)
+            .map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
 
         // todo: compile_with_debug
         let spirv = match self.dxc_compiler.compile(
@@ -169,9 +154,8 @@ impl ShaderCompiler
             }
         }.map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
 
-        let blob_encoding = self.dxc_library.create_blob_with_encoding(&spirv).map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
-
-        let module = spirv;
+        let blob_encoding = self.dxc_library.create_blob_with_encoding(&spirv)
+            .map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
 
         // TODO: currently broken
         // let module = match self.dxc_validator.validate(blob_encoding.into())
@@ -184,15 +168,67 @@ impl ShaderCompiler
         //         Err(HassleError::ValidationError(error_str))
         //     }
         // }.map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
-        output.write_all(&module)?;
 
-        Ok(module.len())
+        Ok(spirv.into_boxed_slice())
+    }
+}
+impl AssetBuilder for ShaderBuilder
+{
+    type BuildConfig = ShaderBuildConfig;
+
+    fn build_assets(&self, config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    {
+        // todo: features; permutation for each feature -- possibly simplify into 'sets' of supported features
+
+        let mut source_text: String;
+        input.read_to_string(&mut source_text)?;
+
+        outputs.add_output(AssetTypeId::Shader, |output|
+        {
+            let compilation = ShaderCompilation
+            {
+                source_text: &source_text,
+                filename: input.source_path(), // just the filename?
+                stage: config.stage,
+                flags: ShaderCompileFlag::empty(),
+                defines: Vec::new(),
+            };
+
+            let module_bytes = self.compile_hlsl(compilation)?;
+            output.serialize(&ShaderFile
+            {
+                stage: config.stage,
+                module_bytes,
+            })?;
+
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+}
+impl AssetBuilderMeta for ShaderBuildError
+{
+    fn supported_input_file_extensions() -> &'static [&'static str]
+    {
+        &["hlsl"]
+    }
+
+    fn builder_version(vb: &mut VersionBuilder)
+    {
+        let dxc_version = interop_3l14::exe_version::get_exe_version("dxcompiler.dll")
+            .expect("Failed to get DXC version");
+        vb.append(
+        &[
+            b"DXC", &dxc_version.as_bytes(),
+            b"Shader compiler - initial",
+        ]);
     }
 }
 
-fn sc_err(file_path: PathBuf, stage: ShaderStage, error: HassleError) -> ShaderCompilationError
+fn sc_err(file_path: PathBuf, stage: ShaderStage, error: HassleError) -> ShaderBuildError
 {
-    ShaderCompilationError
+    ShaderBuildError
     {
         file_path,
         stage,
@@ -201,17 +237,17 @@ fn sc_err(file_path: PathBuf, stage: ShaderStage, error: HassleError) -> ShaderC
 }
 
 #[derive(Debug)]
-pub struct ShaderCompilationError
+pub struct ShaderBuildError
 {
     pub file_path: PathBuf,
     pub stage: ShaderStage,
     pub error: HassleError,
 }
-impl std::fmt::Display for ShaderCompilationError
+impl std::fmt::Display for ShaderBuildError
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { std::fmt::Debug::fmt(&self, f) }
 }
-impl Error for ShaderCompilationError { }
+impl Error for ShaderBuildError { }
 
 #[cfg(test)]
 mod tests

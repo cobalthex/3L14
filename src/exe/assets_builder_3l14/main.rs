@@ -67,8 +67,9 @@ fn main()
     let built_assets_root = assets_root.join("built");
 
     let mut builder_cfg = AssetsBuilderConfig::new(&src_assets_root, &built_assets_root);
-    builder_cfg.add_builder(builders::ModelBuilder::new(&assets_root));
-    builder_cfg.add_builder(builders::TextureBuilder::new());
+    builder_cfg.add_builder(builders::ModelBuilder);
+    builder_cfg.add_builder(builders::TextureBuilder);
+    builder_cfg.add_builder(builders::ShaderBuilder::new(src_assets_root.join("shaders"), None));
     builder_cfg.add_builder(builders::CircuitBuilder::new());
     let builder = AssetsBuilder::new(builder_cfg);
 

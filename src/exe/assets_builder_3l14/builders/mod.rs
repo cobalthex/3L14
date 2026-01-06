@@ -9,3 +9,6 @@ pub use scene_builder::*;
 
 mod texture_builder;
 pub use texture_builder::*;
+
+mod shader_builder;
+pub use shader_builder::*;

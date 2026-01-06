@@ -1,5 +1,5 @@
 use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionBuilder};
-use crate::helpers::shader_compiler::{ShaderCompilation, ShaderCompileFlag, ShaderCompiler};
+use crate::builders::shader_builder::{ShaderCompilation, ShaderCompileFlag, ShaderBuilder};
 use crate::builders::texture_builder::TextureBuilder;
 use arrayvec::ArrayVec;
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
@@ -88,23 +88,7 @@ pub struct ModelBuildConfig
     // optimize (meshoptimizer)
     pub import: ModelImportSettings,
 }
-pub struct ModelBuilder
-{
-    shader_compiler: ShaderCompiler,
-    shaders_root: PathBuf,
-}
-impl ModelBuilder
-{
-    pub fn new(assets_root: impl AsRef<Path>) -> Self
-    {
-        let shaders_root = assets_root.as_ref().join("shaders");
-        Self
-        {
-            shader_compiler: ShaderCompiler::new(assets_root.as_ref(), None).expect("Failed to create shader compiler"), // return error?
-            shaders_root,
-        }
-    }
-}
+pub struct ModelBuilder;
 impl AssetBuilderMeta for ModelBuilder
 {
     fn supported_input_file_extensions() -> &'static [&'static str]
@@ -114,10 +98,7 @@ impl AssetBuilderMeta for ModelBuilder
 
     fn builder_version(vb: &mut VersionBuilder)
     {
-        vb.append(&[
-            b"Model builder - initial"
-        ]);
-        ShaderCompiler::version(vb);
+        vb.push(b"Model builder - initial");
     }
 
     fn format_version(vb: &mut VersionBuilder)
@@ -302,11 +283,11 @@ impl ModelBuilder
             // {
             //     let tex_index = tex.texture().source().index();
             //     let tex_data = &images[tex_index];
-            // 
+            //
             //     let tex_asset = outputs.add_output(AssetTypeId::Texture, |mut tex_output|
             //     {
             //         tex.texture().name().map(|n| tex_output.set_name(n));
-            // 
+            //
             //         let (pixel_format, need_conv) = match tex_data.format
             //         {
             //             Format::R8 => (TextureFilePixelFormat::R8, false),
@@ -320,7 +301,7 @@ impl ModelBuilder
             //             Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
             //             Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
             //         };
-            // 
+            //
             //         tex_output.serialize(&TextureFile
             //         {
             //             width: tex_data.width,
@@ -330,7 +311,7 @@ impl ModelBuilder
             //             mip_offsets: Default::default(),
             //             pixel_format,
             //         })?;
-            // 
+            //
             //         // TODO: texture compression
             //         if need_conv
             //         {
@@ -350,10 +331,10 @@ impl ModelBuilder
             //         } else {
             //             tex_output.write_all(&tex_data.pixels)?;
             //         }
-            // 
+            //
             //         Ok(())
             //     })?;
-            // 
+            //
             //     textures.try_push(tex_asset)?;
             // }
 

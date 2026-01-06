@@ -77,8 +77,9 @@ impl PipelineCache
             let mut hasher = MetroHash64::default();
             // TODO: there may be some material properties that can affect this
             material.class.hash(&mut hasher);
-            vertex_shader.module_hash.hash(&mut hasher); // will have a unique vertex layout
-            pixel_shader.module_hash.hash(&mut hasher);
+            // TODO: shader hashes
+            //vertex_shader.module_hash.hash(&mut hasher); // will have a unique vertex layout
+            //pixel_shader.module_hash.hash(&mut hasher);
             mode.hash(&mut hasher); // TODO
             PipelineHash(hasher.finish())
         };

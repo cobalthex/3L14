@@ -21,14 +21,16 @@ pub enum ShaderStage
     Pixel, // fragment
     #[enum_prop(prefix = "cs", entry_point="cs_main")]
     Compute,
+    #[enum_prop(prefix = "ms", entry_point="ms_main")]
+    Mesh,
+    // separate task shaders?
 }
 
 #[derive(Encode, Decode, Debug)]
 pub struct ShaderFile
 {
     pub stage: ShaderStage,
-    pub module_bytes: Box<[u8]>,
-    pub module_hash: u64,
+    pub module_bytes: Box<[u8]>, // can this be a ref?
 }
 
 #[asset(debug_type = ShaderDebugData)]
@@ -36,7 +38,6 @@ pub struct Shader
 {
     pub stage: ShaderStage,
     pub module: wgpu::ShaderModule,
-    pub module_hash: u64, // likely duplicates asset key but oh well
 }
 
 #[derive(Encode, Decode)]
@@ -51,7 +52,6 @@ pub struct ShaderLifecycler
 }
 impl ShaderLifecycler
 {
-
     pub fn new(renderer: Arc<Renderer>) -> Self
     {
         Self { renderer }
@@ -94,7 +94,6 @@ impl AssetLifecycler for ShaderLifecycler
         {
             stage: shader_file.stage,
             module,
-            module_hash: shader_file.module_hash,
         })
     }
 }

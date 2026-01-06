@@ -1,5 +1,5 @@
 use super::*;
-use bitcode::DecodeOwned;
+use bitcode::{Decode, DecodeOwned};
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::error::Error;

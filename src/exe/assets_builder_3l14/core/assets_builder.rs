@@ -111,6 +111,7 @@ pub struct AssetsBuilder
 }
 impl AssetsBuilder
 {
+    #[must_use]
     pub fn new(config: AssetsBuilderConfig) -> Self
     {
         // print errors?
@@ -120,17 +121,21 @@ impl AssetsBuilder
         Self
         {
             config,
+            sources: DashMap::new(),
         }
     }
 
+    #[inline] #[must_use]
     pub fn builders_version_hash(&self) -> u64 { self.config.builders_version_hash }
 
+    #[inline] #[must_use]
     pub fn scan_sources(&self) -> ScanSources
     {
         let walker = WalkDir::new(&self.config.sources_root);
         ScanSources { walk_dir: walker.into_iter() }
     }
 
+    #[inline] #[must_use]
     pub fn scan_assets(&self) -> ScanAssets
     {
         let walker = WalkDir::new(&self.config.assets_root);
@@ -205,8 +210,10 @@ impl AssetsBuilder
 
         let file_ext = rel_path.extension().unwrap_or(OsStr::new("")).to_string_lossy();
 
-        let b_index = self.config.file_ext_to_builder.get(&UniCase::from(file_ext.as_ref())).ok_or(BuildError::NoBuilderForSource(file_ext.to_string()))?;
-        let builder = self.config.asset_builders.get(*b_index).expect("Had builder ID but no matching builder!");
+        let b_index = self.config.file_ext_to_builder.get(&UniCase::from(file_ext.as_ref()))
+            .ok_or(BuildError::NoBuilderForSource(file_ext.to_string()))?;
+        let builder = self.config.asset_builders.get(*b_index)
+            .expect("Had builder ID but no matching builder!");
 
         let source_meta_file_path = canonical_path.with_extension(
             format!("{}.{}", file_ext.as_ref(), AssetsBuilderConfig::SOURCE_META_FILE_EXTENSION));
@@ -286,6 +293,7 @@ impl AssetsBuilder
 
         let mut outputs = BuildOutputs
         {
+            assets_builder: &self,
             build_rule,
             source_id: source_meta.source_id,
             timestamp: build_time,
@@ -496,6 +504,7 @@ impl BuildOutput
 
 pub struct BuildOutputs<'b>
 {
+    assets_builder: &'b AssetsBuilder,
     build_rule: BuildRule,
     source_id: AssetKeySourceId,
     timestamp: chrono::DateTime<chrono::Utc>,
@@ -504,8 +513,6 @@ pub struct BuildOutputs<'b>
     abs_output_dir: &'b Path,
 
     version_hash: VersionHash,
-
-    sources: Arc<SourceAssetDb>,
     derived_ids: HashMap<AssetTypeId, AssetKeyDerivedId>,
 
     results: BuildResults,
@@ -520,8 +527,6 @@ impl<'b> BuildOutputs<'b>
     pub fn add_dependency(&mut self, source_name: impl AsRef<Path>, asset_type: AssetTypeId, sub_index: u16) -> AssetKey
     {
         let derived_id = AssetKeyDerivedId(sub_index);
-        self.sources.get_or_create()
-
         todo!()
     }
 

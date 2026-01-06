@@ -57,13 +57,6 @@ pub struct TextureBuildConfig
 }
 
 pub struct TextureBuilder;
-impl TextureBuilder
-{
-    pub fn new() -> Self
-    {
-        Self
-    }
-}
 impl AssetBuilderMeta for TextureBuilder
 {
     fn supported_input_file_extensions() -> &'static [&'static str]
@@ -106,9 +99,9 @@ impl AssetBuilder for TextureBuilder
                 mip_offsets: [0; _],
                 pixel_format: TextureFilePixelFormat::Rgba8,
             })?;
-            
+
             output.write_all(image.as_bytes())?;
-            
+
             Ok(())
         })?;
 
