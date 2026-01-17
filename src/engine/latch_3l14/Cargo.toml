@@ -28,4 +28,4 @@ puffin.workspace = true
 smallvec.workspace = true
 triomphe.workspace = true
 unicase.workspace = true
-serde = { version = "1.0.228", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }

@@ -2,11 +2,10 @@ mod core;
 mod builders;
 mod helpers;
 
-use crate::core::{validate_symbols, AssetsBuilder, AssetsBuilderConfig, BuildError, BuildRule, ScanError};
-use std::path::{Path, PathBuf};
+use crate::core::{validate_symbols, AssetsBuilder, AssetsBuilderConfig, BuildRule};
+use std::path::Path;
 use clap::{Parser, Subcommand};
 use latch_3l14::block_meta::BlockBuildMeta;
-use log::log;
 use nab_3l14::app::{set_panic_hook, AppRun};
 
 #[derive(Debug, Subcommand)]
@@ -69,7 +68,7 @@ fn main()
     let mut builder_cfg = AssetsBuilderConfig::new(&src_assets_root, &built_assets_root);
     builder_cfg.add_builder(builders::ModelBuilder);
     builder_cfg.add_builder(builders::TextureBuilder);
-    builder_cfg.add_builder(builders::ShaderBuilder::new(src_assets_root.join("shaders"), None));
+    builder_cfg.add_builder(builders::ShaderBuilder::new(src_assets_root.join("shaders"), None).unwrap());
     builder_cfg.add_builder(builders::CircuitBuilder::new());
     let builder = AssetsBuilder::new(builder_cfg);
 

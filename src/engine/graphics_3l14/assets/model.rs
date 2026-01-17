@@ -1,4 +1,4 @@
-use crate::assets::{Geometry, Material, Shader, Skeleton};
+use crate::assets::{Geometry, Material, Skeleton};
 use crate::Renderer;
 use asset_3l14::{Asset, Ash, AssetKey, AssetLifecycler, AssetLoadRequest, AssetTypeId};
 use bitcode::{Decode, Encode};
@@ -7,27 +7,12 @@ use std::error::Error;
 use triomphe::Arc;
 use proc_macros_3l14::LayoutHash;
 
-#[derive(Encode, Decode)]
-pub struct ModelFileSurface
-{
-    pub material: AssetKey,
-    pub vertex_shader: AssetKey,
-    pub pixel_shader: AssetKey,
-}
-
 #[derive(LayoutHash, Encode, Decode)]
 pub struct ModelFile
 {
     pub geometry: AssetKey,
     pub skeleton: Option<AssetKey>,
-    pub surfaces: Box<[ModelFileSurface]>,
-}
-
-pub struct Surface
-{
-    pub material: Ash<Material>,
-    pub vertex_shader: Ash<Shader>,
-    pub pixel_shader: Ash<Shader>,
+    pub materials: Box<[AssetKey]>,
 }
 
 pub struct Model
@@ -35,7 +20,7 @@ pub struct Model
     pub mesh_count: u32,
     pub geometry: Ash<Geometry>,
     pub skeleton: Option<Ash<Skeleton>>,
-    pub surfaces: Box<[Surface]>,
+    pub materials: Box<[Ash<Material>]>,
 }
 impl Asset for Model
 {
@@ -45,12 +30,7 @@ impl Asset for Model
     {
         self.geometry.is_loaded_recursive() &&
         self.skeleton.as_ref().map_or(true, |s| s.is_loaded_recursive()) &&
-        self.surfaces.iter().all(|s|
-            {
-                s.material.is_loaded_recursive() &&
-                s.vertex_shader.is_loaded_recursive() &&
-                s.pixel_shader.is_loaded_recursive()
-            })
+        self.materials.iter().all(Ash::is_loaded_recursive)
     }
 }
 
@@ -75,18 +55,10 @@ impl AssetLifecycler for ModelLifecycler
 
         Ok(Model
         {
-            mesh_count: model_file.surfaces.len() as u32, // store explicitly in file?
+            mesh_count: model_file.materials.len() as u32, // store explicitly in file?
             geometry: request.load_dependency(model_file.geometry),
             skeleton: model_file.skeleton.map(|s| request.load_dependency(s)),
-            surfaces: model_file.surfaces.iter().map(|s|
-            {
-                Surface
-                {
-                    material: request.load_dependency(s.material),
-                    vertex_shader: request.load_dependency(s.vertex_shader),
-                    pixel_shader: request.load_dependency(s.pixel_shader),
-                }
-            }).collect(),
+            materials: model_file.materials.iter().map(|m| request.load_dependency(*m)).collect()
         })
     }
 }

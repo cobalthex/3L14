@@ -1,4 +1,4 @@
-use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionBuilder};
+use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
 use asset_3l14::AssetTypeId;
 use indexmap::IndexMap;
 use latch_3l14::block_meta::{BlockBuildMeta, HydrateBlock};
@@ -303,26 +303,24 @@ impl CircuitBuilder
         })
     }
 }
-impl AssetBuilderMeta for CircuitBuilder
+impl AssetBuilder for CircuitBuilder
 {
-    fn supported_input_file_extensions() -> &'static [&'static str]
+    type BuildConfig = CircuitBuilderConfig;
+
+    fn supported_input_file_extensions(&self, ) -> &'static [&'static str]
     {
         &["latch"]
     }
 
-    fn builder_version(vb: &mut VersionBuilder)
+    fn builder_version(&self, vb: &mut VersionBuilder)
     {
         vb.push(b"Circuit builder - initial");
     }
 
-    fn format_version(vb: &mut VersionBuilder)
+    fn format_version(&self, vb: &mut VersionBuilder)
     {
         vb.push_prehashed(CircuitFile::TYPE_LAYOUT_HASH);
     }
-}
-impl AssetBuilder for CircuitBuilder
-{
-    type BuildConfig = CircuitBuilderConfig;
 
     fn build_assets(&self, config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {

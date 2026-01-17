@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use asset_3l14::AssetTypeId;
 use nab_3l14::utils::ShortTypeName;
-use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionBuilder};
+use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
 
 #[bitflags]
 #[repr(u8)]
@@ -51,11 +51,21 @@ impl DxcIncludeHandler for Includer
     }
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ShaderBuildConfig
 {
     pub stage: ShaderStage,
     // TODO: feature flags
+}
+impl Default for ShaderBuildConfig
+{
+    fn default() -> Self
+    {
+        Self
+        {
+            stage: ShaderStage::Vertex,
+        }
+    }
 }
 
 pub struct ShaderBuilder
@@ -176,11 +186,27 @@ impl AssetBuilder for ShaderBuilder
 {
     type BuildConfig = ShaderBuildConfig;
 
+    fn supported_input_file_extensions(&self) -> &'static [&'static str]
+    {
+        &["hlsl"]
+    }
+
+    fn builder_version(&self, vb: &mut VersionBuilder)
+    {
+        let dxc_version = interop_3l14::exe_version::get_exe_version("dxcompiler.dll")
+            .expect("Failed to get DXC version");
+        vb.append(
+        &[
+            b"DXC", &dxc_version.as_bytes(),
+            b"Shader compiler - initial",
+        ]);
+    }
+
     fn build_assets(&self, config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         // todo: features; permutation for each feature -- possibly simplify into 'sets' of supported features
 
-        let mut source_text: String;
+        let mut source_text = String::new();
         input.read_to_string(&mut source_text)?;
 
         outputs.add_output(AssetTypeId::Shader, |output|
@@ -205,24 +231,6 @@ impl AssetBuilder for ShaderBuilder
         })?;
 
         Ok(())
-    }
-}
-impl AssetBuilderMeta for ShaderBuildError
-{
-    fn supported_input_file_extensions() -> &'static [&'static str]
-    {
-        &["hlsl"]
-    }
-
-    fn builder_version(vb: &mut VersionBuilder)
-    {
-        let dxc_version = interop_3l14::exe_version::get_exe_version("dxcompiler.dll")
-            .expect("Failed to get DXC version");
-        vb.append(
-        &[
-            b"DXC", &dxc_version.as_bytes(),
-            b"Shader compiler - initial",
-        ]);
     }
 }
 

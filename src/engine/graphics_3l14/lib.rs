@@ -16,3 +16,5 @@ pub mod camera;
 pub mod dynamic_geo;
 pub mod vertex_layouts;
 pub mod skeleton_poser;
+
+pub mod material_classes;

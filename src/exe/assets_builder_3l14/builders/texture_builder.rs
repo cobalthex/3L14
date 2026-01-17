@@ -6,7 +6,7 @@ use image::{ColorType, DynamicImage, GenericImageView, ImageReader, ImageResult}
 use serde::{Deserialize, Serialize};
 use asset_3l14::AssetTypeId;
 use graphics_3l14::assets::{TextureFile, TextureFilePixelFormat};
-use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionBuilder};
+use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
 
 // TODO: go back to intel_tex_2? (ISPC is deprecated)
 
@@ -57,23 +57,21 @@ pub struct TextureBuildConfig
 }
 
 pub struct TextureBuilder;
-impl AssetBuilderMeta for TextureBuilder
+impl AssetBuilder for TextureBuilder
 {
-    fn supported_input_file_extensions() -> &'static [&'static str]
+    type BuildConfig = TextureBuildConfig;
+
+    fn supported_input_file_extensions(&self) -> &'static [&'static str]
     {
         // TODO: more input formats
         &["png"]
     }
 
-    fn builder_version(vb: &mut VersionBuilder)
+    fn builder_version(&self, vb: &mut VersionBuilder)
     {
         vb.push(b"Texture builder - initial");
         vb.push_prehashed(1);
     }
-}
-impl AssetBuilder for TextureBuilder
-{
-    type BuildConfig = TextureBuildConfig;
 
     fn build_assets(&self, config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {

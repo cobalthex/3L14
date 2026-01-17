@@ -1,4 +1,4 @@
-use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionBuilder};
+use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
 use crate::builders::shader_builder::{ShaderCompilation, ShaderCompileFlag, ShaderBuilder};
 use crate::builders::texture_builder::TextureBuilder;
 use arrayvec::ArrayVec;
@@ -8,7 +8,7 @@ use glam::{Mat4, Quat, Vec3};
 use gltf::animation::util::ReadOutputs;
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
-use graphics_3l14::assets::{AnimFrameNumber, BoneId, GeometryFile, GeometryMesh, IndexFormat, MaterialClass, MaterialFile, ModelFile, ModelFileSurface, PbrProps, Shader, ShaderDebugData, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat, VertexLayout};
+use graphics_3l14::assets::{AnimFrameNumber, BoneId, GeometryFile, GeometryMesh, IndexFormat, MaterialFile, ModelFile, Shader, ShaderDebugData, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat, VertexLayout};
 use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexLayoutBuilder};
 use math_3l14::{DualQuat, Ratio, Sphere, AABB};
 use metrohash::MetroHash64;
@@ -23,18 +23,9 @@ use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use unicase::UniCase;
+use graphics_3l14::material_classes::{MaterialClass, PbrProps};
 
 const DEFAULT_ANIM_SAMPLE_RATE: Ratio<u32> = Ratio::new(1, 30);
-
-#[derive(Hash)]
-struct ShaderHash
-{
-    stage: ShaderStage,
-    material_class: MaterialClass,
-    vertex_layout_hash: u64, // all the layouts used hashed together
-    // custom file name
-    compile_flags: BitFlags<ShaderCompileFlag>,
-}
 
 // bit flags for which vertex types are avail?
 
@@ -89,26 +80,24 @@ pub struct ModelBuildConfig
     pub import: ModelImportSettings,
 }
 pub struct ModelBuilder;
-impl AssetBuilderMeta for ModelBuilder
+impl AssetBuilder for ModelBuilder
 {
-    fn supported_input_file_extensions() -> &'static [&'static str]
+    type BuildConfig = ModelBuildConfig;
+
+    fn supported_input_file_extensions(&self) -> &'static [&'static str]
     {
         &["glb", "gltf"]
     }
 
-    fn builder_version(vb: &mut VersionBuilder)
+    fn builder_version(&self, vb: &mut VersionBuilder)
     {
         vb.push(b"Model builder - initial");
     }
 
-    fn format_version(vb: &mut VersionBuilder)
+    fn format_version(&self, vb: &mut VersionBuilder)
     {
         vb.push_prehashed(ModelFile::TYPE_LAYOUT_HASH);
     }
-}
-impl AssetBuilder for ModelBuilder
-{
-    type BuildConfig = ModelBuildConfig;
 
     fn build_assets(
         &self,
@@ -162,7 +151,7 @@ impl ModelBuilder
         log::debug!("Parsing gLTF mesh {} '{}'", in_mesh.index(), in_mesh.name().unwrap_or(""));
 
         let mut meshes = Vec::new();
-        let mut surfaces = Vec::new();
+        let mut materials = Vec::new();
         let mut model_bounds_aabb = AABB::MAX_MIN;
 
         // TODO: split up this file
@@ -360,93 +349,49 @@ impl ModelBuilder
 
                 Ok(())
             })?;
+            materials.push(material);
 
-            let shader_compile_flags = BitFlags::<ShaderCompileFlag>::empty(); // Debug
+            // // todo: better asset key
+            // let pixel_shader_key = AssetKeySynthHash::generate(ShaderHash
+            // {
+            //     stage: ShaderStage::Pixel,
+            //     material_class,
+            //     vertex_layout_hash,
+            //     compile_flags: shader_compile_flags,
+            // });
+            // outputs.add_synthetic(AssetTypeId::Shader, pixel_shader_key, |mut pshader_output|
+            // {
+            //     log::debug!("Compiling pixel shader {:?}", pshader_output.asset_key());
 
-            // todo: better asset key
-            let vertex_shader_key = AssetKeySynthHash::generate(ShaderHash
-            {
-                stage: ShaderStage::Vertex,
-                material_class,
-                vertex_layout_hash,
-                compile_flags: shader_compile_flags,
-            });
-            outputs.add_synthetic(AssetTypeId::Shader, vertex_shader_key, |mut vshader_output|
-            {
-                log::debug!("Compiling vertex shader {:?}", vshader_output.asset_key());
+            //     let shader_file = self.shaders_root.join(format!("{material_class:?}.ps.hlsl"));
+            //     shader_file.to_str().map(|sf| pshader_output.set_name(sf));
 
-                let shader_file = self.shaders_root.join(format!("SkinnedOpaque.vs.hlsl"));
-                shader_file.to_str().map(|sf| vshader_output.set_name(sf));
+            //     let shader_source = std::fs::read_to_string(&shader_file)?;
+            //     let mut shader_module = InlineWriteHash::<MetroHash64, _>::new(Vec::new());
+            //     let _ = self.shader_compiler.compile_hlsl(&mut shader_module, ShaderCompilation
+            //     {
+            //         source_text: &shader_source,
+            //         filename: &shader_file, // todo: for debugging, use asset key?
+            //         stage: ShaderStage::Pixel,
+            //         flags: shader_compile_flags,
+            //         defines: vec![], // TODO
+            //     })?;
 
-                let shader_source = std::fs::read_to_string(&shader_file)?;
-                let mut shader_module = InlineWriteHash::<MetroHash64, _>::new(Vec::new());
-                let _ = self.shader_compiler.compile_hlsl(&mut shader_module, ShaderCompilation
-                {
-                    source_text: &shader_source,
-                    filename: &shader_file, // todo: for debugging, use asset key?
-                    stage: ShaderStage::Vertex,
-                    flags: shader_compile_flags,
-                    defines: vec![],
-                })?;
+            //     let (module_hash, module_bytes) = shader_module.finish();
+            //     pshader_output.serialize(&ShaderFile
+            //     {
+            //         stage: ShaderStage::Pixel,
+            //         module_bytes: module_bytes.into_boxed_slice(),
+            //         module_hash,
+            //     })?;
 
-                let (module_hash, module_bytes) = shader_module.finish();
-                vshader_output.serialize(&ShaderFile
-                {
-                    stage: ShaderStage::Vertex,
-                    module_bytes: module_bytes.into_boxed_slice(),
-                    module_hash,
-                })?;
+            //     pshader_output.serialize_debug::<Shader>(&ShaderDebugData
+            //     {
+            //         source_file: shader_source,
+            //     })?;
 
-                vshader_output.serialize_debug::<Shader>(&ShaderDebugData
-                {
-                    source_file: shader_source,
-                })?;
-
-                Ok(())
-            })?;
-
-            // todo: better asset key
-            let pixel_shader_key = AssetKeySynthHash::generate(ShaderHash
-            {
-                stage: ShaderStage::Pixel,
-                material_class,
-                vertex_layout_hash,
-                compile_flags: shader_compile_flags,
-            });
-            outputs.add_synthetic(AssetTypeId::Shader, pixel_shader_key, |mut pshader_output|
-            {
-                log::debug!("Compiling pixel shader {:?}", pshader_output.asset_key());
-
-                let shader_file = self.shaders_root.join(format!("{material_class:?}.ps.hlsl"));
-                shader_file.to_str().map(|sf| pshader_output.set_name(sf));
-
-                let shader_source = std::fs::read_to_string(&shader_file)?;
-                let mut shader_module = InlineWriteHash::<MetroHash64, _>::new(Vec::new());
-                let _ = self.shader_compiler.compile_hlsl(&mut shader_module, ShaderCompilation
-                {
-                    source_text: &shader_source,
-                    filename: &shader_file, // todo: for debugging, use asset key?
-                    stage: ShaderStage::Pixel,
-                    flags: shader_compile_flags,
-                    defines: vec![], // TODO
-                })?;
-
-                let (module_hash, module_bytes) = shader_module.finish();
-                pshader_output.serialize(&ShaderFile
-                {
-                    stage: ShaderStage::Pixel,
-                    module_bytes: module_bytes.into_boxed_slice(),
-                    module_hash,
-                })?;
-
-                pshader_output.serialize_debug::<Shader>(&ShaderDebugData
-                {
-                    source_file: shader_source,
-                })?;
-
-                Ok(())
-            })?;
-            // TODO: material depends on shaders
+            //     Ok(())
+            // })?;
 
             let mesh_bounds_aabb = AABB::new(bb.min.into(), bb.max.into());
             model_bounds_aabb.union_with(mesh_bounds_aabb);
@@ -467,14 +412,7 @@ impl ModelBuilder
             total_vertex_count += mesh_vertex_count;
             total_index_count += mesh_index_count;
 
-            surfaces.push(ModelFileSurface
-            {
-                material,
-                vertex_shader: AssetKey::synthetic(AssetTypeId::Shader, vertex_shader_key),
-                pixel_shader: AssetKey::synthetic(AssetTypeId::Shader, pixel_shader_key),
-            });
         }
-
         let geometry = outputs.add_output(AssetTypeId::Geometry, |geom_output|
         {
             in_mesh.name().map(|n| geom_output.set_name(n));
@@ -497,13 +435,13 @@ impl ModelBuilder
             in_node.name().map(|n| model_output.set_name(n)); // different name from mesh?
             model_output.depends_on(geometry);
             if let Some(skel_info) = maybe_skel_info { model_output.depends_on(skel_info.asset); };
-            model_output.depends_on_multiple(surfaces.iter().map(|s| s.material));
+            model_output.depends_on_multiple(materials.iter().map(|s| *s));
 
             model_output.serialize(&ModelFile
             {
                 geometry,
                 skeleton: maybe_skel_info.map(|s| s.asset),
-                surfaces: surfaces.into_boxed_slice(),
+                materials: materials.into_boxed_slice(),
             })?;
 
             Ok(())

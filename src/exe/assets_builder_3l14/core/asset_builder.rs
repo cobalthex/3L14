@@ -10,20 +10,6 @@ use std::io::{Seek, Write};
 pub trait BuildOutputWrite: Write + Seek { }
 impl<T: Write + Seek> BuildOutputWrite for T { }
 
-pub trait AssetBuilderMeta
-{
-    // A list of file extensions (omit . prefix) that this builder can read from
-    fn supported_input_file_extensions() -> &'static [&'static str];
-
-    // Returns a list of binary strings, one per version, used to generate a hash versioning the builder
-    fn builder_version(vb: &mut VersionBuilder);
-    // Returns a list of binary strings, one per version, used to generate a hash versioning the format of the outputted asset data
-    fn format_version(vb: &mut VersionBuilder)
-    {
-        vb.push(b"DEFLTFMT")
-    }
-}
-
 pub(super) type ErasedBuildConfig = toml::Value; // leaky abstraction
 
 pub(super) trait ErasedAssetBuilder // virtual base trait?
@@ -40,6 +26,18 @@ impl<T: Default + Serialize + DeserializeOwned> AssetBuildConfig for T { }
 pub trait AssetBuilder
 {
     type BuildConfig: AssetBuildConfig;
+
+    // A list of file extensions (omit . prefix) that this builder can read from
+    fn supported_input_file_extensions(&self) -> &'static [&'static str];
+
+    // Returns a list of binary strings, one per version, used to generate a hash versioning the builder
+    fn builder_version(&self, vb: &mut VersionBuilder);
+
+    // Returns a list of binary strings, one per version, used to generate a hash versioning the format of the outputted asset data
+    fn format_version(&self, vb: &mut VersionBuilder)
+    {
+        vb.push(b"DEFLTFMT")
+    }
 
     // Build the source data into one or more outputted assets
     fn build_assets(&self, config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>;
@@ -88,7 +86,7 @@ impl VersionBuilder
         self.1 += bstrs.len() as u64;
         bstrs.iter().for_each(|s| { self.0.write(s); });
     }
-    
+
     pub fn push_prehashed(&mut self, prehashed: u64)
     {
         self.1 += size_of::<u64>() as u64;

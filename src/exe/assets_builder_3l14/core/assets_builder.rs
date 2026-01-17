@@ -74,11 +74,13 @@ impl AssetsBuilderConfig
     pub fn builders_version_hash(&self) -> u64 { self.builders_version_hash }
 
     // Register a builder for it's registered extensions. Will panic if a particular extension was already registered
-    pub fn add_builder<B: AssetBuilder<BuildConfig=impl AssetBuildConfig> + AssetBuilderMeta + 'static>(&mut self, builder: B)
+    pub fn add_builder<B: AssetBuilder<BuildConfig=impl AssetBuildConfig> + 'static>(&mut self, builder: B)
     {
         let mut versioner = VersionBuilder::new(self.builders_version_hash);
-        B::format_version(&mut versioner);
-        B::builder_version(&mut versioner);
+        builder.format_version(&mut versioner);
+        builder.builder_version(&mut versioner);
+
+        let supported_exts = builder.supported_input_file_extensions();
 
         let b_index = self.asset_builders.len();
         self.asset_builders.push(AssetBuilderEntry
@@ -88,7 +90,7 @@ impl AssetsBuilderConfig
             builder: Box::new(builder),
         });
 
-        for ext in B::supported_input_file_extensions()
+        for ext in supported_exts
         {
             if UniCase::new(ext) == Self::SOURCE_META_FILE_EXTENSION
             {
@@ -107,7 +109,8 @@ impl AssetsBuilderConfig
 pub struct AssetsBuilder
 {
     config: AssetsBuilderConfig,
-    sources: DashMap<String, AssetKeySourceId>, // paths relative to assets root
+    // TODO: use Path -- and make case insensitive?
+    sources: DashMap<String, AssetKeySourceId>, // paths relative to assets root, only tracks sources which have been referenced this run
 }
 impl AssetsBuilder
 {

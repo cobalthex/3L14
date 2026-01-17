@@ -3,7 +3,7 @@ use glam::{Quat, Vec3};
 use serde::{Deserialize, Serialize};
 use asset_3l14::AssetKey;
 use world_3l14::{Scene, SceneFile};
-use crate::core::{AssetBuilder, AssetBuilderMeta, BuildOutputs, SourceInput, VersionBuilder};
+use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
 
 #[derive(Serialize, Deserialize)]
 pub struct StaticPlacement
@@ -29,20 +29,18 @@ impl AssetBuilder for SceneBuilder
     {
         todo!()
     }
-}
-impl AssetBuilderMeta for SceneBuilder
-{
-    fn supported_input_file_extensions() -> &'static [&'static str]
+
+    fn supported_input_file_extensions(&self) -> &'static [&'static str]
     {
         &["scene"]
     }
 
-    fn builder_version(vb: &mut VersionBuilder)
+    fn builder_version(&self, vb: &mut VersionBuilder)
     {
         vb.push(b"Scene builder - initial");
     }
 
-    fn format_version(vb: &mut VersionBuilder)
+    fn format_version(&self, vb: &mut VersionBuilder)
     {
         vb.push_prehashed(SceneFile::TYPE_LAYOUT_HASH);
     }

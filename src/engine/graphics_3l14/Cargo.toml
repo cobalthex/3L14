@@ -23,6 +23,7 @@ proc_macros_3l14.workspace = true
 arc-swap.workspace = true
 arrayvec.workspace = true
 bitcode.workspace = true
+dashmap.workspace = true
 egui-wgpu.workspace = true
 egui.workspace = true
 enumflags2.workspace = true

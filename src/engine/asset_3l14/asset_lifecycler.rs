@@ -1,5 +1,5 @@
 use super::*;
-use bitcode::{Decode, DecodeOwned};
+use bitcode::DecodeOwned;
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::error::Error;
@@ -10,18 +10,18 @@ use nab_3l14::utils::alloc_slice::alloc_slice_uninit;
 use nab_3l14::utils::{varint, ShortTypeName};
 use triomphe::Arc;
 
-pub struct AssetLoadRequest
+pub struct AssetLoadRequest<'r>
 {
     pub asset_key: AssetKey,
-    pub input: AssetRead, // TODO: memory mapped buffer?
+    pub input: AssetRead<'r>, // TODO: memory mapped buffer?
 
-    storage: Arc<AssetsStorage>,
+    assets: &'r Assets,
 
     // timer?
     // is_reloading?
     // dependencies
 }
-impl AssetLoadRequest
+impl AssetLoadRequest<'_>
 {
     // TODO: unify implementations between this and asset builder
     fn deserialize_data<T: DecodeOwned>(input: &mut AssetRead) -> Result<T, Box<dyn Error>>
@@ -75,7 +75,7 @@ impl AssetLoadRequest
     pub fn load_dependency<A: Asset>(&self, asset_key: AssetKey) -> Ash<A>
     {
         // pattern matches Assets::load()
-        AssetsStorage::enqueue_load(&self.storage, asset_key, |h| AssetLifecycleRequest::LoadFileBacked(h))
+        self.assets.load(asset_key)
     }
     //
     // // Load a reference from a specified source
@@ -116,7 +116,7 @@ pub(super) trait UntypedAssetLifecycler: Sync + Send
 {
     fn load_untyped(
         &self,
-        storage: Arc<AssetsStorage>,
+        assets: &Assets,
         untyped_handle: UntypedAssetHandle,
         input: AssetRead,
         #[cfg(feature = "asset_debug_data")] maybe_debug_input: Option<AssetRead>);
@@ -132,7 +132,7 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
 {
     fn load_untyped(
         &self,
-        storage: Arc<AssetsStorage>,
+        assets: &Assets,
         untyped_handle: UntypedAssetHandle,
         input: AssetRead,
         #[cfg(feature = "asset_debug_data")] mut maybe_debug_input: Option<AssetRead>)
@@ -144,7 +144,7 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
         #[cfg(feature = "asset_debug_data")]
         retyped.inner().store_debug_data::<A>(None);
 
-        match self.load(AssetLoadRequest { asset_key: retyped.key(), input, storage })
+        match self.load(AssetLoadRequest { asset_key: retyped.key(), input, assets })
         {
             Ok(asset) =>
             {
@@ -274,13 +274,13 @@ impl AssetLifecyclers
     }
 }
 
-pub type AssetRead = Cursor<Box<[u8]>>;
+pub type AssetRead<'r> = Cursor<&'r [u8]>;
 pub(super) enum AssetLifecycleRequest
 {
     StopWorkers,
     Drop(UntypedAssetHandle),
     LoadFileBacked(UntypedAssetHandle), // loads the file pointed by the asset path
-    LoadFromMemory(UntypedAssetHandle, AssetRead),
+    LoadFromMemory(UntypedAssetHandle, Box<[u8]>),
 }
 
 

@@ -1,5 +1,4 @@
 use bitcode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
 use super::{BlockVisitor, ImpulseActions, ImpulseBlock, PulsedOutlet, Runtime, Scope, VarId, VarValue};
 use nab_3l14::utils::ShortTypeName;
 use nab_3l14::Signal;
@@ -146,14 +145,14 @@ mod tests
         };
 
         // TODO: test inspect()
-        
+
         let mut tc = TestContext::default();
         tc.pulse(debug_log);
         assert_eq!(tc.pulse_outlets.as_slice(), &[Plug::new(BlockId::impulse(1), Inlet::Pulse)]);
     }
-    
+
     // todo: set vars
-    
+
     #[test]
     fn emit_signal()
     {

@@ -18,8 +18,6 @@ pub struct Draw
     pub geometry: Arc<Geometry>,
     pub material: Arc<Material>,
     pub textures: ArrayVec<Arc<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS>,
-    pub vshader: Arc<Shader>,
-    pub pshader: Arc<Shader>,
 }
 
 pub enum SortDirection

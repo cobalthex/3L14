@@ -1504,6 +1504,7 @@ dependencies = [
  "asset_3l14",
  "bitcode",
  "containers_3l14",
+ "dashmap",
  "debug_3l14",
  "egui 0.33.3",
  "egui-wgpu",
@@ -3350,13 +3351,19 @@ dependencies = [
 name = "webshit_3l14"
 version = "0.0.0"
 dependencies = [
+ "bitcode",
  "console_error_panic_hook",
  "console_log",
  "dashmap",
+ "erased-serde",
+ "inventory",
  "latch_3l14",
  "log",
  "nab_3l14",
+ "proc_macros_3l14",
+ "serde",
  "triomphe",
+ "unicase",
  "wasm-bindgen",
 ]
 

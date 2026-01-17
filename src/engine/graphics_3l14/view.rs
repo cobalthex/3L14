@@ -1,15 +1,14 @@
 use crate::pipeline_sorter::PipelineSorter;
-use crate::{debug_label, pipeline_sorter, render_passes, Renderer};
+use crate::{debug_label, pipeline_sorter, Renderer};
 use arrayvec::ArrayVec;
-use glam::{Mat3, Mat4, Vec2, Vec3, Vec4Swizzles};
+use glam::{Mat4, Vec2, Vec3, Vec4Swizzles};
 use triomphe::Arc;
 use std::time::Duration;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, Extent3d, QueueWriteBufferView, RenderPass, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView};
 use wgpu::util::{DeviceExt, TextureDataOrder};
-use asset_3l14::{Asset, AssetPayload};
-use math_3l14::{Affine3, CanSee, DualQuat, Frustum, IsOnOrInside, Sphere, StaticGeoUniform};
-use nab_3l14::debug_panic;
-use crate::assets::{Geometry, Model, MAX_SKINNED_BONES};
+use asset_3l14::Asset;
+use math_3l14::{CanSee, DualQuat, Sphere, StaticGeoUniform};
+use crate::assets::{Geometry, Model, RenderPassName};
 use crate::camera::{Camera, CameraProjection, CameraUniform};
 use crate::pipeline_cache::{DebugMode, PipelineCache};
 use crate::uniforms_pool::{UniformsPoolEntryGuard, WgpuBufferWriter, BufferWrite};
@@ -251,11 +250,10 @@ impl<'f> View<'f>
                     })
                 }
 
-
                 let mtl_bind_group = self.renderer.device().create_bind_group(&BindGroupDescriptor
                 {
                     label: debug_label!("TODO mtl bind group"),
-                    layout: &draw.material.bind_layout,
+                    layout: &self.pipeline_cache.get_or_create_bind_layout(draw.material.class),
                     entries: &bge,
                 });
                 render_pass.set_bind_group(3, &mtl_bind_group, &[]);
@@ -318,23 +316,13 @@ impl<'f> View<'f>
 
         for mesh_index in 0..model.mesh_count
         {
-            let (mtl, vsh, psh) =
-            {
-                let surf = &model.surfaces[mesh_index as usize];
-                (
-                    surf.material.payload().unwrap(),
-                    surf.vertex_shader.payload().unwrap(),
-                    surf.pixel_shader.payload().unwrap(),
-                )
-            };
-
+            let mtl = model.materials[mesh_index as usize].payload().unwrap();
             let textures = mtl.textures.iter().map(|t| t.payload().unwrap()).collect();
 
             let pipeline_hash = self.pipeline_cache.get_or_create(
+                RenderPassName::Opaque,
                 &geo,
                 &mtl,
-                &vsh,
-                &psh,
                 self.debug_mode);
 
             self.sorter.push(pipeline_sorter::Draw
@@ -348,8 +336,6 @@ impl<'f> View<'f>
                 geometry: geo.clone(),
                 material: mtl,
                 textures,
-                vshader: vsh,
-                pshader: psh,
             });
         }
 

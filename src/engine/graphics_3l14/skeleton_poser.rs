@@ -68,11 +68,13 @@ impl<'s> SkeletonPoser<'s>
         let unclamped = (sample_rate.scale(time.0)) as u32;
         let (curr_frame, next_frame) = if should_loop
         {
-            (unclamped % animation.frame_count.0, (unclamped + 1) % animation.frame_count.0)
+            let frc = animation.frame_count.0; // - 1?
+            (unclamped % frc, (unclamped + 1) % frc)
         }
         else
         {
-            (unclamped.min(animation.frame_count.0), (unclamped + 1).min(animation.frame_count.0))
+            let frc = animation.frame_count.0;
+            (unclamped.min(frc), (unclamped + 1).min(frc))
         };
 
         let fraction =

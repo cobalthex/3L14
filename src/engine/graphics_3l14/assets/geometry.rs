@@ -16,8 +16,8 @@ use crate::vertex_layouts::{SkinnedVertex, StaticVertex, VertexDecl, VertexLayou
 // Buffers with lower VertexLqyout values are ordered first, numbers are sequential
 // TODO: possibly could specify fixed locations, but often limited to 32 locations on GPU
 #[bitflags]
-#[derive(Copy, Clone)]
-#[repr(u16)]
+#[derive(Debug, Copy, Clone)]
+#[repr(u8)]
 pub enum VertexLayout
 {
     Static      = 0b00000001,
@@ -34,7 +34,7 @@ impl From<BitFlags<VertexLayout>> for VertexLayoutBuilder
             {
                 VertexLayout::Static => StaticVertex::layout(&mut builder),
                 VertexLayout::Skinned => SkinnedVertex::layout(&mut builder),
-            }
+        }
         }
         builder
     }

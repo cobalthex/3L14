@@ -1,15 +1,16 @@
 use std::sync::Mutex;
 use std::time::Duration;
-use dashmap::DashMap;
+use bitcode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use triomphe::Arc;
 use wasm_bindgen::closure::Closure;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use latch_3l14::{BlockId, BlockVisitor, Circuit, ImpulseBlock, Inlet, InstRunId, LatchActions, LatchBlock, LatchingOutlet, Plug, PulsedOutlet, Runtime, Scope, SharedScope, VarId, VarScope, VarValue};
-use latch_3l14::impulses::{DebugPrint, NoOp, SetVars};
+use latch_3l14::impulses::{DebugLog, NoOp, SetVars};
 use latch_3l14::latches::{ConditionLatch, Latch};
 use nab_3l14::Signal;
 use nab_3l14::utils::ShortTypeName;
+use proc_macros_3l14::CircuitBlock;
 
 #[wasm_bindgen]
 pub fn run_app() -> App
@@ -21,12 +22,13 @@ pub fn run_app() -> App
 
 static S_LOG: Mutex<String> = Mutex::new(String::new());
 
-#[derive(Debug)]
+#[derive(Debug, Encode, Decode)]
 enum LogType
 {
     String(String),
     Var(VarId),
 }
+#[derive(Debug, CircuitBlock, Encode, Decode)]
 struct LogPrint
 {
     log: LogType,
@@ -84,6 +86,7 @@ fn defer<TFn: Fn() + Send + 'static>(duration: Duration, f: TFn)
     closure.forget();
 }
 
+#[derive(Debug, CircuitBlock, Encode, Decode)]
 struct Wait
 {
     duration: Duration,
@@ -136,7 +139,7 @@ impl App
     #[must_use]
     pub fn new() -> Self
     {
-        let graph = Circuit
+        let circuit = Arc::new(Circuit
         {
             auto_entries: Box::new([BlockId::latch(0)]),
             signaled_entries: Box::new([
@@ -194,7 +197,7 @@ impl App
                         ]),
                     },
                 }),
-                Box::new(DebugPrint
+                Box::new(DebugLog
                 {
                     message: "DEFERRED".to_string(),
                     outlet: Default::default(),
@@ -237,10 +240,10 @@ impl App
                 })
             ]),
             num_local_vars: 1,
-        };
+        });
 
         let runtime = Runtime::new();
-        let inst_run_id = Runtime::spawn(&runtime, graph, None);
+        let inst_run_id = Runtime::spawn(&runtime, circuit, None);
 
         Self
         {
@@ -252,7 +255,7 @@ impl App
 
     pub fn flip_switch(&mut self)
     {
-        
+
     }
 
     pub fn signal(&self)

@@ -7,11 +7,11 @@ use nab_3l14::utils::array::init_array;
 use parking_lot::Mutex;
 use std::any::TypeId;
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::thread::{Builder, JoinHandle};
 use triomphe::Arc;
-// TODO: probably don't pass around UniCase publicly
 
 #[cfg(feature = "hot_reloading")]
 use notify::{event::ModifyKind, EventKind, RecommendedWatcher, RecursiveMode};
@@ -25,18 +25,8 @@ pub enum AssetNotification
     Reload(AssetKey),
 }
 
-pub(super) struct AssetsStorage
-{
-    registered_asset_types: HashMap<AssetTypeId, RegisteredAssetType>,
-    lifecyclers: HashMap<AssetTypeId, RegisteredAssetLifecycler>,
-
-    handles: Mutex<AssetHandleBank>,
-    lifecycle_channel: Sender<AssetLifecycleRequest>,
-    notification_channel: (Sender<AssetNotification>, Receiver<AssetNotification>),
-
-    assets_root: PathBuf, // should be absolute
-}
-impl AssetsStorage
+// todo: unify with below
+impl Assets
 {
     #[must_use]
     fn create_or_update_handle<A: Asset>(&self, asset_key: AssetKey) -> (bool /* pre-existing */, Ash<A>)
@@ -101,23 +91,17 @@ impl AssetsStorage
         }
     }
 
-    #[inline] #[must_use]
-    pub fn get_lifecycler<A: Asset>(&self) -> Option<&RegisteredAssetLifecycler>
-    {
-        self.lifecyclers.get(&A::asset_type())
-    }
-
     #[must_use]
-    pub fn enqueue_load<A: Asset, F: FnOnce(UntypedAssetHandle) -> AssetLifecycleRequest>(
-        this: &Arc<Self>, // ugly hack b/c Arc is triomphe::
+    fn enqueue_load<A: Asset, F: FnOnce(UntypedAssetHandle) -> AssetLifecycleRequest>(
+        &self,
         asset_key: AssetKey,
         input_fn: F) -> Ash<A>
     {
-        let (pre_existed, asset_handle) = this.create_or_update_handle(asset_key);
+        let (pre_existed, asset_handle) = self.create_or_update_handle(asset_key);
 
         // todo: what to do if already queued for load?
 
-        if this.lifecyclers.contains_key(&asset_key.asset_type())
+        if self.lifecyclers.contains_key(&asset_key.asset_type())
         {
             let request = input_fn(unsafe { asset_handle.clone().into_inner() });
 
@@ -125,10 +109,10 @@ impl AssetsStorage
             asset_handle.store_payload(AssetPayload::Pending);
             if pre_existed
             {
-                this.notification_channel.0.send(AssetNotification::Reload(asset_key)).unwrap(); // todo: error handling
+                self.notification_channel.0.send(AssetNotification::Reload(asset_key)).unwrap(); // todo: error handling
             }
 
-            if this.lifecycle_channel.send(request).is_err()
+            if self.lifecycle_channel.send(request).is_err()
             {
                 asset_handle.store_payload(AssetPayload::Unavailable(AssetLoadError::Shutdown));
             }
@@ -178,13 +162,13 @@ impl AssetsStorage
     }
 
     #[inline]
-    fn open_asset_from_file<P: AsRef<Path>>(file_path: P) -> Result<AssetRead, std::io::Error>
+    fn open_asset_from_file<P: AsRef<Path>>(file_path: P) -> Result<Box<[u8]>, std::io::Error>
     {
         let len = std::fs::metadata(&file_path)?.len();
         let mut f = std::fs::File::open(file_path)?;
         let mut buf = unsafe { alloc_slice_uninit(len as usize) };
         f.read_exact(&mut buf)?;
-        Ok(AssetRead::new(buf))
+        Ok(buf)
     }
 
     fn asset_worker_fn(this: Arc<Self>, request_recv: Receiver<AssetLifecycleRequest>) -> impl FnOnce()
@@ -239,7 +223,7 @@ impl AssetsStorage
                                     .expect("Unsupported asset type!").lifecycler; // this should fail in load()
 
                                 #[cfg(feature = "asset_debug_data")]
-                                let debug_asset_data: Option<AssetRead> =
+                                let debug_asset_data: Option<_> =
                                 {
                                     let asset_debug_path = this.asset_key_to_file_path(inner.key(), AssetFileType::DebugData);
                                     match Self::open_asset_from_file(asset_debug_path)
@@ -253,10 +237,10 @@ impl AssetsStorage
                                 match Self::open_asset_from_file(asset_file_path)
                                 {
                                     Ok(read) => lifecycler.load_untyped(
-                                        this.clone(),
+                                        &this,
                                         untyped_handle,
-                                        read,
-                                        #[cfg(feature = "asset_debug_data")] debug_asset_data
+                                        Cursor::new(&read),
+                                        #[cfg(feature = "asset_debug_data")] debug_asset_data.as_ref().map(|b| Cursor::new(b.as_ref()))
                                     ),
                                     Err(err) =>
                                     {
@@ -273,9 +257,9 @@ impl AssetsStorage
                                     .expect("Unsupported asset type!").lifecycler; // this should fail in load()
 
                                 lifecycler.load_untyped(
-                                    this.clone(),
+                                    &this,
                                     untyped_handle,
-                                    reader,
+                                    Cursor::new(&reader),
                                     #[cfg(feature = "asset_debug_data")] None);
                             },
                             AssetLifecycleRequest::Drop(untyped_handle) =>
@@ -325,19 +309,32 @@ impl Default for AssetsDebugState
 }
 
 const NUM_ASSET_JOB_THREADS: usize = 1;
-pub struct Assets
+struct RuntimeShit
 {
-    storage: Arc<AssetsStorage>,
     #[cfg(feature = "hot_reloading")]
     fs_watcher: Option<Debouncer<RecommendedWatcher, RecommendedCache>>,
-    worker_threads: [Option<JoinHandle<()>>; NUM_ASSET_JOB_THREADS],
+    worker_threads: [JoinHandle<()>; NUM_ASSET_JOB_THREADS],
+}
+
+pub struct Assets
+{
+    assets_root: PathBuf, // should be absolute
+
+    registered_asset_types: HashMap<AssetTypeId, RegisteredAssetType>,
+    lifecyclers: HashMap<AssetTypeId, RegisteredAssetLifecycler>,
+
+    handles: Mutex<AssetHandleBank>, // TODO: DashMap
+    lifecycle_channel: Sender<AssetLifecycleRequest>,
+    notification_channel: (Sender<AssetNotification>, Receiver<AssetNotification>),
+
+    runtime_shit: OnceLock<RuntimeShit>,
 
     debug_state: Mutex<AssetsDebugState>, // only one place ever calls this (MAKE SURE OF THIS)
 }
 impl Assets
 {
     #[must_use]
-    pub fn new(asset_lifecyclers: AssetLifecyclers, config: AssetsConfig) -> Self
+    pub fn new(asset_lifecyclers: AssetLifecyclers, config: AssetsConfig) -> Arc<Self>
     {
         #[cfg(debug_assertions)]
         log::debug!("Serving assets from {:?}", config.assets_root);
@@ -346,19 +343,20 @@ impl Assets
 
         // TODO: flume is probably a better choice here
         let (lifecycle_send, lifecycle_recv) = unbounded::<AssetLifecycleRequest>();
-        let storage = Arc::new(AssetsStorage
+        let assets = Arc::new(Self
         {
+            assets_root: config.assets_root,
             registered_asset_types: asset_lifecyclers.registered_asset_types,
             lifecyclers: asset_lifecyclers.lifecyclers,
             handles: Mutex::new(AssetHandleBank::new()),
             lifecycle_channel: lifecycle_send,
             notification_channel: unbounded::<AssetNotification>(),
-
-            assets_root: config.assets_root,
+            runtime_shit: OnceLock::new(),
+            debug_state: Default::default(),
         });
 
         #[cfg(feature = "hot_reloading")]
-        let fs_watcher = if config.enable_fs_watcher { Self::try_fs_watch(storage.clone()).inspect_err(|err|
+        let fs_watcher = if config.enable_fs_watcher { Self::try_fs_watch(assets.clone()).inspect_err(|err|
         {
             // TODO: print message on successful startup
             log::error!("Failed to start fs watcher for hot-reloading, continuing without: {err:?}");
@@ -387,28 +385,32 @@ impl Assets
         {
             let thread = Builder::new()
                 .name(format!("Asset worker thread {}", i))
-                .spawn(AssetsStorage::asset_worker_fn(storage.clone(), lifecycle_recv.clone())).expect("Failed to create asset worker thread");
-            Some(thread)
+                .spawn(Self::asset_worker_fn(assets.clone(), lifecycle_recv.clone())).expect("Failed to create asset worker thread");
+            thread
         });
-
-        Self
+        let _ = assets.runtime_shit.set(RuntimeShit
         {
-            storage,
             #[cfg(feature = "hot_reloading")]
             fs_watcher,
             worker_threads,
+        });
 
-            debug_state: Mutex::new(AssetsDebugState::default()),
-        }
+        assets
+    }
+
+    // prevent any new asset from being loaded
+    pub fn shutdown(&self)
+    {
+        let _ = self.lifecycle_channel.send(AssetLifecycleRequest::StopWorkers); // will error if already closed
     }
 
     pub fn subscribe_to_notifications(&self) -> Receiver<AssetNotification>
     {
-        self.storage.notification_channel.1.clone()
+        self.notification_channel.1.clone()
     }
 
     #[cfg(feature = "hot_reloading")]
-    fn try_fs_watch(assets_storage: Arc<AssetsStorage>) -> notify::Result<Debouncer<RecommendedWatcher, RecommendedCache>>
+    fn try_fs_watch(assets_storage: Arc<Self>) -> notify::Result<Debouncer<RecommendedWatcher, RecommendedCache>>
     {
         let assets_storage_clone = assets_storage.clone();
         // batching?
@@ -448,17 +450,17 @@ impl Assets
     #[must_use]
     pub fn load<A: Asset>(&self, asset_key: AssetKey) -> Ash<A>
     {
-        AssetsStorage::enqueue_load(&self.storage, asset_key, AssetLifecycleRequest::LoadFileBacked)
+        self.enqueue_load(asset_key, AssetLifecycleRequest::LoadFileBacked)
     }
 
     #[must_use]
     pub fn load_from<A: Asset>(
         &self,
         asset_key: AssetKey,
-        input_data: AssetRead
+        input_data: Box<[u8]>
     ) -> Ash<A>
     {
-        AssetsStorage::enqueue_load(&self.storage, asset_key, |h| AssetLifecycleRequest::LoadFromMemory(h, input_data))
+        self.enqueue_load(asset_key, |h| AssetLifecycleRequest::LoadFromMemory(h, input_data))
     }
 
     #[must_use]
@@ -466,15 +468,15 @@ impl Assets
     pub fn load_direct_from<A: Asset>(
         &self,
         asset_key: AssetKey,
-        input_data: AssetRead
+        input_data: &[u8]
     ) -> Ash<A>
     {
-        let lifecycler = self.storage.get_lifecycler::<A>().expect("No lifecycler found for asset type");
-        let handle = self.storage.create_or_update_handle(asset_key);
+        let lifecycler = self.get_lifecycler_for_type::<A>().expect("No lifecycler found for asset type");
+        let handle = self.create_or_update_handle(asset_key);
         lifecycler.lifecycler.load_untyped(
-            self.storage.clone(),
+            self,
             unsafe { handle.1.clone().into_inner() },
-            input_data,
+            Cursor::new(input_data),
             #[cfg(feature = "asset_debug_data")] None);
         handle.1
     }
@@ -482,8 +484,14 @@ impl Assets
     #[must_use]
     pub fn num_active_assets(&self) -> usize
     {
-        let handles = self.storage.handles.lock();
+        let handles = self.handles.lock();
         handles.len()
+    }
+
+    #[inline] #[must_use]
+    fn get_lifecycler_for_type<A: Asset>(&self) -> Option<&RegisteredAssetLifecycler>
+    {
+        self.lifecyclers.get(&A::asset_type())
     }
 
     #[inline] #[must_use]
@@ -491,9 +499,7 @@ impl Assets
     // NOTE: This will verify that the type IDs match in debug, but otherwise makes no guarantees about correct types
     pub fn get_lifecycler<L: AssetLifecycler + 'static>(&self) -> Option<&L>
     {
-        // TODO: in debug, check type IDs?
-        let maybe = self.storage.get_lifecycler::<L::Asset>();
-        maybe.map(|l|
+        self.lifecyclers.get(&L::Asset::asset_type()).map(|l|
         unsafe {
             #[cfg(debug_assertions)]
             assert_eq!(TypeId::of::<L>(), l.type_id); // debug_assert won't work here
@@ -501,11 +507,6 @@ impl Assets
         })
     }
 
-    // prevent any new asset from being loaded
-    pub fn shutdown(&self)
-    {
-        let _ = self.storage.lifecycle_channel.send(AssetLifecycleRequest::StopWorkers); // will error if already closed
-    }
 }
 impl DebugGui for Assets
 {
@@ -517,13 +518,13 @@ impl DebugGui for Assets
     {
         let mut debug_state = self.debug_state.lock();
 
-        let inspected_lifecycler = self.storage.lifecyclers.get(&debug_state.inspected_lifecycler);
+        let inspected_lifecycler = self.lifecyclers.get(&debug_state.inspected_lifecycler);
 
         egui::ComboBox::from_label("Lifecyclers")
             .selected_text(inspected_lifecycler.map_or("(None)", |l| l.lifecycler.display_name()))
             .show_ui(ui, |cui|
             {
-                for (asset_type, lifecycler) in &self.storage.lifecyclers
+                for (asset_type, lifecycler) in &self.lifecyclers
                 {
                     if lifecycler.debug_gui_fn.is_none() { continue; }
                     cui.selectable_value(&mut debug_state.inspected_lifecycler, *asset_type, lifecycler.lifecycler.display_name());
@@ -538,13 +539,13 @@ impl DebugGui for Assets
 
         #[cfg(feature = "hot_reloading")]
         {
-            let mut has_fswatcher = self.fs_watcher.is_some();
+            let mut has_fswatcher = self.runtime_shit.get().unwrap().is_some();
             ui.checkbox(&mut has_fswatcher, "FS watcher enabled");
         }
 
         ui.separator();
 
-        let handle_bank = self.storage.handles.lock();
+        let handle_bank = self.handles.lock();
 
         let total_active_count = handle_bank.len();
         ui.label(format!("Total active handles: {0}", total_active_count));
@@ -581,21 +582,17 @@ impl Drop for Assets
 {
     fn drop(&mut self)
     {
-        #[cfg(feature = "hot_reloading")]
-        {
-            self.fs_watcher = None;
-        }
-
         self.shutdown();
 
-        for thread in &mut self.worker_threads
         {
-            thread.take()
-                .unwrap() // this should never be None
-                .join().unwrap();
+            let runtime_shit = self.runtime_shit.take().unwrap();
+            for thread in runtime_shit.worker_threads
+            {
+                thread.join().unwrap(); // don't fail here?
+            }
         }
 
-        let mut handle_bank = self.storage.handles.lock();
+        let mut handle_bank = self.handles.lock();
         if !handle_bank.is_empty()
         {
             log::error!("! Leak detected: {} active asset handle(s):", handle_bank.len());
@@ -621,8 +618,8 @@ mod tests
 
     // TODO: should probably make sure there are no mem leaks in these tests
 
-    const TEST_ASSET_1: AssetKey = AssetKey::unique(AssetTypeId::Test1, AssetKeyDerivedId::test(), AssetKeySourceId::test(1));
-    const TEST_ASSET_2: AssetKey = AssetKey::synthetic(AssetTypeId::Test2, AssetKeySynthHash::test(123));
+    const TEST_ASSET_1: AssetKey = AssetKey::unique(AssetTypeId::Test1, AssetKeyDerivedId(1), AssetKeySourceId(1));
+    const TEST_ASSET_2: AssetKey = AssetKey::synthetic(AssetTypeId::Test2, AssetKeySynthHash(123));
 
     #[derive(Debug)]
     struct NestedAsset
@@ -770,7 +767,7 @@ mod tests
         {
             let assets = Assets::new(AssetLifecyclers::default(), AssetsConfig::test());
 
-            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(Box::new([])));
+            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Box::new([]));
             await_asset(&req);
         }
 
@@ -801,7 +798,7 @@ mod tests
                 Err(Box::new(TestError))
             }));
 
-            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(Box::new([])));
+            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Box::new([]));
             match await_asset(&req)
             {
                 AssetPayload::Unavailable(AssetLoadError::Parse) => {},
@@ -816,7 +813,7 @@ mod tests
                 .add_lifecycler(TestAssetLifecycler::default());
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
-            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(Box::new([])));
+            let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Box::new([]));
             match req.payload()
             {
                 AssetPayload::Pending => {},
@@ -843,14 +840,14 @@ mod tests
 
             assert_eq!(Some(0), get_passthru_call_count::<TestAssetLifecycler>(&assets));
 
-            let _req1: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(Box::new([])));
+            let _req1: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Box::new([]));
             await_asset(&_req1);
             assert_eq!(Some(1), get_passthru_call_count::<TestAssetLifecycler>(&assets));
 
             let _req2: Ash<TestAsset>;
             {
                 let _ = READY_WAITER.lock();
-                _req2 = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(Box::new([])));
+                _req2 = assets.load_from::<TestAsset>(TEST_ASSET_1, Box::new([]));
                 // TODO: this appears to be non-deterministic
                 assert_eq!(Some(1), get_passthru_call_count::<TestAssetLifecycler>(&assets));
             }
@@ -876,10 +873,10 @@ mod tests
             }));
             // TODO: broken
 
-            let req: Ash<TestAsset> = assets.load_direct_from::<TestAsset>(TEST_ASSET_1, Cursor::new(Box::new([])));
+            let req: Ash<TestAsset> = assets.load_direct_from::<TestAsset>(TEST_ASSET_1, &[]);
             assert!(req.is_loaded_recursive());
 
-            let req2: Ash<NestedAsset> = assets.load_from::<NestedAsset>(TEST_ASSET_2, Cursor::new(Box::new([])));
+            let req2: Ash<NestedAsset> = assets.load_from::<NestedAsset>(TEST_ASSET_2, Box::new([]));
             match await_asset(&req2)
             {
                 AssetPayload::Available(a) => assert_eq!(a.id, 123),
@@ -905,7 +902,7 @@ mod tests
             }));
 
 
-            let req = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(loaded_asset_payload));
+            let req = assets.load_from::<TestAsset>(TEST_ASSET_1, loaded_asset_payload);
             match await_asset(&req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.value, test_value),
@@ -931,7 +928,7 @@ mod tests
             }));
 
             let mut input_bytes = Box::new(first_val.to_le_bytes());
-            let mut req = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(input_bytes));
+            let mut req = assets.load_from::<TestAsset>(TEST_ASSET_1, input_bytes);
             match await_asset(&req)
             {
                 AssetPayload::Available(a) => assert_eq!(a.value, first_val),
@@ -939,7 +936,7 @@ mod tests
             }
 
             input_bytes = Box::new(second_val.to_le_bytes());
-            req = assets.load_from::<TestAsset>(TEST_ASSET_1, Cursor::new(input_bytes));
+            req = assets.load_from::<TestAsset>(TEST_ASSET_1, input_bytes);
             std::thread::sleep(Duration::from_millis(10)); // TODO: HACK
             match await_asset(&req)
             {
