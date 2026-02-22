@@ -23,8 +23,9 @@ pub fn fancy_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 
     // Store generated methods for each property
 
-    let mut variants_idents = Vec::new();
-    let mut variant_indices = Vec::new();
+    let mut unit_variant_pairs = Vec::new();
+    let mut match_variants_idents = Vec::new();
+    let mut match_variant_indices = Vec::new();
     let mut props = HashMap::new();
 
     let mut mandatory_key_counts = HashMap::new();
@@ -32,20 +33,31 @@ pub fn fancy_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     for (vindex, variant) in variants.iter().enumerate()
     {
         let variant_ident = &variant.ident;
+        
+        // only emit if all variants are units?
+        if let Fields::Unit = variant.fields
+        {
+            unit_variant_pairs.push(quote!( (stringify!(#variant_ident), Self::#variant_ident) ));
+        }
 
         // todo: name override attr
-        variants_idents.push(match variant.fields
+        match_variants_idents.push(match variant.fields
         {
-            Fields::Named(_) => quote!(Self::#variant_ident{..} => stringify!(#variant_ident)),
-            Fields::Unnamed(_) => quote!(Self::#variant_ident(..) => stringify!(#variant_ident)),
-            Fields::Unit => quote!(Self::#variant_ident => stringify!(#variant_ident)),
+            Fields::Named(_) => quote!( Self::#variant_ident{..} => stringify!(#variant_ident) ),
+            Fields::Unnamed(_) => quote!( Self::#variant_ident(..) => stringify!(#variant_ident) ),
+            Fields::Unit => quote!( Self::#variant_ident => stringify!(#variant_ident) ),
         });
-        variant_indices.push(match variant.fields
+        match_variant_indices.push(match variant.fields
         {
-            Fields::Named(_) => quote!(Self::#variant_ident{..} => #vindex),
-            Fields::Unnamed(_) => quote!(Self::#variant_ident(..) => #vindex),
-            Fields::Unit => quote!(Self::#variant_ident => #vindex),
+            Fields::Named(_) => quote!( Self::#variant_ident{..} => #vindex ),
+            Fields::Unnamed(_) => quote!( Self::#variant_ident(..) => #vindex ),
+            Fields::Unit => quote!( Self::#variant_ident => #vindex ),
         });
+
+        // if let Fields::Unit = variant.fields
+        // {
+        //     try_froms.push(quote!( stringify!(#variant_ident) => Ok(Self::#variant_ident) ));
+        // }
 
         for attr in variant.attrs.iter()
         {
@@ -76,9 +88,9 @@ pub fn fancy_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 
     for (key, count) in mandatory_key_counts
     {
-        if count != variants_idents.len()
+        if count != match_variants_idents.len()
         {
-            panic!("Property key '{}' is used in {} variant(s), but not in all {}", key, count, variants_idents.len());
+            panic!("Property key '{}' is used in {} variant(s), but not in all {}", key, count, match_variants_idents.len());
         }
     }
 
@@ -93,16 +105,21 @@ pub fn fancy_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream
         }
     });
 
-    let variants_count = variants_idents.len();
+    let variants_count = match_variants_idents.len();
 
     // Expand the generated methods
     let expanded = quote!
     {
         impl #type_name
         {
-            pub const fn variant_name(&self) -> &'static str { match self { #(#variants_idents),* } }
-            pub const fn variant_index(&self) -> usize { match self { #(#variant_indices),* } }
+            pub const fn variant_name(&self) -> &'static str { match self { #(#match_variants_idents),* } }
+            pub const fn variant_index(&self) -> usize { match self { #(#match_variant_indices),* } }
             pub const fn variant_count() -> usize { #variants_count }
+            pub const fn unit_variants() -> &'static [(&'static str, Self)]
+            {
+                &[ #(#unit_variant_pairs),* ]
+            }
+
             #(#methods)*
         }
     };

@@ -11,8 +11,8 @@ use wgpu::util::make_spirv;
 use wgpu::{ShaderModuleDescriptor, ShaderModuleDescriptorPassthrough};
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetLifecycler, AssetLoadRequest, AssetTypeId};
 use debug_3l14::debug_gui::DebugGui;
-use crate::assets::VertexLayout;
 use crate::material_classes::MaterialClass;
+use crate::vertex_layouts::VertexCaps;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode, FancyEnum)]
@@ -31,44 +31,40 @@ pub enum ShaderStage
 
 // move?
 #[repr(u8)]
-#[derive(Debug, Clone, Copy)]
-pub enum RenderPassName // todo: better name to not clash with wgpu::RenderPass
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum EngineRenderPass // todo: better name to not clash with wgpu::RenderPass -- graph node?
 {
     Debug,
     // depth pre-pass?
     LightCull,
+    ShadowMap,
+    // CutoutShadowMap?
     Opaque,
     Transparent,
     // post-fx? fog, color grading, bloom, etc
     UI,
 }
 
-pub struct ShaderKey(u32);
-impl ShaderKey
+pub mod shader_key
 {
+    use super::*;
+
     #[inline] #[must_use]
-    pub fn vertex(layout: BitFlags<VertexLayout>, pass: RenderPassName) -> Self
+    pub fn vertex(layout: BitFlags<VertexCaps>, pass: EngineRenderPass) -> AssetKeySynthHash
     {
         let mut val = 0b0001u32 << 28;
         val |= (pass as u32) << 20;
         val |= (layout.bits() as u32) << 12;
-        Self(val)
+        AssetKeySynthHash(val as u64)
     }
 
     #[inline] #[must_use]
-    pub fn pixel(class: MaterialClass, pass: RenderPassName) -> Self
+    pub fn pixel(class: MaterialClass, pass: EngineRenderPass) -> AssetKeySynthHash
     {
         let mut val = 0b0010u32 << 28;
         val |= (pass as u32) << 20;
         val |= (class as u32) << 12;
-        Self(val)
-    }
-    
-    #[inline] #[must_use]
-    pub fn to_assetkey(self) -> AssetKey
-    {
-        let synth = AssetKeySynthHash(self.0 as u64);
-        AssetKey::synthetic(AssetTypeId::Shader, synth)
+        AssetKeySynthHash(val as u64)
     }
 }
 

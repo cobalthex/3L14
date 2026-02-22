@@ -34,7 +34,7 @@ impl<'s> SkeletonPoser<'s>
         debug_assert_eq!(skeleton.bone_ids.len(), skeleton.parent_indices.len());
 
         let num_poses = skeleton.bind_poses.len().min(MAX_SKINNED_BONES);
-        let mut poses = ArrayVec::new();
+        let mut poses = PoseSet::new();
         unsafe { poses.set_len(num_poses); } // better way?
         // TODO: this should either be explicit or fill in gaps left by animation
         poses[..num_poses].copy_from_slice(&skeleton.bind_poses[..num_poses]);
@@ -91,8 +91,7 @@ impl<'s> SkeletonPoser<'s>
             let bone_id = animation.bones[i];
             // TODO: animation should store bone indices
             let Some(bone_idx) = self.skeleton.bone_ids.iter().position(|b| *b == animation.bones[i])
-                // else { panic!("Did not find matching bone for {:?} (#{i}) in skel:{:?}", anim.bones[i], skel.hierarchy); };
-                else { panic!("!!! {bone_id:?}"); }; // skip; TODO this is likely happening when skin.skeleton node is animated
+                else { panic!("Did not find matching bone for {:?} (#{i})", animation.bones[i]); }; // skip; TODO this is likely happening when skin.skeleton node is animated
 
             // TODO: cache reconstructed dual-quats
             let lerped = DualQuat::nlerp(fp.clone().into(), tp.clone().into(), fraction);

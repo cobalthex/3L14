@@ -1,0 +1,9 @@
+source_id = "05d7067e4"
+version_hash = "p5kMKPDmCl8"
+
+[build_config]
+compile_flags = []
+pass = "Opaque"
+
+[build_config.stage.Pixel]
+class = "PbrOpaque"

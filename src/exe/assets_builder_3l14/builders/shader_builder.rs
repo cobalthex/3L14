@@ -1,26 +1,27 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Write};
 use std::error::Error;
-use std::io::{Read, Write};
+use std::io::{Read};
 use std::path::{Path, PathBuf};
 use enumflags2::{bitflags, BitFlag, BitFlags};
-use graphics_3l14::assets::{ShaderFile, ShaderStage};
+use graphics_3l14::assets::{shader_key, EngineRenderPass, ShaderFile, ShaderStage};
 use hassle_rs::{Dxc, DxcCompiler, DxcIncludeHandler, DxcLibrary, DxcValidator, Dxil, HassleError};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use asset_3l14::AssetTypeId;
-use nab_3l14::utils::ShortTypeName;
+use graphics_3l14::material_classes::MaterialClass;
+use graphics_3l14::vertex_layouts::VertexCaps;
+use nab_3l14::utils::enumflags2_seq;
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
 
 #[bitflags]
 #[repr(u8)]
-#[derive(Hash, Copy, Clone, Debug)]
+#[derive(Hash, Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum ShaderCompileFlag
 {
     Debug       = 0b0001,
     EmitSymbols = 0b0010,
 }
 
-#[derive(Debug)]
 pub struct ShaderCompilation<'s>
 {
     pub source_text: &'s str,
@@ -28,6 +29,17 @@ pub struct ShaderCompilation<'s>
     pub stage: ShaderStage,
     pub flags: BitFlags<ShaderCompileFlag>,
     pub defines: Vec<(&'s str, Option<&'s str>)>,
+}
+impl Debug for ShaderCompilation<'_>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+    {
+        f.debug_struct("ShaderCompilation")
+            .field("filename", &self.filename)
+            .field("stage", &self.stage)
+            .field("flags", &self.flags.to_string())
+            .finish()
+    }
 }
 
 struct Includer
@@ -52,25 +64,44 @@ impl DxcIncludeHandler for Includer
 }
 
 #[derive(Serialize, Deserialize)]
+pub enum ShaderStageConfig
+{
+    Vertex
+    {
+        #[serde(with = "enumflags2_seq")]
+        layout: BitFlags<VertexCaps>,
+    },
+    Pixel
+    {
+        class: MaterialClass,
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct ShaderBuildConfig
 {
-    pub stage: ShaderStage,
-    // TODO: feature flags
+    #[serde(with = "enumflags2_seq")]
+    pub compile_flags: BitFlags<ShaderCompileFlag>,
+    pub pass : EngineRenderPass,
+    pub stage: ShaderStageConfig,
 }
+
 impl Default for ShaderBuildConfig
 {
     fn default() -> Self
     {
         Self
         {
-            stage: ShaderStage::Vertex,
+            compile_flags: BitFlags::empty(),
+            pass: EngineRenderPass::Opaque,
+            stage: ShaderStageConfig::Vertex { layout: BitFlags::empty() },
         }
     }
 }
 
 pub struct ShaderBuilder
 {
-    includer: Mutex<Includer>,
+    includer: Mutex<Includer>, // must be a mutex due to hassle-rs
     dxc_compiler: DxcCompiler,
     dxc_library: DxcLibrary,
     dxc_validator: DxcValidator,
@@ -209,21 +240,39 @@ impl AssetBuilder for ShaderBuilder
         let mut source_text = String::new();
         input.read_to_string(&mut source_text)?;
 
-        outputs.add_output(AssetTypeId::Shader, |output|
+        // todo: correctly stage
+        let hash = match config.stage
         {
+            ShaderStageConfig::Vertex { layout } => shader_key::vertex(layout, config.pass),
+            ShaderStageConfig::Pixel { class } => shader_key::pixel(class, config.pass),
+        };
+
+        outputs.add_synthetic(AssetTypeId::Shader, hash, |output|
+        {
+            let mut defines: Vec<(String, Option<String>)> = Vec::new(); // todo: use Cow?
+
+            let defines_ref = Vec::from_iter(defines.iter().map(|(k, v)| (k.as_str(), v.as_deref())));
             let compilation = ShaderCompilation
             {
                 source_text: &source_text,
                 filename: input.source_path(), // just the filename?
-                stage: config.stage,
-                flags: ShaderCompileFlag::empty(),
-                defines: Vec::new(),
+                stage: match config.stage
+                {
+                    ShaderStageConfig::Vertex { .. } => ShaderStage::Vertex,
+                    ShaderStageConfig::Pixel { .. } => ShaderStage::Pixel,
+                },
+                flags: config.compile_flags, // TODO: global flags?
+                defines: defines_ref,
             };
 
             let module_bytes = self.compile_hlsl(compilation)?;
             output.serialize(&ShaderFile
             {
-                stage: config.stage,
+                stage: match config.stage
+                {
+                    ShaderStageConfig::Vertex { .. } => ShaderStage::Vertex,
+                    ShaderStageConfig::Pixel { .. } => ShaderStage::Pixel,
+                },
                 module_bytes,
             })?;
 

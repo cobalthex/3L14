@@ -1,0 +1,8 @@
+source_id = "00332fc01"
+version_hash = "p5kMKPDmCl8"
+
+[build_config]
+compile_flags = []
+pass = "Opaque"
+[build_config.stage.Vertex]
+layout = ["Static", "Skinned"]

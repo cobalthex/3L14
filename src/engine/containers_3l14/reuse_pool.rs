@@ -6,14 +6,14 @@ use crossbeam::queue::SegQueue;
 use crossbeam::sync::ShardedLock;
 
 type PoolEntryIndex = u16; // bottom bit is entry index, rest of bits are bucket index; u16 allows for 64k entries
-pub const OBJECT_POOL_BUCKET_ENTRY_BITS: PoolEntryIndex = 6;
-const OBJECT_POOL_BUCKET_ENTRY_COUNT: PoolEntryIndex = 1 << OBJECT_POOL_BUCKET_ENTRY_BITS;
+pub const REUSE_POOL_BUCKET_ENTRY_BITS: PoolEntryIndex = 6;
+const REUSE_POOL_BUCKET_ENTRY_COUNT: PoolEntryIndex = 1 << REUSE_POOL_BUCKET_ENTRY_BITS;
 
 #[derive(Default)]
 struct Buckets<T>
 {
     count: PoolEntryIndex, // total created across all buckets
-    buckets: Vec<Box<[MaybeUninit<T>; OBJECT_POOL_BUCKET_ENTRY_COUNT as usize]>>,
+    buckets: Vec<Box<[MaybeUninit<T>; REUSE_POOL_BUCKET_ENTRY_COUNT as usize]>>,
 }
 
 pub struct ReusePool<T>
@@ -63,18 +63,18 @@ impl<T> ReusePool<T>
         // todo: push 8 or so entries to the free list at a time
 
         let index;
-        let bucket_local = count & (OBJECT_POOL_BUCKET_ENTRY_COUNT - 1);
-        if count > 0 && bucket_local < OBJECT_POOL_BUCKET_ENTRY_COUNT
+        let bucket_local = count & (REUSE_POOL_BUCKET_ENTRY_COUNT - 1);
+        if count > 0 && bucket_local < REUSE_POOL_BUCKET_ENTRY_COUNT
         {
-            locked.buckets[(count >> OBJECT_POOL_BUCKET_ENTRY_BITS) as usize][bucket_local as usize]
+            locked.buckets[(count >> REUSE_POOL_BUCKET_ENTRY_BITS) as usize][bucket_local as usize]
                 .write((create_entry_fn)(count as usize));
             index = count;
         }
         else
         {
-            let mut new_bucket = Box::new([const { MaybeUninit::zeroed() }; OBJECT_POOL_BUCKET_ENTRY_COUNT as usize]);
+            let mut new_bucket = Box::new([const { MaybeUninit::zeroed() }; REUSE_POOL_BUCKET_ENTRY_COUNT as usize]);
             new_bucket[0].write((create_entry_fn)(count as usize));
-            index = (locked.buckets.len() << OBJECT_POOL_BUCKET_ENTRY_BITS) as PoolEntryIndex;
+            index = (locked.buckets.len() << REUSE_POOL_BUCKET_ENTRY_BITS) as PoolEntryIndex;
             locked.buckets.push(new_bucket);
         }
         locked.count += 1;
@@ -123,7 +123,7 @@ impl<T> ReusePool<T>
         };
 
         let locked = self.buckets.read().unwrap();
-        let entry = &locked.buckets[(index >> OBJECT_POOL_BUCKET_ENTRY_BITS) as usize][(index & (OBJECT_POOL_BUCKET_ENTRY_COUNT - 1)) as usize];
+        let entry = &locked.buckets[(index >> REUSE_POOL_BUCKET_ENTRY_BITS) as usize][(index & (REUSE_POOL_BUCKET_ENTRY_COUNT - 1)) as usize];
 
         ObjectPoolEntryGuard
         {
@@ -141,7 +141,7 @@ impl<T> Drop for ReusePool<T>
         let mut count = locked.count;
         for bucket in &mut locked.buckets
         {
-            let n = count.min(OBJECT_POOL_BUCKET_ENTRY_COUNT);
+            let n = count.min(REUSE_POOL_BUCKET_ENTRY_COUNT);
             for i in 0..n
             {
                 unsafe { bucket[i as usize].assume_init_drop() };
@@ -205,7 +205,7 @@ impl<T> ObjectPoolToken<T>
         // store pointer?
         debug_assert_eq!(self.pool_uid, pool.uid);
         let locked = pool.buckets.read().unwrap();
-        let entry = &locked.buckets[(self.entry >> OBJECT_POOL_BUCKET_ENTRY_BITS) as usize][(self.entry & (OBJECT_POOL_BUCKET_ENTRY_COUNT - 1)) as usize];
+        let entry = &locked.buckets[(self.entry >> REUSE_POOL_BUCKET_ENTRY_BITS) as usize][(self.entry & (REUSE_POOL_BUCKET_ENTRY_COUNT - 1)) as usize];
         unsafe { &mut *(entry.as_ptr().cast_mut()) }
     }
 }

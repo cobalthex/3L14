@@ -256,6 +256,7 @@ dependencies = [
  "input_3l14",
  "nab_3l14",
  "sdl2",
+ "unicase",
 ]
 
 [[package]]
@@ -977,6 +978,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1027f7680c853e056ebcec683615fb6fbbc07dbaa13b4d5d9442b146ded4ecef"
 dependencies = [
  "enumflags2_derive",
+ "serde",
 ]
 
 [[package]]
@@ -2088,6 +2090,7 @@ dependencies = [
  "chrono",
  "clap",
  "colog",
+ "enumflags2",
  "is-root",
  "log",
  "metrohash",

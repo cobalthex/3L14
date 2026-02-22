@@ -4,7 +4,7 @@ use debug_3l14::debug_gui;
 use debug_3l14::debug_menu::{DebugMenu, DebugMenuMemory};
 use debug_3l14::sparkline::Sparkline;
 use egui::Widget;
-use glam::{FloatExt, Mat4, Quat, Vec3};
+use glam::{Mat4, Quat, Vec3};
 use graphics_3l14::assets::{GeometryLifecycler, MaterialLifecycler, Model, ModelLifecycler, ShaderLifecycler, SkeletalAnimation, SkeletalAnimationLifecycler, SkeletonLifecycler, TextureLifecycler};
 use graphics_3l14::camera::{Camera, CameraProjection};
 use graphics_3l14::debug_draw::DebugDraw;
@@ -129,7 +129,7 @@ fn main() -> ExitReason
         };
         camera.update_view(cam_transform.clone());
 
-        let pipeline_cache = PipelineCache::new(renderer.clone());
+        let pipeline_cache = PipelineCache::new(renderer.clone(), assets.clone());
         // ꙮ
 
         let mut obj_rot = Quat::IDENTITY;
@@ -450,7 +450,7 @@ fn main() -> ExitReason
                 debug_menu.add(&debug_gui::FrameProfiler);
                 debug_menu.add(&input);
                 debug_menu.add(&camera);
-                debug_menu.add(&assets);
+                debug_menu.add(assets.deref());
                 debug_menu.add(renderer.deref());
                 debug_menu.add(&debug_draw);
                 debug_menu.add(&pipeline_cache);

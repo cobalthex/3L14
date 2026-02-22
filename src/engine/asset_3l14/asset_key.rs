@@ -233,11 +233,20 @@ impl<'de> Deserialize<'de> for AssetKey
 {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error>
     {
-        match u64::from_str_radix(&String::deserialize(deserializer)?, 16)
+        match AssetKeyRepr::from_str_radix(&String::deserialize(deserializer)?, 16)
         {
             Ok(u) => Ok(Self(u)),
             Err(e) => Err(D::Error::custom(e))
         }
+    }
+}
+impl TryFrom<&str> for AssetKey
+{
+    type Error = std::num::ParseIntError;
+    
+    fn try_from(s: &str) -> Result<Self, Self::Error>
+    {
+        Ok(Self(AssetKeyRepr::from_str_radix(s, 16)?))
     }
 }
 

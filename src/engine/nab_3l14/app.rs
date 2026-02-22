@@ -185,6 +185,7 @@ pub enum ExitReason
 {
     Unset = !1, // this should never be set
     NormalExit = 0,
+    CliError = -1,
     Panic = -99,
 }
 impl std::process::Termination for ExitReason

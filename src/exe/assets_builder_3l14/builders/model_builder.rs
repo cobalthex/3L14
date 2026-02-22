@@ -8,8 +8,8 @@ use glam::{Mat4, Quat, Vec3};
 use gltf::animation::util::ReadOutputs;
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
-use graphics_3l14::assets::{AnimFrameNumber, BoneId, GeometryFile, GeometryMesh, IndexFormat, MaterialFile, ModelFile, Shader, ShaderDebugData, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat, VertexLayout};
-use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexLayoutBuilder};
+use graphics_3l14::assets::{AnimFrameNumber, BoneId, GeometryFile, GeometryMesh, IndexFormat, MaterialFile, ModelFile, Shader, ShaderDebugData, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat};
+use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexCaps, VertexLayoutBuilder};
 use math_3l14::{DualQuat, Ratio, Sphere, AABB};
 use metrohash::MetroHash64;
 use nab_3l14::utils::alloc_slice::{alloc_slice_default, alloc_u8_slice};
@@ -156,10 +156,10 @@ impl ModelBuilder
 
         // TODO: split up this file
 
-        let mut vertex_layout: BitFlags<_> = VertexLayout::Static.into();
+        let mut vertex_layout = BitFlags::from_flag(VertexCaps::Static);
         let maybe_skel_info = if let Some(skin) = &in_skin
         {
-            vertex_layout |= VertexLayout::Skinned;
+            vertex_layout |= VertexCaps::Skinned;
             let skel = skeletons.iter().find(|s| s.gltf_index == skin.index())
                 .expect("Node has a skin not in the document skins list??");
             Some(skel)
@@ -194,9 +194,9 @@ impl ModelBuilder
             let prim_reader = in_prim.reader(|b| Some(&buffers[b.index()]));
             let positions = prim_reader.read_positions().ok_or(ModelImportError::NoPositionData)?; // not required?
             let mut normals = prim_reader.read_normals();
-            let mut tangents = prim_reader.read_tangents();
+            // let mut tangents = prim_reader.read_tangents();
             let mut tex_coords = prim_reader.read_tex_coords(0).map(|t| t.into_f32());
-            let mut colors = prim_reader.read_colors(0).map(|c| c.into_rgba_u8());
+            // let mut colors = prim_reader.read_colors(0).map(|c| c.into_rgba_u8());
             let mut maybe_joints = prim_reader.read_joints(0).map(|j| j.into_u16());
             let mut maybe_weights = prim_reader.read_weights(0).map(|w| w.into_f32());
 
@@ -211,7 +211,7 @@ impl ModelBuilder
                     position: pos,
                     normal: normals.as_mut().and_then(|mut r| r.next()).unwrap_or([0.0, 0.0, 1.0]),
                     tex_coord: tex_coords.as_mut().and_then(|mut r| r.next()).unwrap_or([0.0, 0.0]),
-                    color: colors.as_mut().and_then(|mut r| r.next()).unwrap_or([u8::MAX, u8::MAX, u8::MAX, u8::MAX]),
+                    //color: colors.as_mut().and_then(|mut r| r.next()).unwrap_or([u8::MAX, u8::MAX, u8::MAX, u8::MAX]),
                 };
                 vertex_data.write_all(unsafe { as_u8_array(&static_vertex) })?;
                 mesh_vertex_count += 1;
@@ -328,7 +328,7 @@ impl ModelBuilder
             // }
 
             // TODO: read material info from gltf
-            let material_class = MaterialClass::SimpleOpaque; // TODO
+            let material_class = MaterialClass::PbrOpaque; // TODO
             let material = outputs.add_output(AssetTypeId::Material, |mtl_output|
             {
                 // call into MaterialBuilder?

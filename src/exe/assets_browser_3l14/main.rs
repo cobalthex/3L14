@@ -1,6 +1,9 @@
+use std::any::Any;
+use std::convert::Infallible;
 use std::error::Error;
 use std::fmt::Write;
-use asset_3l14::{AssetFileType, AssetMetadata, TomlRead};
+use std::path::{Path, PathBuf};
+use asset_3l14::{AssetFileType, AssetKey, AssetMetadata, AssetTypeId, TomlRead};
 use clap::Parser;
 use graphics_3l14::windows::Windows;
 use graphics_3l14::Renderer;
@@ -9,8 +12,11 @@ use nab_3l14::app::{AppFolder, AppRun, ExitReason};
 use nab_3l14::{CompletionState, RenderFrameNumber};
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use std::time::Instant;
+use egui::TextBuffer;
+use unicase::UniCase;
 // TODO: use epaint for this?
 
+#[derive(Debug)]
 struct AssetInfo
 {
     display_name: String,
@@ -20,12 +26,74 @@ struct AssetInfo
 #[derive(Parser, Debug)]
 struct CliArgs
 {
+    //// CLI ////
 
+    #[arg(long, group="cli", conflicts_with="gui")]
+    asset_key: Option<String>,
+
+    //// GUI ////
+
+    #[arg(long, group="gui", conflicts_with="cli")] // alias=type?
+    only_type: Option<String>,
 }
 
 fn main() -> ExitReason
 {
     let app_run = AppRun::<CliArgs>::startup("Assets Browser", "0.1.0");
+
+    let meta_ext = AssetFileType::MetaData.file_extension();
+
+    //// CLI args parsing ////
+
+    if let Some(asset_key) = &app_run.args.asset_key
+    {
+        let fname = format!("{asset_key}.{meta_ext}");
+        let path = PathBuf::from_iter(&[app_run.get_app_folder(AppFolder::Assets), fname.into()]);
+        let Ok(mut reader) = std::fs::File::open(&path)
+        else {
+            println!("Failed to open asset meta for {path:?}");
+            return ExitReason::CliError;
+        };
+        let Ok(asset_meta) = AssetMetadata::load(&mut reader)
+        else {
+            println!("Failed to parse asset meta for {path:?}");
+            return ExitReason::CliError;
+        };
+
+        let info = AssetInfo
+        {
+            display_name: match &asset_meta.name
+            {
+                None => format!("{:#?}", asset_meta.key),
+                Some(name) => format!("{name} ({:?})", asset_meta.key.asset_type()),
+            },
+            meta: asset_meta,
+        };
+        println!("{:#?}", info);
+
+        return ExitReason::NormalExit
+    }
+
+    //// GUI args parsing ////
+
+    let filter_by_type = if let Some(only_type) = app_run.args.only_type.as_ref()
+    {
+        let type_caseless = UniCase::new(only_type);
+        let asset_typenames = AssetTypeId::unit_variants();
+        let ty = match asset_typenames.iter()
+            .find_map(|(name, value)| if UniCase::new(name) == type_caseless { Some(*value) } else { None })
+        {
+            Some(ty) => ty,
+            None =>
+            {
+                eprintln!("! '{only_type}' is not a valid asset type");
+                return ExitReason::CliError;
+            },
+        };
+        Some(ty)
+    } else { None };
+
+    //// Startup ////
 
     let sdl = sdl2::init().unwrap();
     let mut sdl_events = sdl.event_pump().unwrap();
@@ -36,7 +104,6 @@ fn main() -> ExitReason
     let windows = Windows::new(&sdl_video, &app_run);
     let mut input = Input::new(&sdl);
 
-    let meta_ext = AssetFileType::MetaData.file_extension();
     let assets_list: Box<[_]> = std::fs::read_dir(app_run.get_app_folder(AppFolder::Assets))
         .expect("Failed to read assets dir")
         .filter_map(|entry|
@@ -45,6 +112,25 @@ fn main() -> ExitReason
         let Ok(ft) = entry.file_type() else { return None; };
         if ft.is_file()
         {
+            if let Some(filter_by_type) = filter_by_type
+            {
+                let entry_path = entry.path();
+                let key_str = entry_path.file_stem().expect("File has no name???").to_string_lossy();
+                let key = match AssetKey::try_from(key_str.as_str())
+                {
+                    Ok(key) => key,
+                    Err(err) =>
+                    {
+                        eprintln!("Failed to parse asset key from {:?} to test against type filter", entry.file_name());
+                        return None;
+                    }
+                };
+                if key.asset_type() != filter_by_type
+                {
+                    return None;
+                }
+            }
+
             // to_str should be allowed but rust is dumb
             let fname = entry.file_name().into_string().unwrap_or_default();
             if fname.ends_with(&meta_ext)
@@ -130,8 +216,14 @@ fn main() -> ExitReason
             .show(renderer.debug_gui(), |ui|
             {
                 ui.heading("Assets");
-                let text_style = egui::TextStyle::Body;
-                let row_height = ui.text_style_height(&text_style);
+                if let Some(filter_by_type) = filter_by_type
+                {
+                    // same line?
+                    ui.label(format!("Filtered by type: {:?}", filter_by_type));
+                }
+                ui.separator();
+
+                let row_height = ui.text_style_height(&egui::TextStyle::Body);
                 let z = egui::ScrollArea::vertical().show_rows(ui, row_height, assets_list.len(),|sui, vis|
                 {
                    for (i, asset) in assets_list[vis.clone()].iter().enumerate()

@@ -481,9 +481,10 @@ impl Instance
             }
         }
 
-        fn escape_string(input: &str) -> String
+        fn escape_string(input: &str, prepend: &str) -> String
         {
             let mut result = String::with_capacity(input.len() * 2); // Pre-allocate for worst case
+            result.push_str(prepend);
             for ch in input.chars()
             {
                 match ch
@@ -531,9 +532,11 @@ impl Instance
                     });
                     debug_assert!(latches.is_empty(), "Impulse blocks cannot have latches");
 
-                    write!(out_str, "  \"{:?}\" [class=impulse shape=record style=rounded label=\"{{ <IN> ∿ | {}",
+                    let annot = if annotation.is_empty() { String::new() } else { escape_string(&annotation, " | ") };
+                    write!(out_str, "  \"{:?}\" [class=impulse shape=record style=rounded label=\"{{ <IN> ∿ | {}{}",
                            block,
-                           if annotation.is_empty() { block_name } else { &format!("{{ {block_name} | {} }}", escape_string(&annotation)) }).unwrap();
+                           block_name,
+                           annot).unwrap();
 
                     if !pulses.is_empty()
                     {
@@ -568,10 +571,12 @@ impl Instance
                         latches: &mut latches,
                     });
 
-                    write!(out_str, "  \"{:?}\" [class=\"{} latch\" shape=record label=\"{{ {{ <IN> ∿ | <OFF> ◯ }} | {}",
+                    let annot = if annotation.is_empty() { String::new() } else { escape_string(&annotation, " | ") };
+                    write!(out_str, "  \"{:?}\" [class=\"{} latch\" shape=record label=\"{{ {{ <IN> ∿ | <OFF> ◯ }} | {}{}",
                            block,
                            if is_powered { "powered" } else { "" },
-                           if annotation.is_empty() { block_name } else { &format!("{{ {block_name} | {} }}", escape_string(&annotation)) }).unwrap();
+                           block_name,
+                           annot).unwrap();
 
                     if !pulses.is_empty() || !latches.is_empty()
                     {

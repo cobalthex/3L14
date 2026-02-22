@@ -1,4 +1,4 @@
-use crate::assets::{Geometry, Material, RenderPassName, Shader, ShaderKey, ShaderStage, VertexLayout};
+use crate::assets::{Geometry, Material, EngineRenderPass, Shader, ShaderStage, shader_key};
 use crate::uniforms_pool::UniformsPool;
 use crate::{debug_label, Renderer};
 use debug_3l14::debug_gui::DebugGui;
@@ -11,9 +11,9 @@ use dashmap::mapref::one::Ref;
 use triomphe::Arc;
 use enumflags2::BitFlags;
 use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
-use asset_3l14::{Ash, AssetPayload, Assets};
+use asset_3l14::{Ash, AssetKey, AssetPayload, AssetTypeId, Assets};
 use crate::material_classes::{MaterialClass, SimpleOpaque};
-use crate::vertex_layouts::VertexLayoutBuilder;
+use crate::vertex_layouts::{VertexCaps, VertexLayoutBuilder};
 
 #[derive(Debug, Clone, Copy, Hash)]
 pub enum DebugMode // debug only?
@@ -23,7 +23,7 @@ pub enum DebugMode // debug only?
 }
 
 #[derive(Hash, PartialEq, Eq, Copy, Clone)]
-pub struct PipelineHash(u64);
+pub struct PipelineKey(u64);
 
 enum MaybePipeline
 {
@@ -31,7 +31,7 @@ enum MaybePipeline
     { // box?
         vertex_shader: Ash<Shader>,
         pixel_shader: Ash<Shader>,
-        vertex_layout: BitFlags<VertexLayout>,
+        vertex_layout: BitFlags<VertexCaps>,
         material_class: MaterialClass,
     },
     Created(RenderPipeline),
@@ -47,7 +47,7 @@ pub struct PipelineCache
     // TODO: callback from renderer when one of the global settings changes
     // invalidate all pipelines
 
-    pipelines: DashMap<PipelineHash, MaybePipeline>,
+    pipelines: DashMap<PipelineKey, MaybePipeline>,
 
     default_sampler: Sampler,
 }
@@ -81,7 +81,7 @@ impl PipelineCache
                 entries: match material_class
                 {
                     MaterialClass::DebugLines => const { &[] }, // todo: uniforms?
-                    MaterialClass::SimpleOpaque => const
+                    MaterialClass::PbrOpaque => const
                     {&[
                         uniform::<SimpleOpaque>(0),
                         sampler(1),
@@ -134,7 +134,7 @@ impl PipelineCache
         }
     }
 
-    pub fn try_apply(&self, render_pass: &mut RenderPass, pipeline_hash: PipelineHash) -> bool
+    pub fn try_apply(&self, render_pass: &mut RenderPass, pipeline_hash: PipelineKey) -> bool
     {
         // fast path
         match self.pipelines.get(&pipeline_hash)
@@ -186,43 +186,43 @@ impl PipelineCache
     // Get or create a pipeline
     pub fn get_or_create(
         &self,
-        pass: RenderPassName,
+        pass: EngineRenderPass,
         geometry: &Geometry,
         material: &Material,
-        mode: DebugMode) -> PipelineHash
+        mode: DebugMode) -> PipelineKey
     {
         // if shaders change their hashes and in turn asset keys should change
-        let pipeline_hash =
+        let pipeline_key =
         {
             let mut hasher = MetroHash64::default();
             material.class.hash(&mut hasher);
             mode.hash(&mut hasher);
 
-            PipelineHash(hasher.finish())
+            PipelineKey(hasher.finish())
         };
 
-        if let None = self.pipelines.get_mut(&pipeline_hash)
+        if let None = self.pipelines.get_mut(&pipeline_key)
         {
-            let vsh = ShaderKey::vertex(geometry.vertex_layout, pass);
-            let psh = ShaderKey::pixel(material.class, pass);
+            let vsh = shader_key::vertex(geometry.vertex_layout, pass);
+            let psh = shader_key::pixel(material.class, pass);
 
             let new_pipe = MaybePipeline::Pending
             {
                 vertex_layout: geometry.vertex_layout,
                 material_class: material.class,
-                vertex_shader: self.assets.load(vsh.to_assetkey()),
-                pixel_shader: self.assets.load(psh.to_assetkey()),
+                vertex_shader: self.assets.load(AssetKey::synthetic(AssetTypeId::Shader, vsh)),
+                pixel_shader: self.assets.load(AssetKey::synthetic(AssetTypeId::Shader, psh)),
             };
-            self.pipelines.insert(pipeline_hash, new_pipe);
+            self.pipelines.insert(pipeline_key, new_pipe);
         }
 
-        pipeline_hash
+        pipeline_key
     }
 
     #[must_use]
     fn create_pipeline(
         &self,
-        vertex_layout: BitFlags<VertexLayout>,
+        vertex_layout: BitFlags<VertexCaps>,
         material_class: MaterialClass,
         vertex_shader: &Shader,
         pixel_shader: &Shader,

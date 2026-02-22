@@ -16,16 +16,15 @@ pub enum CliCommands
     {
         #[arg(long, group = "build_what")]
         all: bool, // includes symbols
-
         // extension/type
         #[arg(long, group = "build_what", value_delimiter = ',', num_args = 1..)]
         source: Vec<String>,
-
         #[arg(long, group = "build_what")]
         symbols: bool,
 
-        #[arg(long)]
-        rule: Option<BuildRule>,
+
+        #[arg(long, alias = "rule")]
+        build_rule: Option<BuildRule>,
         // build IDs ?
     },
     #[clap(about = "List known source files and their source ID")]
@@ -36,7 +35,7 @@ pub enum CliCommands
     #[clap(about = "Reset the import settings of one or more source assets")]
     ResetImport
     {
-        #[arg(long, value_delimiter = 'v', num_args = 1..)]
+        #[arg(long, value_delimiter = ',', num_args = 1..)]
         source: Vec<String>,
     },
 
@@ -74,20 +73,21 @@ fn main()
 
     match &app_run.args.command
     {
-        CliCommands::Build { all: true, rule, .. } =>
+        CliCommands::Build { all: true, build_rule: rule, .. } =>
         {
-            let _todo = builder.build_all(rule.unwrap_or_default());
+            let _todo = builder.build_all(rule.unwrap_or(BuildRule::OnlyIfChanged));
+            let _todo = validate_symbols(assets_root.join("symbols"));
         },
         CliCommands::Build { symbols: true, .. } =>
         {
             let _validation = validate_symbols(assets_root.join("symbols"));
         }
-        CliCommands::Build { all: false, symbols: false, source: sources, rule } =>
+        CliCommands::Build { all: false, symbols: false, source: sources, build_rule: rule } =>
         {
             for source in sources
             {
                 let src_path = Path::new(&source);
-                let build_rule = rule.unwrap_or_default();
+                let build_rule = rule.unwrap_or(BuildRule::ForceBuildAll);
 
                 match builder.build_source(src_path, build_rule)
                 {

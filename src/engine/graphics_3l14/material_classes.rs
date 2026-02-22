@@ -1,14 +1,14 @@
 use bitcode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use wgpu::{BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, SamplerBindingType, ShaderStages, TextureSampleType, TextureViewDimension};
-use crate::{debug_label, Rgba};
+use crate::Rgba;
 
 #[repr(u8)]
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash, Serialize, Deserialize, Encode, Decode)]
 pub enum MaterialClass
 {
     DebugLines,
-    SimpleOpaque,
+    PbrOpaque, // todo: split up?
+    // PbrTransparent,
 }
 impl MaterialClass
 {

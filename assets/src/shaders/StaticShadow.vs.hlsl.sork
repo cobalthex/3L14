@@ -1,0 +1,6 @@
+source_id = "019d78ed6"
+version_hash = "p5kMKPDmCl8"
+
+[build_config.Vertex]
+layout = 0
+pass = "Shadow"

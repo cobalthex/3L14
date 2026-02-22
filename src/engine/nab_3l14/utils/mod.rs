@@ -10,6 +10,7 @@ pub mod alloc_slice;
 pub mod array;
 pub mod varint;
 pub mod inline_hash;
+pub mod enumflags2_seq;
 
 // How many bytes to print for a maximum bit width
 pub const fn format_width_hex_bytes(max_bits: u8) -> usize

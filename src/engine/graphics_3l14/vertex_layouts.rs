@@ -1,7 +1,37 @@
 use std::hash::{Hash, Hasher};
-use wgpu::{BufferAddress, VertexAttribute, VertexBufferLayout, VertexFormat, VertexStepMode};
+use bitcode::{Decode, Encode};
+use enumflags2::{bitflags, BitFlags};
+use serde::{Deserialize, Serialize};
+use wgpu::{vertex_attr_array, BufferAddress, VertexAttribute, VertexBufferLayout, VertexFormat, VertexStepMode};
 
 // TODO: generate HLSL structs automatically?
+
+#[bitflags]
+#[repr(u16)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VertexCaps
+{
+    Static  = 0b0001,
+    Skinned = 0b0010,
+    // instancing?
+}
+impl From<BitFlags<VertexCaps>> for VertexLayoutBuilder
+{
+    fn from(value: BitFlags<VertexCaps>) -> Self
+    {
+        let mut builder = VertexLayoutBuilder::default();
+        for layout in value.iter()
+        {
+            match layout
+            {
+                VertexCaps::Static => StaticVertex::layout(&mut builder),
+                VertexCaps::Skinned => SkinnedVertex::layout(&mut builder),
+            }
+        }
+        builder
+    }
+}
+
 
 // Note: this would be ideal to build statically
 #[derive(Default, Hash)]
@@ -13,22 +43,15 @@ pub struct VertexLayoutBuilder
 impl VertexLayoutBuilder
 {
     #[inline]
-    pub fn push(&mut self, attribute: VertexFormat)
+    pub fn push(&mut self, attributes: &[VertexAttribute])
     {
-        self.attributes.push(VertexAttribute
+        let len = self.attributes.len();
+        self.attributes.extend(attributes.iter().map(|a| VertexAttribute
         {
-            format: attribute,
-            offset: self.bytes,
-            shader_location: self.attributes.len() as u32,
-        });
-        self.bytes += attribute.size();
-    }
-
-    // reserve 'additional' more slots
-    #[inline]
-    pub fn reserve(&mut self, additional: usize)
-    {
-        self.attributes.reserve(additional);
+            format: a.format,
+            offset: { let b = self.bytes; self.bytes += a.format.size(); b },
+            shader_location: len as u32 + a.shader_location
+        }));
     }
 
     #[inline]
@@ -56,18 +79,18 @@ pub struct StaticVertex
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub tex_coord: [f32; 2],
-    pub color: [u8; 4],
     // tangent, bitangent?
 }
 impl VertexDecl for StaticVertex
 {
     fn layout(layout_builder: &mut VertexLayoutBuilder)
     {
-        layout_builder.reserve(4);
-        layout_builder.push(VertexFormat::Float32x3);
-        layout_builder.push(VertexFormat::Float32x3);
-        layout_builder.push(VertexFormat::Float32x2);
-        layout_builder.push(VertexFormat::Uint32);
+        layout_builder.push(&vertex_attr_array!
+        [
+            0 => Float32x3, // position
+            1 => Float32x3, // normal
+            2 => Float32x2, // tex_coord
+        ]);
     }
 }
 
@@ -81,8 +104,10 @@ impl VertexDecl for SkinnedVertex
 {
     fn layout(layout_builder: &mut VertexLayoutBuilder)
     {
-        layout_builder.reserve(2);
-        layout_builder.push(VertexFormat::Uint16x4);
-        layout_builder.push(VertexFormat::Float32x4);
+        layout_builder.push(&vertex_attr_array!
+        [
+            0 => Uint16x4, // indices
+            1 => Float32x4, // weights
+        ]);
     }
 }

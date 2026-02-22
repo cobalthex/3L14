@@ -1,5 +1,7 @@
+use proc_macros_3l14::FancyEnum;
+
 // All the supported asset types
-#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, FancyEnum)]
 #[repr(u16)]
 pub enum AssetTypeId
 {
@@ -9,7 +11,7 @@ pub enum AssetTypeId
     Test1 = 1,
     #[cfg(test)]
     Test2 = 2,
-    
+
     Untyped = 3, // non-descript, untyped data
 
     Geometry = 4,
@@ -23,7 +25,7 @@ pub enum AssetTypeId
     Scene = 11,
 
     Circuit = 12,
-    
+
     // ComputePipeline
 
     // Surface -- physics

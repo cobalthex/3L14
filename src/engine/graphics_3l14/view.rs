@@ -8,7 +8,7 @@ use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, Extent3d, Queue
 use wgpu::util::{DeviceExt, TextureDataOrder};
 use asset_3l14::Asset;
 use math_3l14::{CanSee, DualQuat, Sphere, StaticGeoUniform};
-use crate::assets::{Geometry, Model, RenderPassName};
+use crate::assets::{Geometry, Model, EngineRenderPass};
 use crate::camera::{Camera, CameraProjection, CameraUniform};
 use crate::pipeline_cache::{DebugMode, PipelineCache};
 use crate::uniforms_pool::{UniformsPoolEntryGuard, WgpuBufferWriter, BufferWrite};
@@ -320,7 +320,7 @@ impl<'f> View<'f>
             let textures = mtl.textures.iter().map(|t| t.payload().unwrap()).collect();
 
             let pipeline_hash = self.pipeline_cache.get_or_create(
-                RenderPassName::Opaque,
+                EngineRenderPass::Opaque,
                 &geo,
                 &mtl,
                 self.debug_mode);

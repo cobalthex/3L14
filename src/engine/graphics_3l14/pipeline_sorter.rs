@@ -5,7 +5,7 @@ use triomphe::Arc;
 use arrayvec::ArrayVec;
 use glam::Mat4;
 use crate::assets::{Geometry, Material, Shader, Texture, MAX_MATERIAL_TEXTURE_BINDINGS};
-use crate::pipeline_cache::PipelineHash;
+use crate::pipeline_cache::PipelineKey;
 
 pub struct Draw
 {
@@ -14,7 +14,7 @@ pub struct Draw
     pub mesh_index: u32,
     pub transform_uniform_id: u32,
     pub poses_uniform_id: Option<u32>, // separate draw call?
-    pub pipeline_hash: PipelineHash,
+    pub pipeline_hash: PipelineKey,
     pub geometry: Arc<Geometry>,
     pub material: Arc<Material>,
     pub textures: ArrayVec<Arc<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS>,
@@ -31,7 +31,7 @@ pub enum SortDirection
 pub struct PipelineSorter
 {
     // track/sort by average depth?
-    pipeline_draws: HashMap<PipelineHash, Vec<Draw>>,
+    pipeline_draws: HashMap<PipelineKey, Vec<Draw>>,
 }
 impl PipelineSorter
 {
@@ -87,12 +87,12 @@ fn sort_back_to_front(a: &Draw, b: &Draw) -> Ordering
 
 pub struct SorterIter<'s>
 {
-    iter: Drain<'s, PipelineHash, Vec<Draw>>,
+    iter: Drain<'s, PipelineKey, Vec<Draw>>,
     direction: SortDirection,
 }
 impl<'s> Iterator for SorterIter<'s>
 {
-    type Item = (PipelineHash, Vec<Draw>);
+    type Item = (PipelineKey, Vec<Draw>);
 
     fn next(&mut self) -> Option<Self::Item>
     {

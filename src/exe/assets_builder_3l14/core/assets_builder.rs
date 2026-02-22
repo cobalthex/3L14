@@ -17,10 +17,7 @@ use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use chrono::DateTime;
 use dashmap::DashMap;
-use dashmap::mapref::one::Ref;
-use triomphe::Arc;
 use unicase::UniCase;
 use walkdir::WalkDir;
 // TODO: split this file out some?
@@ -33,11 +30,13 @@ struct AssetBuilderEntry
 }
 
 #[derive(Debug, Default, Clone, Copy, ValueEnum)]
-#[clap(rename_all = "kebab_case")]
+#[clap()]
 pub enum BuildRule
 {
     #[default]
+    #[value(alias = "changed")]
     OnlyIfChanged,
+    #[value(alias = "all")]
     ForceBuildAll,
 }
 

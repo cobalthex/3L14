@@ -14,6 +14,7 @@ bitcode.workspace = true
 chrono.workspace = true
 clap.workspace = true
 colog.workspace = true
+enumflags2.workspace = true
 log.workspace = true
 metrohash.workspace = true
 parking_lot.workspace = true
