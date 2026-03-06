@@ -268,64 +268,64 @@ impl ModelBuilder
             let mut textures = ArrayVec::new();
 
             let pbr = in_prim.material().pbr_metallic_roughness();
-            // if let Some(tex) = pbr.base_color_texture()
-            // {
-            //     let tex_index = tex.texture().source().index();
-            //     let tex_data = &images[tex_index];
-            //
-            //     let tex_asset = outputs.add_output(AssetTypeId::Texture, |mut tex_output|
-            //     {
-            //         tex.texture().name().map(|n| tex_output.set_name(n));
-            //
-            //         let (pixel_format, need_conv) = match tex_data.format
-            //         {
-            //             Format::R8 => (TextureFilePixelFormat::R8, false),
-            //             Format::R8G8 => (TextureFilePixelFormat::Rg8, false),
-            //             Format::R8G8B8 => (TextureFilePixelFormat::Rgba8, true),
-            //             Format::R8G8B8A8 => (TextureFilePixelFormat::Rgba8, false),
-            //             Format::R16 => todo!("R16 textures"),
-            //             Format::R16G16 => todo!("R16G16 textures"),
-            //             Format::R16G16B16 => todo!("R16G16B16 textures"),
-            //             Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
-            //             Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
-            //             Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
-            //         };
-            //
-            //         tex_output.serialize(&TextureFile
-            //         {
-            //             width: tex_data.width,
-            //             height: tex_data.height,
-            //             depth: 1,
-            //             mip_count: 1,
-            //             mip_offsets: Default::default(),
-            //             pixel_format,
-            //         })?;
-            //
-            //         // TODO: texture compression
-            //         if need_conv
-            //         {
-            //             match tex_data.format
-            //             {
-            //                 Format::R8G8B8 =>
-            //                 {
-            //                     // todo: check length
-            //                     for i in 0..(tex_data.width * tex_data.height) as usize
-            //                     {
-            //                         tex_output.write_all(&tex_data.pixels[(i * 3)..((i + 1) * 3)])?;
-            //                         tex_output.write_all(&[u8::MAX])?;
-            //                     }
-            //                 }
-            //                 _ => todo!("Other texture format conversions"),
-            //             }
-            //         } else {
-            //             tex_output.write_all(&tex_data.pixels)?;
-            //         }
-            //
-            //         Ok(())
-            //     })?;
-            //
-            //     textures.try_push(tex_asset)?;
-            // }
+            if let Some(tex) = pbr.base_color_texture()
+            {
+                let tex_index = tex.texture().source().index();
+                let tex_data = &images[tex_index];
+            
+                let tex_asset = outputs.add_output(AssetTypeId::Texture, |mut tex_output|
+                {
+                    tex.texture().name().map(|n| tex_output.set_name(n));
+            
+                    let (pixel_format, need_conv) = match tex_data.format
+                    {
+                        Format::R8 => (TextureFilePixelFormat::R8, false),
+                        Format::R8G8 => (TextureFilePixelFormat::Rg8, false),
+                        Format::R8G8B8 => (TextureFilePixelFormat::Rgba8, true),
+                        Format::R8G8B8A8 => (TextureFilePixelFormat::Rgba8, false),
+                        Format::R16 => todo!("R16 textures"),
+                        Format::R16G16 => todo!("R16G16 textures"),
+                        Format::R16G16B16 => todo!("R16G16B16 textures"),
+                        Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
+                        Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
+                        Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
+                    };
+            
+                    tex_output.serialize(&TextureFile
+                    {
+                        width: tex_data.width,
+                        height: tex_data.height,
+                        depth: 1,
+                        mip_count: 1,
+                        mip_offsets: Default::default(),
+                        pixel_format,
+                    })?;
+            
+                    // TODO: texture compression
+                    if need_conv
+                    {
+                        match tex_data.format
+                        {
+                            Format::R8G8B8 =>
+                            {
+                                // todo: check length
+                                for i in 0..(tex_data.width * tex_data.height) as usize
+                                {
+                                    tex_output.write_all(&tex_data.pixels[(i * 3)..((i + 1) * 3)])?;
+                                    tex_output.write_all(&[u8::MAX])?;
+                                }
+                            }
+                            _ => todo!("Other texture format conversions"),
+                        }
+                    } else {
+                        tex_output.write_all(&tex_data.pixels)?;
+                    }
+            
+                    Ok(())
+                })?;
+            
+                textures.try_push(tex_asset)?;
+            }
 
             // TODO: read material info from gltf
             let material_class = MaterialClass::PbrOpaque; // TODO
@@ -350,48 +350,6 @@ impl ModelBuilder
                 Ok(())
             })?;
             materials.push(material);
-
-            // // todo: better asset key
-            // let pixel_shader_key = AssetKeySynthHash::generate(ShaderHash
-            // {
-            //     stage: ShaderStage::Pixel,
-            //     material_class,
-            //     vertex_layout_hash,
-            //     compile_flags: shader_compile_flags,
-            // });
-            // outputs.add_synthetic(AssetTypeId::Shader, pixel_shader_key, |mut pshader_output|
-            // {
-            //     log::debug!("Compiling pixel shader {:?}", pshader_output.asset_key());
-
-            //     let shader_file = self.shaders_root.join(format!("{material_class:?}.ps.hlsl"));
-            //     shader_file.to_str().map(|sf| pshader_output.set_name(sf));
-
-            //     let shader_source = std::fs::read_to_string(&shader_file)?;
-            //     let mut shader_module = InlineWriteHash::<MetroHash64, _>::new(Vec::new());
-            //     let _ = self.shader_compiler.compile_hlsl(&mut shader_module, ShaderCompilation
-            //     {
-            //         source_text: &shader_source,
-            //         filename: &shader_file, // todo: for debugging, use asset key?
-            //         stage: ShaderStage::Pixel,
-            //         flags: shader_compile_flags,
-            //         defines: vec![], // TODO
-            //     })?;
-
-            //     let (module_hash, module_bytes) = shader_module.finish();
-            //     pshader_output.serialize(&ShaderFile
-            //     {
-            //         stage: ShaderStage::Pixel,
-            //         module_bytes: module_bytes.into_boxed_slice(),
-            //         module_hash,
-            //     })?;
-
-            //     pshader_output.serialize_debug::<Shader>(&ShaderDebugData
-            //     {
-            //         source_file: shader_source,
-            //     })?;
-
-            //     Ok(())
-            // })?;
 
             let mesh_bounds_aabb = AABB::new(bb.min.into(), bb.max.into());
             model_bounds_aabb.union_with(mesh_bounds_aabb);

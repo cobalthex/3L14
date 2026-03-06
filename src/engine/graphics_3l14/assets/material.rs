@@ -63,7 +63,7 @@ impl AssetLifecycler for MaterialLifecycler
 
         let props = self.renderer.device().create_buffer_init(&BufferInitDescriptor
         {
-            label: debug_label!(&format!("{:?}", request.asset_key)),
+            label: debug_label!(&format!("{:#?}", request.asset_key)),
             contents: &mtl_file.props,
             usage: BufferUsages::UNIFORM,
         });

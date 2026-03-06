@@ -89,13 +89,13 @@ impl AssetLifecycler for GeometryLifecycler
 
         let vertices = self.renderer.device().create_buffer_init(&BufferInitDescriptor
         {
-            label: debug_label!(format!("{:?} static vertices", request.asset_key).as_str()),
+            label: debug_label!(format!("{:#?} ({}) vertices", request.asset_key, gf.vertex_layout).as_str()),
             contents: gf.vertices.as_ref(),
             usage: BufferUsages::VERTEX,
         });
         let indices = self.renderer.device().create_buffer_init(&BufferInitDescriptor
         {
-            label: debug_label!(format!("{:?} indices", request.asset_key).as_str()),
+            label: debug_label!(format!("{:#?} indices", request.asset_key).as_str()),
             contents: gf.indices.as_ref(),
             usage: BufferUsages::INDEX,
         });

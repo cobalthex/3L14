@@ -17,14 +17,15 @@ pub enum AssetTypeId
     Geometry = 4,
     Skeleton = 5,
     Texture = 6,
-    Material = 7,
-    Shader = 8,
-    Model = 9,
-    SkeletalAnimation = 10,
+    TextureMips = 7,
+    Material = 8,
+    Shader = 9,
+    Model = 10,
+    SkeletalAnimation = 11,
 
-    Scene = 11,
+    Scene = 12,
 
-    Circuit = 12,
+    Circuit = 13,
 
     // ComputePipeline
 

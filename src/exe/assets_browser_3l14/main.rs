@@ -3,7 +3,7 @@ use std::convert::Infallible;
 use std::error::Error;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
-use asset_3l14::{AssetFileType, AssetKey, AssetMetadata, AssetTypeId, TomlRead};
+use asset_3l14::{AssetFileType, AssetKey, AssetMetadata, AssetTypeId, SourceMetadata, TomlRead};
 use clap::Parser;
 use graphics_3l14::windows::Windows;
 use graphics_3l14::Renderer;
@@ -20,7 +20,20 @@ use unicase::UniCase;
 struct AssetInfo
 {
     display_name: String,
-    meta: AssetMetadata,
+    asset_meta: AssetMetadata,
+    // source_meta: SourceMetadata, // TODO: pass in 'src directory' to read?
+}
+
+fn parse_asset_type(arg: &str) -> Result<AssetTypeId, &'static str>
+{
+    let type_caseless = UniCase::new(arg);
+    let ty = match AssetTypeId::unit_variants().iter()
+        .find_map(|(name, value)| if UniCase::new(name) == type_caseless { Some(*value) } else { None })
+    {
+        Some(ty) => ty,
+        None => return Err("Unknown asset type"),
+    };
+    Ok(ty)
 }
 
 #[derive(Parser, Debug)]
@@ -33,8 +46,8 @@ struct CliArgs
 
     //// GUI ////
 
-    #[arg(long, group="gui", conflicts_with="cli")] // alias=type?
-    only_type: Option<String>,
+    #[arg(long, group="gui", conflicts_with="cli", value_parser=parse_asset_type)] // alias=type?
+    only_type: Option<AssetTypeId>,
 }
 
 fn main() -> ExitReason
@@ -50,13 +63,15 @@ fn main() -> ExitReason
         let fname = format!("{asset_key}.{meta_ext}");
         let path = PathBuf::from_iter(&[app_run.get_app_folder(AppFolder::Assets), fname.into()]);
         let Ok(mut reader) = std::fs::File::open(&path)
-        else {
-            println!("Failed to open asset meta for {path:?}");
+        else
+        {
+            log::error!("Failed to open asset meta for {path:?}");
             return ExitReason::CliError;
         };
         let Ok(asset_meta) = AssetMetadata::load(&mut reader)
-        else {
-            println!("Failed to parse asset meta for {path:?}");
+        else
+        {
+            log::error!("Failed to parse asset meta for {path:?}");
             return ExitReason::CliError;
         };
 
@@ -67,31 +82,14 @@ fn main() -> ExitReason
                 None => format!("{:#?}", asset_meta.key),
                 Some(name) => format!("{name} ({:?})", asset_meta.key.asset_type()),
             },
-            meta: asset_meta,
+            asset_meta,
         };
-        println!("{:#?}", info);
+        log::info!("{:#?}", info);
 
         return ExitReason::NormalExit
     }
 
     //// GUI args parsing ////
-
-    let filter_by_type = if let Some(only_type) = app_run.args.only_type.as_ref()
-    {
-        let type_caseless = UniCase::new(only_type);
-        let asset_typenames = AssetTypeId::unit_variants();
-        let ty = match asset_typenames.iter()
-            .find_map(|(name, value)| if UniCase::new(name) == type_caseless { Some(*value) } else { None })
-        {
-            Some(ty) => ty,
-            None =>
-            {
-                eprintln!("! '{only_type}' is not a valid asset type");
-                return ExitReason::CliError;
-            },
-        };
-        Some(ty)
-    } else { None };
 
     //// Startup ////
 
@@ -112,7 +110,7 @@ fn main() -> ExitReason
         let Ok(ft) = entry.file_type() else { return None; };
         if ft.is_file()
         {
-            if let Some(filter_by_type) = filter_by_type
+            if let Some(filter_by_type) = app_run.args.only_type
             {
                 let entry_path = entry.path();
                 let key_str = entry_path.file_stem().expect("File has no name???").to_string_lossy();
@@ -121,7 +119,7 @@ fn main() -> ExitReason
                     Ok(key) => key,
                     Err(err) =>
                     {
-                        eprintln!("Failed to parse asset key from {:?} to test against type filter", entry.file_name());
+                        log::error!("Failed to parse asset key from {:?} to test against type filter", entry.file_name());
                         return None;
                     }
                 };
@@ -136,9 +134,17 @@ fn main() -> ExitReason
             if fname.ends_with(&meta_ext)
             {
                 let Ok(mut reader) = std::fs::File::open(entry.path())
-                    else { println!("Failed to open asset meta for {fname:?}"); return None; };
+                    else { log::error!("Failed to open asset meta for {fname:?}"); return None; };
                 let Ok(asset_meta) = AssetMetadata::load(&mut reader)
-                    else { println!("Failed to parse asset meta for {fname:?}"); return None; };
+                    else { log::error!("Failed to parse asset meta for {fname:?}"); return None; };
+
+                // let mut source_path = PathBuf::from("assets/src"); // TODO: HAX
+                // source_path.push(&asset_meta.source_path);
+                // source_path.add_extension("sork"); // TODO: const
+                // let Ok(mut reader) = std::fs::File::open(source_path)
+                //     else { log::error!("Failed to open source meta for {fname:?}"); return None; };
+                // let Ok(source_meta) = SourceMetadata::load(&mut reader)
+                //     else { log::error!("Failed to parse source meta for {fname:?}"); return None; };
 
                 return Some(AssetInfo
                 {
@@ -147,7 +153,7 @@ fn main() -> ExitReason
                         None => format!("{:#?}", asset_meta.key),
                         Some(name) => format!("{name} ({:?})", asset_meta.key.asset_type()),
                     },
-                    meta: asset_meta,
+                    asset_meta,
                 });
             }
         }
@@ -216,10 +222,10 @@ fn main() -> ExitReason
             .show(renderer.debug_gui(), |ui|
             {
                 ui.heading("Assets");
-                if let Some(filter_by_type) = filter_by_type
+                if let Some(filter_by_type) = app_run.args.only_type
                 {
                     // same line?
-                    ui.label(format!("Filtered by type: {:?}", filter_by_type));
+                    ui.label(format!("Filtered by type: {:?}", app_run.args.only_type));
                 }
                 ui.separator();
 
@@ -237,7 +243,7 @@ fn main() -> ExitReason
                        }
                        else if resp.secondary_clicked()
                        {
-                           let text = format!("{:#x}", asset.meta.key);
+                           let text = format!("{:#x}", asset.asset_meta.key);
                            // egui clipboard not working
                            let _ = sdl_video.clipboard().set_clipboard_text(&text);
                        }
@@ -252,14 +258,15 @@ fn main() -> ExitReason
                 {
                     let asset = &assets_list[selected_asset_index];
 
-                    let build_time = chrono::DateTime::<chrono::Local>::from(asset.meta.build_timestamp);
+                    let build_time = chrono::DateTime::<chrono::Local>::from(asset.asset_meta.build_timestamp);
 
                     ui.heading(&asset.display_name);
                     ui.add_space(20.0);
                     // TODO: table
-                    ui.monospace(format!("      Name: {}", asset.meta.name.as_deref().unwrap_or_default()));
-                    ui.monospace(format!("       Key: {:#x}", asset.meta.key));
-                    ui.monospace(format!("Build time: {}", build_time.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    ui.monospace(format!("       Name: {}", asset.asset_meta.name.as_deref().unwrap_or_default()));
+                    ui.monospace(format!("        Key: {:#x}", asset.asset_meta.key));
+                    ui.monospace(format!(" Build time: {}", build_time.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    ui.monospace(format!("Source path: {}", asset.asset_meta.source_path.display()));
 
                     // if ui.button("debug").clicked()
                     // {

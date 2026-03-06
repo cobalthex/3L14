@@ -42,7 +42,7 @@ pub struct SourceMetadataStub
 }
 impl TomlRead for SourceMetadataStub { }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SourceMetadata
 {
     pub source_id: AssetKeySourceId,

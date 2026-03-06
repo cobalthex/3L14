@@ -56,7 +56,7 @@ impl<'s> SkeletonPoser<'s>
 
         // TODO: blend mode (additive, replace, exlusive(?))
 
-        // would this be faster to convert to float first? (floating point div may be faster)
+        // would this be faster to convert to float first? (floating point div may be faster)`
         // blend multiple animations at once w/ simd?
 
         let sample_rate = Ratio

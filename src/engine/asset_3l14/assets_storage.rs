@@ -106,7 +106,7 @@ impl Assets
             let request = input_fn(unsafe { asset_handle.clone().into_inner() });
 
             // don't clear payload?
-            asset_handle.store_payload(AssetPayload::Pending);
+            asset_handle.store_data(AssetData::Pending);
             if pre_existed
             {
                 self.notification_channel.0.send(AssetNotification::Reload(asset_key)).unwrap(); // todo: error handling
@@ -114,12 +114,12 @@ impl Assets
 
             if self.lifecycle_channel.send(request).is_err()
             {
-                asset_handle.store_payload(AssetPayload::Unavailable(AssetLoadError::Shutdown));
+                asset_handle.store_data(AssetData::Unavailable(AssetLoadError::Shutdown));
             }
         }
         else
         {
-            asset_handle.store_payload(AssetPayload::Unavailable(AssetLoadError::LifecyclerNotRegistered));
+            asset_handle.store_data(AssetData::Unavailable(AssetLoadError::LifecyclerNotRegistered));
         }
 
         asset_handle
@@ -162,10 +162,11 @@ impl Assets
     }
 
     #[inline]
-    fn open_asset_from_file<P: AsRef<Path>>(file_path: P) -> Result<Box<[u8]>, std::io::Error>
+    fn read_asset_from_file<P: AsRef<Path>>(file_path: P) -> Result<Box<[u8]>, std::io::Error>
     {
         let len = std::fs::metadata(&file_path)?.len();
         let mut f = std::fs::File::open(file_path)?;
+        // TODO: re-use memory
         let mut buf = unsafe { alloc_slice_uninit(len as usize) };
         f.read_exact(&mut buf)?;
         Ok(buf)
@@ -226,7 +227,7 @@ impl Assets
                                 let debug_asset_data: Option<_> =
                                 {
                                     let asset_debug_path = this.asset_key_to_file_path(inner.key(), AssetFileType::DebugData);
-                                    match Self::open_asset_from_file(asset_debug_path)
+                                    match Self::read_asset_from_file(asset_debug_path)
                                     {
                                         Ok(dbg_data) => Some(dbg_data),
                                         Err(_) => None, // log specific errors?
@@ -234,28 +235,30 @@ impl Assets
                                 };
 
                                 let asset_file_path = this.asset_key_to_file_path(inner.key(), AssetFileType::Asset);
-                                match Self::open_asset_from_file(asset_file_path)
+                                log::trace!("Loading {:#?} from {asset_file_path:?}", inner.key());
+                                match Self::read_asset_from_file(&asset_file_path)
                                 {
                                     Ok(read) => lifecycler.load_untyped(
                                         &this,
                                         untyped_handle,
-                                        Cursor::new(&read),
+                                        Cursor::new(read.as_ref()),
                                         #[cfg(feature = "asset_debug_data")] debug_asset_data.as_ref().map(|b| Cursor::new(b.as_ref()))
                                     ),
                                     Err(err) =>
                                     {
-                                        log::error!("Failed to read {:?} asset file {:?}: {err}",
-                                            inner.asset_type(),
-                                            this.asset_key_to_file_path(inner.key(), AssetFileType::Asset));
+                                        log::error!("Failed to read {:#?} data from {:?}: {err}",
+                                            inner.key(),
+                                            asset_file_path);
                                         lifecycler.error_untyped(untyped_handle, AssetLoadError::Fetch);
                                     }
                                 };
                             },
                             AssetLifecycleRequest::LoadFromMemory(untyped_handle, reader) =>
                             {
+                                log::trace!("Loading {:#?} from memory ({} B)", untyped_handle.as_ref().key(), reader.len());
+
                                 let lifecycler = &this.lifecyclers.get(&untyped_handle.as_ref().asset_type())
                                     .expect("Unsupported asset type!").lifecycler; // this should fail in load()
-
                                 lifecycler.load_untyped(
                                     &this,
                                     untyped_handle,
@@ -415,7 +418,7 @@ impl Assets
         let assets_storage_clone = assets_storage.clone();
         // batching?
         let mut fs_watcher = notify_debouncer_full::new_debouncer(
-            Duration::from_secs(1),
+            std::time::Duration::from_secs(1),
             None,
             move |evt: notify_debouncer_full::DebounceEventResult|
             {
@@ -750,7 +753,7 @@ mod tests
         tal.get_passthru_call_count()
     }
 
-    fn await_asset<A: Asset>(handle: &Ash<A>) -> AssetPayload<A>
+    fn await_asset<A: Asset>(handle: &Ash<A>) -> AssetData<A>
     {
         futures::executor::block_on(handle)
     }
@@ -781,7 +784,7 @@ mod tests
             let req: Ash<TestAsset> = assets.load::<TestAsset>(TEST_ASSET_1);
             match await_asset(&req)
             {
-                AssetPayload::Unavailable(AssetLoadError::Fetch) => {},
+                AssetData::Unavailable(AssetLoadError::Fetch) => {},
                 other => panic!("Invalid load result: {other:#?}"),
             }
         }
@@ -801,7 +804,7 @@ mod tests
             let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Box::new([]));
             match await_asset(&req)
             {
-                AssetPayload::Unavailable(AssetLoadError::Parse) => {},
+                AssetData::Unavailable(AssetLoadError::Parse) => {},
                 other => panic!("Asset not unavailable(Test): {other:#?}"),
             }
         }
@@ -814,9 +817,9 @@ mod tests
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
             let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Box::new([]));
-            match req.payload()
+            match req.data()
             {
-                AssetPayload::Pending => {},
+                AssetData::Pending => {},
                 _ => panic!("Asset not pending"),
             }
 
@@ -879,7 +882,7 @@ mod tests
             let req2: Ash<NestedAsset> = assets.load_from::<NestedAsset>(TEST_ASSET_2, Box::new([]));
             match await_asset(&req2)
             {
-                AssetPayload::Available(a) => assert_eq!(a.id, 123),
+                AssetData::Available(a) => assert_eq!(a.id, 123),
                 other => panic!("Asset not available: {other:?}"),
             }
             assert!(req2.is_loaded_recursive());
@@ -905,7 +908,7 @@ mod tests
             let req = assets.load_from::<TestAsset>(TEST_ASSET_1, loaded_asset_payload);
             match await_asset(&req)
             {
-                AssetPayload::Available(a) => assert_eq!(a.value, test_value),
+                AssetData::Available(a) => assert_eq!(a.value, test_value),
                 _ => panic!("Asset not available"),
             }
         }
@@ -931,7 +934,7 @@ mod tests
             let mut req = assets.load_from::<TestAsset>(TEST_ASSET_1, input_bytes);
             match await_asset(&req)
             {
-                AssetPayload::Available(a) => assert_eq!(a.value, first_val),
+                AssetData::Available(a) => assert_eq!(a.value, first_val),
                 _ => panic!("Asset not available"),
             }
 
@@ -940,7 +943,7 @@ mod tests
             std::thread::sleep(Duration::from_millis(10)); // TODO: HACK
             match await_asset(&req)
             {
-                AssetPayload::Available(a) => assert_eq!(a.value, second_val),
+                AssetData::Available(a) => assert_eq!(a.value, second_val),
                 _ => panic!("Asset not available"),
             }
         }

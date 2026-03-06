@@ -8,6 +8,7 @@ use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, Extent3d, Queue
 use wgpu::util::{DeviceExt, TextureDataOrder};
 use asset_3l14::Asset;
 use math_3l14::{CanSee, DualQuat, Sphere, StaticGeoUniform};
+use nab_3l14::utils::array::init_array;
 use crate::assets::{Geometry, Model, EngineRenderPass};
 use crate::camera::{Camera, CameraProjection, CameraUniform};
 use crate::pipeline_cache::{DebugMode, PipelineCache};
@@ -147,17 +148,25 @@ impl<'f> View<'f>
         //     next_slot: 0,
         // };
 
+        const SIZE: usize = 64;
+        let xor: [u8; SIZE * SIZE] = init_array(|i|
+        {
+            let r = i / SIZE;
+            let c = i % SIZE;
+            (r ^ c) as u8
+        });
+
         let placeholder_texture = renderer.device().create_texture_with_data(renderer.queue(), &TextureDescriptor
         {
             label: Some("Placeholder texture"),
-            size: Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            size: Extent3d { width: SIZE as u32, height: SIZE as u32, depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
             format: TextureFormat::R8Unorm,
             usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
             view_formats: &[TextureFormat::R8Unorm],
-        }, TextureDataOrder::LayerMajor, &[255u8]);
+        }, TextureDataOrder::LayerMajor, &xor);
         let placeholder_texture_view = placeholder_texture.create_view(&Default::default());
 
         Self
@@ -206,7 +215,8 @@ impl<'f> View<'f>
         {
             if !self.pipeline_cache.try_apply(render_pass, pipeline_hash)
             {
-                panic!("can this happen?");
+                // panic!("can this happen?");
+                continue;
             }
 
             for draw in draws
@@ -282,7 +292,7 @@ impl<'f> View<'f>
             return false;
         }
 
-        let geo = model.geometry.payload().unwrap();
+        let geo = model.geometry.data().unwrap();
         if !self.can_see(&geo, world_transform) { return false; }
 
         // TODO: these should be per-mesh
@@ -316,8 +326,8 @@ impl<'f> View<'f>
 
         for mesh_index in 0..model.mesh_count
         {
-            let mtl = model.materials[mesh_index as usize].payload().unwrap();
-            let textures = mtl.textures.iter().map(|t| t.payload().unwrap()).collect();
+            let mtl = model.materials[mesh_index as usize].data().unwrap();
+            let textures = mtl.textures.iter().map(|t| t.data().unwrap()).collect();
 
             let pipeline_hash = self.pipeline_cache.get_or_create(
                 EngineRenderPass::Opaque,

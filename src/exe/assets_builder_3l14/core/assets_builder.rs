@@ -339,8 +339,20 @@ impl AssetsBuilder
         for source in self.scan_sources()
         {
             let Ok((source, _)) = source else { continue };
-            let result = self.build_source(source, build_rule); // TODO
-            println!("{:?}", result);
+            let result = self.build_source(&source, build_rule); // TODO
+            println!("{source:?} => {:#?}", result);
+        }
+
+        Ok(())
+    }
+
+    pub fn build_type(&self, asset_type: AssetTypeId, build_rule: BuildRule) -> Result<(), ()> // TODO
+    {
+        for source in self.scan_sources()
+        {
+            let Ok((source, _)) = source else { continue };
+            let result = self.build_source(&source, build_rule); // TODO
+            println!("{source:?} => {:#?}", result);
         }
 
         Ok(())

@@ -1,4 +1,4 @@
-use asset_3l14::{Asset, AssetKey, AssetLifecyclers, AssetPayload, Assets, AssetsConfig};
+use asset_3l14::{Asset, AssetKey, AssetLifecyclers, AssetData, Assets, AssetsConfig};
 use clap::Parser;
 use debug_3l14::debug_gui;
 use debug_3l14::debug_menu::{DebugMenu, DebugMenuMemory};
@@ -103,11 +103,11 @@ fn main() -> ExitReason
 
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
-        let model_key = AssetKey::from(0x00900000542618f7);
-        let base_anim_key = AssetKey::from(0x00a00010542618f7);
-        let overlay_anim_key = AssetKey::from(0x00a00010542618f7);
+        let model_key = AssetKey::from(0x00a00000e3fb55e4);
+        let base_anim_key = AssetKey::from(0x00b00000e3fb55e4);
+        let overlay_anim_key = AssetKey::from(0x00b00010e3fb55e4);
 
-        let latch_key = AssetKey::from(0x00c000009de1ba60);
+        let latch_key = AssetKey::from(0x00d000009de1ba60);
         let test_circuit = assets.load::<Circuit>(latch_key);
         let mut latch_rt = Runtime::new();
 
@@ -252,7 +252,7 @@ fn main() -> ExitReason
             }
 
             if kbd.is_press(KeyCode::F) &&
-                let AssetPayload::Available(circuit) = test_circuit.payload()
+                let AssetData::Available(circuit) = test_circuit.data()
             {
                 if kbd.has_keymod(KeyMods::SHIFT)
                 {
@@ -333,39 +333,39 @@ fn main() -> ExitReason
                         // debug_draw.draw_solid_sphere(Mat4::from_translation(Vec3::new(-3.0, 0.0, 0.0)), colors::LIME);
                         // debug_draw.draw_wire_sphere(Mat4::from_translation(Vec3::new(-3.0, 0.0, 0.0)), colors::GREEN);
 
-                        if let AssetPayload::Available(model) = test_model.payload()
+                        let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(25.0, 0.0, 0.0));
+                        // view.draw_model_static(model.clone(), obj_world);
+                        debug_draw.draw_wire_cube(obj_world, colors::WHITE);
+
+                        obj_world = Mat4::from_rotation_translation(obj_rot.inverse(), Vec3::new(-5.0, 0.0, -2.0));
+                        // view.draw_model_static(model.clone(), obj_world);
+                        debug_draw.draw_wire_cube(obj_world, colors::WHITE);
+
+                        if let AssetData::Available(model) = test_model.data()
                         {
                             if model.all_dependencies_loaded()
                             {
                                 puffin::profile_scope!("Draw dude");
 
-                                let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(25.0, 0.0, 0.0));
-                                // view.draw_model_static(model.clone(), obj_world);
-                                debug_draw.draw_wire_cube(obj_world, colors::WHITE);
-
-                                let geo = model.geometry.payload().unwrap();
+                                let geo = model.geometry.data().unwrap();
                                 let sp_txfm = obj_world * Mat4::from_scale(Vec3::splat(geo.bounds_sphere.radius()));
                                 debug_draw.draw_wire_sphere(sp_txfm, colors::TOMATO);
-
-                                obj_world = Mat4::from_rotation_translation(obj_rot.inverse(), Vec3::new(-5.0, 0.0, -2.0));
-                                // view.draw_model_static(model.clone(), obj_world);
-                                debug_draw.draw_wire_cube(obj_world, colors::WHITE);
 
                                 if let Some(skel_handle) = &model.skeleton
                                 {
                                     puffin::profile_scope!("animation");
 
-                                    let skel = skel_handle.payload().unwrap();
+                                    let skel = skel_handle.data().unwrap();
 
                                     let mut poser = SkeletonPoser::new(&skel);
 
                                     let time = frame_time.total_runtime.as_nanos() as u64;
                                     // time = Ratio::new(3, 10).scale(time);
-                                    if let AssetPayload::Available(anim) = test_base_anim.payload()
+                                    if let AssetData::Available(anim) = test_base_anim.data()
                                     {
                                         poser.blend(&anim, PoseBlendMode::Replace, TickCount(time), true);
                                     }
-                                    if let AssetPayload::Available(anim) = test_overlay_anim.payload()
+                                    if let AssetData::Available(anim) = test_overlay_anim.data()
                                     {
                                         egui::Window::new("anim")
                                             .show(renderer.debug_gui(), |ui|

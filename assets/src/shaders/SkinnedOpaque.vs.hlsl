@@ -28,14 +28,12 @@ struct VertexOutput
     float4 clip_position: SV_POSITION;
     float4 normal: NORMAL;
     float2 texcoord: TEXCOORD0;
-    float4 color: COLOR0;
 };
 
 VertexOutput vs_main(
     float3 in_position : POSITION,
     float3 in_normal : NORMAL,
     float3 in_texcoord : TEXCOORD0,
-    uint color : COLOR0,
     uint4 indices: BLENDINDICES,
     float4 weights: BLENDWEIGHT)
 {
@@ -52,10 +50,9 @@ VertexOutput vs_main(
     float3 transform_norm = DualQuatTransformDirection(blended, in_normal);
 //     float4 transform_tan = float4(DualQuatTransformDirection(blended, in_tangent.xyz), in_tangent.w);
 
-    out_vertex.world_position = mul(World, float4(transformed_pos, 1.0));
+out_vertex.world_position = mul(World, float4(transformed_pos, 1.0));
     out_vertex.clip_position = mul(ProjView, out_vertex.world_position);
     out_vertex.normal = float4(transform_norm, 0.0);
     out_vertex.texcoord = in_texcoord;
-    out_vertex.color = UnpackRgba(color);
     return out_vertex;
 }

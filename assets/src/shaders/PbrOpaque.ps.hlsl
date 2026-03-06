@@ -20,7 +20,6 @@ struct PixelInput
     float4 clip_position: SV_POSITION;
     float4 normal: NORMAL;
     float2 tex_coord: TEXCOORD0;
-    float4 color: COLOR0;
 };
 
 static const float PI = 3.14159265359;
@@ -35,7 +34,7 @@ float4 ps_main(PixelInput in_pixel) : SV_Target
     };
     float3 ambient = 0.03;
 
-    float3 albedo = in_pixel.color.rgb;
+    float3 albedo = 1;
     float metallicity = 0.5;
     float roughness = 0.2;
     float ao = 0.5;

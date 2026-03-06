@@ -42,7 +42,7 @@ impl AssetKeySourceId
     pub fn generate() -> Self
     {
         let mut bytes = [0u8; size_of::<Self>()];
-        rand::RngCore::fill_bytes(&mut rand::rng(), &mut bytes[0..((AssetKey::SOURCE_ID_BITS / 8) as usize)]);
+        rand::Rng::fill_bytes(&mut rand::rng(), &mut bytes[0..((AssetKey::SOURCE_ID_BITS / 8) as usize)]);
         Self(AssetKeySourceIdRepr::from_le_bytes(bytes))
     }
 }
@@ -258,12 +258,12 @@ impl Debug for AssetKey
         match f.alternate()
         {
             true =>
-                f.write_fmt(format_args!("[{:?}|{:0key_width$x}]",
+                f.write_fmt(format_args!("<{:?}|{:0key_width$x}>",
                                          self.asset_type(),
                                          self.0,
                                          key_width = format_width_hex_bytes(AssetKey::TOTAL_BITS))),
             false =>
-                f.write_fmt(format_args!("[{:0key_width$x}]",
+                f.write_fmt(format_args!("<{:0key_width$x}>",
                                          self.0,
                                          key_width = format_width_hex_bytes(AssetKey::TOTAL_BITS))),
         }

@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use proc_macros_3l14::FancyEnum;
 use std::fmt::Debug;
 use std::io::Read;
@@ -84,7 +85,14 @@ pub struct AppRun<TCliArgs: CliArgs>
 }
 impl<TCliArgs: CliArgs> AppRun<TCliArgs>
 {
+    #[inline] #[must_use]
     pub fn startup(app_name: &'static str, app_version: &'static str) -> Self
+    {
+        Self::startup_with_args(app_name, app_version, std::env::args_os())
+    }
+
+    #[must_use]
+    pub fn startup_with_args(app_name: &'static str, app_version: &'static str, args: impl Iterator<Item=OsString>) -> Self
     {
         #[cfg(debug_assertions)]
         let default_log_levels = (log::LevelFilter::Warn, log::LevelFilter::Debug);
@@ -121,7 +129,7 @@ impl<TCliArgs: CliArgs> AppRun<TCliArgs>
             app_name,
             version_str: app_version,
             start_time: chrono::Local::now(),
-            args: TCliArgs::parse(),
+            args: TCliArgs::parse_from(args),
             pid: std::process::id(),
             #[cfg(not(target_family="wasm"))]
             is_elevated: is_root::is_root(),
@@ -185,8 +193,8 @@ pub enum ExitReason
 {
     Unset = !1, // this should never be set
     NormalExit = 0,
-    CliError = -1,
-    Panic = -99,
+    CliError = 1,
+    Panic = 99,
 }
 impl std::process::Termination for ExitReason
 {

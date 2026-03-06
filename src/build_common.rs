@@ -12,7 +12,7 @@ fn main()
 
     let mut assets_symlink_target = out_dir.clone();
     assets_symlink_target.push("assets");
-    
+
     let mut assets_symlink_src = root_dir.clone();
     assets_symlink_src.push("assets/built");
     match assets_symlink_src.canonicalize()

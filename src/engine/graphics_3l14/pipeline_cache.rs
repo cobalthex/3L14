@@ -11,7 +11,7 @@ use dashmap::mapref::one::Ref;
 use triomphe::Arc;
 use enumflags2::BitFlags;
 use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
-use asset_3l14::{Ash, AssetKey, AssetPayload, AssetTypeId, Assets};
+use asset_3l14::{Ash, AssetKey, AssetData, AssetTypeId, Assets};
 use crate::material_classes::{MaterialClass, SimpleOpaque};
 use crate::vertex_layouts::{VertexCaps, VertexLayoutBuilder};
 
@@ -151,7 +151,7 @@ impl PipelineCache
         }
 
         // slow path
-        let Some(maybe_pipeline) = self.pipelines.get_mut(&pipeline_hash) else { return false; };
+        let Some(mut maybe_pipeline) = self.pipelines.get_mut(&pipeline_hash) else { return false; };
         match &*maybe_pipeline
         {
             MaybePipeline::Pending
@@ -162,13 +162,13 @@ impl PipelineCache
                 material_class,
             } =>
             {
-                if let AssetPayload::Available(vsh) = vertex_shader.payload() &&
-                   let AssetPayload::Available(psh) = pixel_shader.payload()
+                if let AssetData::Available(vsh) = vertex_shader.data() &&
+                   let AssetData::Available(psh) = pixel_shader.data()
                 {
                     let debug_mode = DebugMode::None; // TODO
                     let pipeline = self.create_pipeline(*vertex_layout, *material_class, &vsh, &psh, debug_mode);
                     render_pass.set_pipeline(&pipeline);
-                    let _ = self.pipelines.insert(pipeline_hash, MaybePipeline::Created(pipeline));
+                    *maybe_pipeline.value_mut() = MaybePipeline::Created(pipeline);
                 }
                 else
                 {
@@ -234,7 +234,8 @@ impl PipelineCache
         // if there end up being a lot of pipelines created, it may be worth saving
         let pipeline_layout = self.renderer.device().create_pipeline_layout(&PipelineLayoutDescriptor
         {
-            label: debug_label!(&format!("{material_class:?} pipeline layout")),
+            // TODO: add pass name + debug mode
+            label: debug_label!(&format!("({vertex_layout})+{material_class:?} pipeline layout")),
             bind_group_layouts: &[
                 // Todo: define based on render pass
                 &self.uniforms.camera_bind_layout,
@@ -253,7 +254,7 @@ impl PipelineCache
 
         let pipeline = self.renderer.device().create_render_pipeline(&RenderPipelineDescriptor
         {
-            label: debug_label!("TODO RenderPipeline Name"), // TODO
+            label: debug_label!(&format!("[{vertex_layout}]+{material_class:?} pipeline")),
             layout: Some(&pipeline_layout),
             vertex: VertexState
             {

@@ -20,6 +20,7 @@ input_3l14.workspace = true
 chrono.workspace = true
 clap.workspace = true
 egui.workspace = true
+log.workspace = true
 sdl2.workspace = true
 unicase.workspace = true
 

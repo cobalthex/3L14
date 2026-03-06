@@ -3,17 +3,16 @@ use bitcode::DecodeOwned;
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::error::Error;
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::io::{Cursor, Seek, SeekFrom};
 use enumflags2::{bitflags, BitFlags};
 use debug_3l14::debug_gui::DebugGui;
-use nab_3l14::utils::alloc_slice::alloc_slice_uninit;
 use nab_3l14::utils::{varint, ShortTypeName};
 use triomphe::Arc;
 
 pub struct AssetLoadRequest<'r>
 {
     pub asset_key: AssetKey,
-    pub input: AssetRead<'r>, // TODO: memory mapped buffer?
+    pub input: AssetPayload<'r>,
 
     assets: &'r Assets,
 
@@ -24,11 +23,13 @@ pub struct AssetLoadRequest<'r>
 impl AssetLoadRequest<'_>
 {
     // TODO: unify implementations between this and asset builder
-    fn deserialize_data<T: DecodeOwned>(input: &mut AssetRead) -> Result<T, Box<dyn Error>>
+    fn deserialize_data<T: DecodeOwned>(input: &mut AssetPayload) -> Result<T, Box<dyn Error>>
     {
         let size = varint::decode_from(input)?;
-        let mut bytes = unsafe { alloc_slice_uninit(size as usize) }; // todo: cache this (bitcode Buffer)
-        input.read_exact(&mut bytes)?;
+        let start = input.position();
+        let end = start + size;
+        input.seek(SeekFrom::Start(end))?; // seek first to ensure large enough
+        let bytes = &input.get_ref()[start as usize..end as usize];
         Ok(bitcode::decode::<T>(&bytes)?)
     }
 
@@ -81,7 +82,7 @@ impl AssetLoadRequest<'_>
     // // Load a reference from a specified source
     // // Assets/lifecyclers are responsible for tracking/maintaining reference references
     // #[must_use]
-    // pub fn load_dependency_from<A: Asset, R: AssetRead + 'static>(
+    // pub fn load_dependency_from<A: Asset, R: AssetPayload + 'static>(
     //     &self,
     //     asset_key: AssetKey,
     //     input_data: R // take box?
@@ -118,8 +119,8 @@ pub(super) trait UntypedAssetLifecycler: Sync + Send
         &self,
         assets: &Assets,
         untyped_handle: UntypedAssetHandle,
-        input: AssetRead,
-        #[cfg(feature = "asset_debug_data")] maybe_debug_input: Option<AssetRead>);
+        input: AssetPayload,
+        #[cfg(feature = "asset_debug_data")] maybe_debug_input: Option<AssetPayload>);
 
     fn error_untyped(
         &self,
@@ -134,8 +135,8 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
         &self,
         assets: &Assets,
         untyped_handle: UntypedAssetHandle,
-        input: AssetRead,
-        #[cfg(feature = "asset_debug_data")] mut maybe_debug_input: Option<AssetRead>)
+        input: AssetPayload,
+        #[cfg(feature = "asset_debug_data")] mut maybe_debug_input: Option<AssetPayload>)
     {
         // TODO: asset storage should prevent this from running on multiple threads for the same asset concurrently
 
@@ -148,12 +149,12 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
         {
             Ok(asset) =>
             {
-                retyped.store_payload(AssetPayload::Available(Arc::new(asset)))
+                retyped.store_data(AssetData::Available(Arc::new(asset)))
             }
             Err(err) =>
             {
                 log::error!("Failed to load {retyped:#?}: {err:?}");
-                retyped.store_payload(AssetPayload::Unavailable(AssetLoadError::Parse))
+                retyped.store_data(AssetData::Unavailable(AssetLoadError::Parse))
             },
         }
 
@@ -182,7 +183,7 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
         #[cfg(feature = "asset_debug_data")]
         retyped.inner().store_debug_data::<A>(None);
 
-        retyped.store_payload(AssetPayload::Unavailable(error));
+        retyped.store_data(AssetData::Unavailable(error));
     }
 
     fn display_name(&self) -> &str
@@ -274,7 +275,7 @@ impl AssetLifecyclers
     }
 }
 
-pub type AssetRead<'r> = Cursor<&'r [u8]>;
+pub type AssetPayload<'r> = Cursor<&'r [u8]>;
 pub(super) enum AssetLifecycleRequest
 {
     StopWorkers,

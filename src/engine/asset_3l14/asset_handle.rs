@@ -30,14 +30,14 @@ impl Display for AssetLoadError
 impl Error for AssetLoadError { }
 
 #[derive(Debug)]
-pub enum AssetPayload<Asset>
+pub enum AssetData<Asset>
 {
     // unloaded?
     Pending,
     Unavailable(AssetLoadError),
     Available(Arc<Asset>),
 }
-impl<A: Asset> AssetPayload<A>
+impl<A: Asset> AssetData<A>
 {
     // Is this + all dependencies loaded/available?
     #[inline]
@@ -54,9 +54,9 @@ impl<A: Asset> AssetPayload<A>
     {
         match self
         {
-            AssetPayload::Available(a) => a.clone(),
-            AssetPayload::Pending => panic!("Asset payload of type {:?} is pending", A::asset_type()),
-            AssetPayload::Unavailable(err) => panic!("Asset payload of type {:?} is unavailable (error: {err:?})", A::asset_type()),
+            AssetData::Available(a) => a.clone(),
+            AssetData::Pending => panic!("Asset payload of type {:?} is pending", A::asset_type()),
+            AssetData::Unavailable(err) => panic!("Asset payload of type {:?} is unavailable (error: {err:?})", A::asset_type()),
         }
     }
 }
@@ -88,7 +88,7 @@ impl AssetHandleInner
     // if high bit is set, it is storing a pointer
     const PAYLOAD_PTR_MASK: usize = 1 << (usize::BITS - 1);
 
-    pub fn store_payload<A: Asset>(&self, payload: AssetPayload<A>)
+    pub fn store_payload<A: Asset>(&self, payload: AssetData<A>)
     {
         debug_assert_eq!(A::asset_type(), self.key.asset_type());
         // (debug) store a TypeId to verify templates match?
@@ -101,9 +101,9 @@ impl AssetHandleInner
 
         let new_val = match payload
         {
-            AssetPayload::Pending => 0,
-            AssetPayload::Unavailable(err) => err as usize,
-            AssetPayload::Available(arc) =>
+            AssetData::Pending => 0,
+            AssetData::Unavailable(err) => err as usize,
+            AssetData::Available(arc) =>
             {
                 let raw = Arc::into_raw(arc);
                 debug_assert_eq!((raw as usize) & Self::PAYLOAD_PTR_MASK, 0); // rethink entire design if this ever fails :)
@@ -142,22 +142,22 @@ impl AssetHandleInner
     }
 
     #[inline] #[must_use]
-    pub fn payload<A: Asset>(&self) -> AssetPayload<A> // TODO: this should return a non-cloneable refcount ptr (Guard obj)
+    pub fn data<A: Asset>(&self) -> AssetData<A> // TODO: this should return a non-cloneable refcount ptr (Guard obj)
     {
         debug_assert_eq!(A::asset_type(), self.asset_type());
         let ptr = self.payload.load(Ordering::Acquire);
 
         match ptr
         {
-            0 => AssetPayload::Pending,
+            0 => AssetData::Pending,
             p if (ptr & Self::PAYLOAD_PTR_MASK) != 0 =>
             {
                 let arc = unsafe { Arc::from_raw((p & !Self::PAYLOAD_PTR_MASK) as *const A) };
-                let avail = AssetPayload::Available(arc.clone());
+                let avail = AssetData::Available(arc.clone());
                 std::mem::forget(arc);
                 avail
             },
-            e=> AssetPayload::Unavailable(unsafe { std::mem::transmute(e as u16) }),
+            e=> AssetData::Unavailable(unsafe { std::mem::transmute(e as u16) }),
         }
     }
 
@@ -242,7 +242,7 @@ impl UntypedAssetHandle
         debug_assert!(!self.0.is_null());
         debug_assert_eq!(A::asset_type(), unsafe { &*self.0 }.key.asset_type());
 
-        unsafe { &*self.0 }.store_payload::<A>(AssetPayload::Pending); // clears the stored payload
+        unsafe { &*self.0 }.store_payload::<A>(AssetData::Pending); // clears the stored payload
 
         #[cfg(feature = "debug_asset_lifetimes")]
         log::debug!("{:?} de-alloc asset handle", unsafe { &*self.0 }.key);
@@ -337,7 +337,7 @@ impl<A: Asset> Ash<A>
 
     // Retrieve the current payload, holds a strong reference for as long as the guard exists
     #[inline] #[must_use]
-    pub fn payload(&self) -> AssetPayload<A> { self.inner().payload() }
+    pub fn data(&self) -> AssetData<A> { self.inner().data() }
 
     // Retrieve optional debug data for this asset. Returns none if the asset_debug_data feature is disabled
     #[inline] #[must_use]
@@ -360,7 +360,7 @@ impl<A: Asset> Ash<A>
     #[inline] #[must_use]
     pub fn is_loaded_recursive(&self) -> bool
     {
-        self.payload().is_loaded_recursive()
+        self.data().is_loaded_recursive()
     }
 
     #[inline]
@@ -375,10 +375,10 @@ impl<A: Asset> Ash<A>
     }
 
     #[inline]
-    pub(super) fn store_payload(&self, payload: AssetPayload<A>)
+    pub(super) fn store_data(&self, data: AssetData<A>)
     {
         let inner = unsafe { &*self.inner };
-        inner.store_payload(payload);
+        inner.store_payload(data);
     }
 }
 unsafe impl<A: Asset> Send for Ash<A> {}
@@ -420,7 +420,7 @@ impl<A: Asset> Drop for Ash<A>
 }
 impl<A: Asset> Future for &Ash<A> // non-reffing requires being able to consume an Arc
 {
-    type Output = AssetPayload<A>;
+    type Output = AssetData<A>;
 
     // TODO: re-evaluate
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output>
@@ -434,16 +434,16 @@ impl<A: Asset> Future for &Ash<A> // non-reffing requires being able to consume 
             return Poll::Pending;
         }
 
-        let p = self.payload();
+        let p = self.data();
         match p
         {
-            AssetPayload::Pending =>
+            AssetData::Pending =>
             {
                 let mut locked = inner.ready_waker.lock();
                 swap(&mut *locked, &mut Some(cx.waker().clone()));
                 Poll::Pending
             },
-            AssetPayload::Available(_) | AssetPayload::Unavailable(_) => Poll::Ready(p),
+            AssetData::Available(_) | AssetData::Unavailable(_) => Poll::Ready(p),
         }
     }
 }
@@ -466,10 +466,15 @@ impl<A: Asset> Debug for Ash<A>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
-        match f.alternate()
-        {
-            true => f.write_fmt(format_args!("{}:{:?}", A::short_type_name(), self.key())),
-            false => self.key().fmt(f)
-        }
+        f.write_fmt(format_args!("{{ {:#?} {}, {} refs }}",
+            self.key(),
+            match self.data()
+            {
+                AssetData::Pending => "pending",
+                AssetData::Unavailable(_) => "unavailable",
+                AssetData::Available(_) => "available",
+            },
+            self.ref_count(),
+        ))
     }
 }

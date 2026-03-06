@@ -40,12 +40,12 @@ world_3l14 = { path = "./src/engine/world_3l14" }
 #egui_wgpu_backend = "0.33.0"
 #puffin = "0.19.1"
 approx = "0.5.1"
-arc-swap = { version = "1.8.0", features = ["weak"] }
+arc-swap = { version = "1.8.2", features = ["weak"] } # TODO: remove -- should not be necessary
 arrayvec = { version = "0.7.6", features = ["serde", "std"] } # re-evaluate
 base64 = "0.22.1"
 bitcode = { version = "0.6.9", features = ["arrayvec", "glam", "std"] }
-chrono = { version = "0.4.42", features = ["serde"] }
-clap = { version = "4.5.54", features = ["derive"] }
+chrono = { version = "0.4.44", features = ["serde"] }
+clap = { version = "4.5.60", features = ["derive"] }
 colog = "1.4.0"
 crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
 dashmap = { version = "6.1.0" }
@@ -54,35 +54,35 @@ dashmap = { version = "6.1.0" }
 egui = { version = "0.33.3", features = ["persistence"] }
 egui-wgpu = { version = "0.33.3" }
 enumflags2 = { version = "0.7.12", features = ["serde"] }
-erased-serde = "0.4.9"
-futures = { version = "0.3.31", features = ["thread-pool"] }
-glam = { version = "0.30.9", features = ["serde", "approx"] }
+erased-serde = "0.4.10"
+futures = { version = "0.3.32", features = ["thread-pool"] }
+glam = { version = "0.32.0", features = ["serde", "approx"] }
 gltf = "1.4.1"
 half = "2.7.1"
 hassle-rs = "0.12.0"
 image = "0.25.9"
 impls = "1.0.3"
-indexmap = "2.12.1"
-inventory = "0.3.21"
+indexmap = "2.13.0"
+inventory = "0.3.22"
 is-root = "0.1.3"
 log = { version = "0.4.29", features = ["std", "kv", "max_level_debug"] }
-logos = { version = "0.15.1", features = ["logos-derive"] }
+logos = { version = "0.15.1", features = ["logos-derive"] } # 16 dyn lifetimes
 metrohash = "1.0.7"
 notify = "8.2.0"
-notify-debouncer-full = "0.6.0"
+notify-debouncer-full = "0.7.0"
 parking_lot = "0.12.5"
 paste ="1.0.15"
 puffin = "0.19.1"
 puffin_egui = "0.29.0"
 puffin_http = "0.16.1"
-rand = "0.9.2"
-regex = "1.12.2"
+rand = "0.10.0"
+regex = "1.12.3"
 sdl2 = { version = "0.38.0", features = ["ttf", "raw-window-handle"] }
 serde = { version = "1.0.228", features = ["derive"] }
 smallvec = "1.15.1"
 toml = { version = "0.9.8", features = ["parse"] }
 triomphe = { version = "0.1.15", features = ["arc-swap"] }
-unicase = "2.8.1"
+unicase = "2.9.0"
 walkdir = "2.5.0"
 windows = { version = "0.62.2", features = ["Win32_Storage_FileSystem"] }
 wgpu = { version = "27.0.1", features = ["spirv"] }

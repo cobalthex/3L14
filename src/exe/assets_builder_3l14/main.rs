@@ -5,8 +5,10 @@ mod helpers;
 use crate::core::{validate_symbols, AssetsBuilder, AssetsBuilderConfig, BuildRule};
 use std::path::Path;
 use clap::{Parser, Subcommand};
+use unicase::UniCase;
+use asset_3l14::AssetTypeId;
 use latch_3l14::block_meta::BlockBuildMeta;
-use nab_3l14::app::{set_panic_hook, AppRun};
+use nab_3l14::app::{set_panic_hook, AppRun, ExitReason};
 
 #[derive(Debug, Subcommand)]
 pub enum CliCommands
@@ -82,7 +84,7 @@ fn main()
         {
             let _validation = validate_symbols(assets_root.join("symbols"));
         }
-        CliCommands::Build { all: false, symbols: false, source: sources, build_rule: rule } =>
+        CliCommands::Build { source: sources, build_rule: rule, .. } =>
         {
             for source in sources
             {
@@ -107,7 +109,7 @@ fn main()
         {
             for source in builder.scan_sources()
             {
-                println!("{source:?}");
+                log::info!("{source:?}");
             }
         }
 
@@ -117,11 +119,11 @@ fn main()
             {
                 match asset
                 {
-                    Ok(ass) => println!("{:?} {:?} {:?}",
+                    Ok(ass) => log::info!("{:?} {:?} {:?}",
                         ass.1.key.asset_type(),
                         ass.1.key,
                         ass.1.source_path),
-                    Err(err) => println!("{err}"),
+                    Err(err) => log::error!("{err}"),
                 }
             }
         }
@@ -140,15 +142,15 @@ fn main()
 
         CliCommands::DumpLatchTypes =>
         {
-            println!("Impulses\n========");
+            log::info!("Impulses\n========");
             for impulse in inventory::iter::<BlockBuildMeta<0>>()
             {
-                println!("{}", impulse.type_name);
+                log::info!("{}", impulse.type_name);
             }
-            println!("\nLatches\n=======");
+            log::info!("\nLatches\n=======");
             for latch in inventory::iter::<BlockBuildMeta<1>>()
             {
-                println!("{}", latch.type_name);
+                log::info!("{}", latch.type_name);
             }
         }
     }

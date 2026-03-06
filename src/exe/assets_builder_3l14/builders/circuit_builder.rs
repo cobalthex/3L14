@@ -343,8 +343,8 @@ impl AssetBuilder for CircuitBuilder
 }
 
 #[derive(Logos)]
-#[logos(skip r"[ \t\r\f]+")]
-#[logos(skip r"#[^\n]*")]
+#[logos(skip(r"[ \t\r\f]+"))]
+#[logos(skip(r"#[^\n]*"))]//, allow_greedy=true))]
 #[logos(extras = FilePos)]
 enum Token<'p>
 {
