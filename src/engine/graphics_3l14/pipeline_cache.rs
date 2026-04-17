@@ -6,12 +6,14 @@ use egui::Ui;
 use metrohash::MetroHash64;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
+use arrayvec::ArrayVec;
 use dashmap::DashMap;
 use dashmap::mapref::one::Ref;
 use triomphe::Arc;
 use enumflags2::BitFlags;
 use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
 use asset_3l14::{Ash, AssetKey, AssetData, AssetTypeId, Assets};
+use crate::assets::shader_key::pixel;
 use crate::material_classes::{MaterialClass, SimpleOpaque};
 use crate::vertex_layouts::{VertexCaps, VertexLayoutBuilder};
 
@@ -30,9 +32,8 @@ enum MaybePipeline
     Pending
     { // box?
         vertex_shader: Ash<Shader>,
-        pixel_shader: Ash<Shader>,
         vertex_layout: BitFlags<VertexCaps>,
-        material_class: MaterialClass,
+        material: Option<(MaterialClass, Ash<Shader>)>,
     },
     Created(RenderPipeline),
 }
@@ -157,23 +158,19 @@ impl PipelineCache
             MaybePipeline::Pending
             {
                 vertex_shader,
-                pixel_shader,
                 vertex_layout,
-                material_class,
+                material,
             } =>
             {
-                if let AssetData::Available(vsh) = vertex_shader.data() &&
-                   let AssetData::Available(psh) = pixel_shader.data()
+                let AssetData::Available(vsh) = vertex_shader.data() else { return false; };
+                let mtl = material.as_ref().and_then(|(material_class, pixel_shader)|
                 {
-                    let debug_mode = DebugMode::None; // TODO
-                    let pipeline = self.create_pipeline(*vertex_layout, *material_class, &vsh, &psh, debug_mode);
-                    render_pass.set_pipeline(&pipeline);
-                    *maybe_pipeline.value_mut() = MaybePipeline::Created(pipeline);
-                }
-                else
-                {
-                    return false;
-                }
+                    pixel_shader.data().map(|psh| (*material_class, psh))
+                });
+                let debug_mode = DebugMode::None; // TODO
+                let pipeline = self.create_pipeline(*vertex_layout, vsh, mtl, debug_mode);
+                render_pass.set_pipeline(&pipeline);
+                *maybe_pipeline.value_mut() = MaybePipeline::Created(pipeline);
             }
             MaybePipeline::Created(pipeline) =>
             {
@@ -187,31 +184,37 @@ impl PipelineCache
     pub fn get_or_create(
         &self,
         pass: EngineRenderPass,
-        geometry: &Geometry,
-        material: &Material,
-        mode: DebugMode) -> PipelineKey
+        vertex_layout: BitFlags<VertexCaps>,
+        material_class: Option<MaterialClass>,
+        debug_mode: DebugMode) -> PipelineKey
     {
         // if shaders change their hashes and in turn asset keys should change
         let pipeline_key =
         {
+            // TODO: bitmath instead of hashing
             let mut hasher = MetroHash64::default();
-            material.class.hash(&mut hasher);
-            mode.hash(&mut hasher);
+            pass.hash(&mut hasher);
+            vertex_layout.hash(&mut hasher);
+            material_class.hash(&mut hasher);
+            debug_mode.hash(&mut hasher);
 
             PipelineKey(hasher.finish())
         };
 
         if let None = self.pipelines.get_mut(&pipeline_key)
         {
-            let vsh = shader_key::vertex(geometry.vertex_layout, pass);
-            let psh = shader_key::pixel(material.class, pass);
+            let vsh = shader_key::vertex(vertex_layout, pass);
+            let material = material_class.map(|mc|
+            {
+                let key = shader_key::pixel(mc, pass);
+                (mc, self.assets.load(AssetKey::synthetic(AssetTypeId::Shader, key)))
+            });
 
             let new_pipe = MaybePipeline::Pending
             {
-                vertex_layout: geometry.vertex_layout,
-                material_class: material.class,
+                vertex_layout,
                 vertex_shader: self.assets.load(AssetKey::synthetic(AssetTypeId::Shader, vsh)),
-                pixel_shader: self.assets.load(AssetKey::synthetic(AssetTypeId::Shader, psh)),
+                material,
             };
             self.pipelines.insert(pipeline_key, new_pipe);
         }
@@ -223,26 +226,29 @@ impl PipelineCache
     fn create_pipeline(
         &self,
         vertex_layout: BitFlags<VertexCaps>,
-        material_class: MaterialClass,
-        vertex_shader: &Shader,
-        pixel_shader: &Shader,
-        mode: DebugMode) -> RenderPipeline
+        vertex_shader: Arc<Shader>,
+        material: Option<(MaterialClass, Arc<Shader>)>,
+        debug_mode: DebugMode) -> RenderPipeline
     {
         // move up?
         puffin::profile_scope!("Create render pipeline");
 
+        let mut bind_group_layouts = ArrayVec::from([
+            // Todo: define based on render pass
+            &self.uniforms.camera_bind_layout,
+            &self.uniforms.transform_bind_layout,
+            &self.uniforms.poses_bind_layout,
+        ]);
+        if let Some((material_class, _)) = material
+        {
+            bind_group_layouts.push(self.get_or_create_bind_layout(material_class).value());
+        }
         // if there end up being a lot of pipelines created, it may be worth saving
         let pipeline_layout = self.renderer.device().create_pipeline_layout(&PipelineLayoutDescriptor
         {
             // TODO: add pass name + debug mode
-            label: debug_label!(&format!("({vertex_layout})+{material_class:?} pipeline layout")),
-            bind_group_layouts: &[
-                // Todo: define based on render pass
-                &self.uniforms.camera_bind_layout,
-                &self.uniforms.transform_bind_layout,
-                &self.uniforms.poses_bind_layout,
-                &self.get_or_create_bind_layout(material_class),
-            ],
+            label: debug_label!(&format!("({vertex_layout})+{:?} pipeline layout", material.as_ref().map(|m| m.0))),
+            bind_group_layouts: &bind_group_layouts,
             push_constant_ranges: &[],
         });
 
@@ -254,7 +260,7 @@ impl PipelineCache
 
         let pipeline = self.renderer.device().create_render_pipeline(&RenderPipelineDescriptor
         {
-            label: debug_label!(&format!("[{vertex_layout}]+{material_class:?} pipeline")),
+            label: debug_label!(&format!("[{vertex_layout}]+_TODO MATERIAL_ pipeline")),
             layout: Some(&pipeline_layout),
             vertex: VertexState
             {
@@ -268,9 +274,13 @@ impl PipelineCache
                 topology: PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: FrontFace::Cw,
-                cull_mode: Some(Face::Back),
+                cull_mode: Some(Face::Back), // don't cull wireframe?
                 unclipped_depth: false,
-                polygon_mode: PolygonMode::Fill,
+                polygon_mode: match debug_mode
+                {
+                    DebugMode::Wireframe => PolygonMode::Line,
+                    _ => PolygonMode::Fill,
+                },
                 conservative: false,
             },
             // TODO: fetch from renderer surface config + material params
@@ -289,9 +299,9 @@ impl PipelineCache
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            fragment: Some(FragmentState
+            fragment: material.as_ref().map(|(_, module)|FragmentState
             {
-                module: &pixel_shader.module,
+                module: &module.module,
                 entry_point: Some(ShaderStage::Pixel.entry_point()),
                 compilation_options: PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState

@@ -31,7 +31,7 @@ pub enum ShaderStage
 
 // move?
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Hash, Serialize, Deserialize)]
 pub enum EngineRenderPass // todo: better name to not clash with wgpu::RenderPass -- graph node?
 {
     Debug,

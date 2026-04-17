@@ -11,6 +11,7 @@ use math_3l14::{CanSee, DualQuat, Sphere, StaticGeoUniform};
 use nab_3l14::utils::array::init_array;
 use crate::assets::{Geometry, Model, EngineRenderPass};
 use crate::camera::{Camera, CameraProjection, CameraUniform};
+use crate::material_classes::MaterialClass;
 use crate::pipeline_cache::{DebugMode, PipelineCache};
 use crate::uniforms_pool::{UniformsPoolEntryGuard, WgpuBufferWriter, BufferWrite};
 
@@ -329,10 +330,18 @@ impl<'f> View<'f>
             let mtl = model.materials[mesh_index as usize].data().unwrap();
             let textures = mtl.textures.iter().map(|t| t.data().unwrap()).collect();
 
-            let pipeline_hash = self.pipeline_cache.get_or_create(
+            // TODO: this key needs to be generated based on pass, as shadows don't need mtls/debug mode
+            let shadow_pipeline = self.pipeline_cache.get_or_create(
+                EngineRenderPass::ShadowMap,
+                geo.vertex_layout,
+                None,
+                self.debug_mode,
+            );
+
+            let opaque_pipeline = self.pipeline_cache.get_or_create(
                 EngineRenderPass::Opaque,
-                &geo,
-                &mtl,
+                geo.vertex_layout,
+                Some(mtl.class),
                 self.debug_mode);
 
             self.sorter.push(pipeline_sorter::Draw
@@ -342,7 +351,7 @@ impl<'f> View<'f>
                 mesh_index,
                 transform_uniform_id: txfm_uniform_id,
                 poses_uniform_id: poses_uniforms,
-                pipeline_hash,
+                pipeline_hash: opaque_pipeline,
                 geometry: geo.clone(),
                 material: mtl,
                 textures,

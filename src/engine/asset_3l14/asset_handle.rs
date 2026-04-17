@@ -50,6 +50,7 @@ impl<A: Asset> AssetData<A>
         }
     }
 
+    #[inline] #[must_use]
     pub fn unwrap(&self) -> Arc<A>
     {
         match self
@@ -57,6 +58,16 @@ impl<A: Asset> AssetData<A>
             AssetData::Available(a) => a.clone(),
             AssetData::Pending => panic!("Asset payload of type {:?} is pending", A::asset_type()),
             AssetData::Unavailable(err) => panic!("Asset payload of type {:?} is unavailable (error: {err:?})", A::asset_type()),
+        }
+    }
+
+    #[inline]
+    pub fn map<U>(self, map_fn: impl FnOnce(Arc<A>) -> U) -> Option<U>
+    {
+        match self
+        {
+            AssetData::Available(a) => Some(map_fn(a)),
+            _ => None,
         }
     }
 }
