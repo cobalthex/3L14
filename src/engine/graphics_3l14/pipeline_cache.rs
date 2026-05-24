@@ -233,16 +233,20 @@ impl PipelineCache
         // move up?
         puffin::profile_scope!("Create render pipeline");
 
-        let mut bind_group_layouts = ArrayVec::from([
-            // Todo: define based on render pass
-            &self.uniforms.camera_bind_layout,
-            &self.uniforms.transform_bind_layout,
-            &self.uniforms.poses_bind_layout,
-        ]);
-        if let Some((material_class, _)) = material
+        let mtl_layout = material.as_ref().map(|(class, _)|
+            { self.get_or_create_bind_layout(*class) });
+
+        let mut bind_group_layouts: ArrayVec<_, 8> = ArrayVec::new();
+        // Todo: define based on render pass
+        bind_group_layouts.push(&self.uniforms.camera_bind_layout);
+        bind_group_layouts.push(&self.uniforms.transform_bind_layout);
+        bind_group_layouts.push(&self.uniforms.poses_bind_layout);
+
+        if let Some(layout) = &mtl_layout
         {
-            bind_group_layouts.push(self.get_or_create_bind_layout(material_class).value());
+            bind_group_layouts.push(layout.value());
         }
+
         // if there end up being a lot of pipelines created, it may be worth saving
         let pipeline_layout = self.renderer.device().create_pipeline_layout(&PipelineLayoutDescriptor
         {
@@ -257,6 +261,21 @@ impl PipelineCache
         let renderer_msaa_count = self.renderer.msaa_max_sample_count();
 
         let vbuffers = VertexLayoutBuilder::from(vertex_layout);
+
+        // todo: only generate if mtl exists
+        let fragment_targets = [Some(ColorTargetState
+        {
+            format: renderer_surface_format,
+            blend: None, // todo: material settings
+            write_mask: ColorWrites::ALL,
+        })];
+        let fragment = material.as_ref().map(|(_, module)| FragmentState
+        {
+            module: &module.module,
+            entry_point: Some(ShaderStage::Pixel.entry_point()),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &fragment_targets,
+        });
 
         let pipeline = self.renderer.device().create_render_pipeline(&RenderPipelineDescriptor
         {
@@ -299,18 +318,7 @@ impl PipelineCache
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            fragment: material.as_ref().map(|(_, module)|FragmentState
-            {
-                module: &module.module,
-                entry_point: Some(ShaderStage::Pixel.entry_point()),
-                compilation_options: PipelineCompilationOptions::default(),
-                targets: &[Some(ColorTargetState
-                {
-                    format: renderer_surface_format,
-                    blend: None, // todo: material settings
-                    write_mask: ColorWrites::ALL,
-                })],
-            }),
+            fragment,
             multiview: None,
             cache: None, // todo
         });

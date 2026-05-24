@@ -40,12 +40,12 @@ world_3l14 = { path = "./src/engine/world_3l14" }
 #egui_wgpu_backend = "0.33.0"
 #puffin = "0.19.1"
 approx = "0.5.1"
-arc-swap = { version = "1.8.2", features = ["weak"] } # TODO: remove -- should not be necessary
+arc-swap = { version = "1.9.1", features = ["weak"] } # TODO: remove -- should not be necessary
 arrayvec = { version = "0.7.6", features = ["serde", "std"] } # re-evaluate
 base64 = "0.22.1"
 bitcode = { version = "0.6.9", features = ["arrayvec", "glam", "std"] }
 chrono = { version = "0.4.44", features = ["serde"] }
-clap = { version = "4.5.60", features = ["derive"] }
+clap = { version = "4.6.1", features = ["derive"] }
 colog = "1.4.0"
 crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
 dashmap = { version = "6.1.0" }
@@ -56,14 +56,14 @@ egui-wgpu = { version = "0.33.3" }
 enumflags2 = { version = "0.7.12", features = ["serde"] }
 erased-serde = "0.4.10"
 futures = { version = "0.3.32", features = ["thread-pool"] }
-glam = { version = "0.32.0", features = ["serde", "approx"] }
+glam = { version = "0.32.1", features = ["serde", "approx"] }
 gltf = "1.4.1"
 half = "2.7.1"
 hassle-rs = "0.12.0"
-image = "0.25.9"
+image = "0.25.10"
 impls = "1.0.3"
-indexmap = "2.13.0"
-inventory = "0.3.22"
+indexmap = "2.14.0"
+inventory = "0.3.24"
 is-root = "0.1.3"
 log = { version = "0.4.29", features = ["std", "kv", "max_level_debug"] }
 logos = { version = "0.15.1", features = ["logos-derive"] } # 16 dyn lifetimes

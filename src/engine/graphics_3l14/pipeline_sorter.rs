@@ -16,9 +16,12 @@ pub struct Draw
     pub poses_uniform_id: Option<u32>, // separate draw call?
     pub pipeline_hash: PipelineKey,
     pub geometry: Arc<Geometry>,
-    pub material: Arc<Material>,
-    pub textures: ArrayVec<Arc<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS>,
+    pub material: Option<(
+        Arc<Material>,
+        ArrayVec<Arc<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS>
+    )>, 
 }
+// vertex textures?
 
 pub enum SortDirection
 {

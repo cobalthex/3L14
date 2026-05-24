@@ -18,7 +18,7 @@ use notify::{event::ModifyKind, EventKind, RecommendedWatcher, RecursiveMode};
 #[cfg(feature = "hot_reloading")]
 use notify_debouncer_full::{Debouncer, RecommendedCache};
 
-type AssetHandleBank = HashMap<AssetKey, UntypedAssetHandle>;
+type AssetHandleBank = HashMap<AssetKey, ErasedAssetHandle>;
 
 pub enum AssetNotification
 {
@@ -55,26 +55,26 @@ impl Assets
               there is serialization provided by the mutex preventing use-after-free issues.
             */
 
-            UntypedAssetHandle::alloc::<A>(asset_key, self.lifecycle_channel.clone())
+            ErasedAssetHandle::alloc::<A>(asset_key, self.lifecycle_channel.clone())
         });
 
         (pre_existing, unsafe { Ash::<A>::clone_from(handle) })
     }
 
-    fn drop_handle(&self, untyped_handle: UntypedAssetHandle)
+    fn drop_handle(&self, untyped_handle: ErasedAssetHandle)
     {
         let mut handle_bank = self.handles.lock(); // must lock before below to make sure that the handle doesn't get cloned between the drop and below
 
-        let inner = untyped_handle.as_ref();
         // note: there must be a load acquire for this to be sound -- .ref_count() below should do it
 
         // retrieve this info after locking the handle bank so a zero refcount cannot be added to by a load()
-        if inner.ref_count() != 0
+        let header = untyped_handle.header();
+        if header.ref_count() != 0
         {
             return;
         }
 
-        match handle_bank.remove(&inner.key())
+        match handle_bank.remove(&header.key)
         {
             None =>
             {
@@ -84,7 +84,7 @@ impl Assets
             Some(stored_handle) =>
             {
                 debug_assert!(stored_handle == untyped_handle);
-                let registered_type = self.registered_asset_types.get(&inner.asset_type())
+                let registered_type = self.registered_asset_types.get(&header.key.asset_type())
                     .expect("Can't drop asset, asset type unregistered. How did you get here?");
                 (registered_type.dealloc_fn)(untyped_handle);
             }
@@ -92,7 +92,7 @@ impl Assets
     }
 
     #[must_use]
-    fn enqueue_load<A: Asset, F: FnOnce(UntypedAssetHandle) -> AssetLifecycleRequest>(
+    fn enqueue_load<A: Asset, F: FnOnce(ErasedAssetHandle) -> AssetLifecycleRequest>(
         &self,
         asset_key: AssetKey,
         input_fn: F) -> Ash<A>
@@ -106,7 +106,7 @@ impl Assets
             let request = input_fn(unsafe { asset_handle.clone().into_inner() });
 
             // don't clear payload?
-            asset_handle.store_data(AssetData::Pending);
+            asset_handle.store_data(None);
             if pre_existed
             {
                 self.notification_channel.0.send(AssetNotification::Reload(asset_key)).unwrap(); // todo: error handling
@@ -114,12 +114,12 @@ impl Assets
 
             if self.lifecycle_channel.send(request).is_err()
             {
-                asset_handle.store_data(AssetData::Unavailable(AssetLoadError::Shutdown));
+                asset_handle.store_data(Some(AssetData::Unavailable(AssetLoadError::Shutdown)));
             }
         }
         else
         {
-            asset_handle.store_data(AssetData::Unavailable(AssetLoadError::LifecyclerNotRegistered));
+            asset_handle.store_data(Some(AssetData::Unavailable(AssetLoadError::LifecyclerNotRegistered)));
         }
 
         asset_handle
@@ -206,8 +206,8 @@ impl Assets
                                         AssetLifecycleRequest::LoadFromMemory(untyped_handle, _) |
                                         AssetLifecycleRequest::LoadFileBacked(untyped_handle) =>
                                         {
-                                            let asset_type = untyped_handle.as_ref().asset_type();
-                                            let lifecycler = &this.lifecyclers.get(&asset_type)
+                                            let header = untyped_handle.header();
+                                            let lifecycler = &this.lifecyclers.get(&header.key.asset_type())
                                                 .expect("Unsupported asset type!").lifecycler; // this should fail in load()
 
                                             lifecycler.error_untyped(untyped_handle, AssetLoadError::Shutdown);
@@ -219,14 +219,14 @@ impl Assets
                             },
                             AssetLifecycleRequest::LoadFileBacked(untyped_handle) =>
                             {
-                                let inner = untyped_handle.as_ref();
-                                let lifecycler = &this.lifecyclers.get(&inner.asset_type())
+                                let header = untyped_handle.header();
+                                let lifecycler = &this.lifecyclers.get(&header.key.asset_type())
                                     .expect("Unsupported asset type!").lifecycler; // this should fail in load()
 
                                 #[cfg(feature = "asset_debug_data")]
                                 let debug_asset_data: Option<_> =
                                 {
-                                    let asset_debug_path = this.asset_key_to_file_path(inner.key(), AssetFileType::DebugData);
+                                    let asset_debug_path = this.asset_key_to_file_path(header.key, AssetFileType::DebugData);
                                     match Self::read_asset_from_file(asset_debug_path)
                                     {
                                         Ok(dbg_data) => Some(dbg_data),
@@ -234,8 +234,8 @@ impl Assets
                                     }
                                 };
 
-                                let asset_file_path = this.asset_key_to_file_path(inner.key(), AssetFileType::Asset);
-                                log::trace!("Loading {:#?} from {asset_file_path:?}", inner.key());
+                                let asset_file_path = this.asset_key_to_file_path(header.key, AssetFileType::Asset);
+                                log::trace!("Loading {:#?} from {asset_file_path:?}", header.key);
                                 match Self::read_asset_from_file(&asset_file_path)
                                 {
                                     Ok(read) => lifecycler.load_untyped(
@@ -247,7 +247,7 @@ impl Assets
                                     Err(err) =>
                                     {
                                         log::error!("Failed to read {:#?} data from {:?}: {err}",
-                                            inner.key(),
+                                            header.key,
                                             asset_file_path);
                                         lifecycler.error_untyped(untyped_handle, AssetLoadError::Fetch);
                                     }
@@ -255,9 +255,10 @@ impl Assets
                             },
                             AssetLifecycleRequest::LoadFromMemory(untyped_handle, reader) =>
                             {
-                                log::trace!("Loading {:#?} from memory ({} B)", untyped_handle.as_ref().key(), reader.len());
+                                let header = untyped_handle.header();
+                                log::trace!("Loading {:#?} from memory ({} B)", header.key, reader.len());
 
-                                let lifecycler = &this.lifecyclers.get(&untyped_handle.as_ref().asset_type())
+                                let lifecycler = &this.lifecyclers.get(&header.key.asset_type())
                                     .expect("Unsupported asset type!").lifecycler; // this should fail in load()
                                 lifecycler.load_untyped(
                                     &this,
@@ -568,9 +569,9 @@ impl DebugGui for Assets
 
                             for (key, untyped_handle) in handle_bank.iter()
                             {
-                                let inner = untyped_handle.as_ref();
+                                let header = untyped_handle.header();
                                 gui.label(format!("{key:#?}")); // right click to copy?
-                                gui.label(format!("{}", inner.ref_count()));
+                                gui.label(format!("{}", header.ref_count()));
 
                                 // TODO: query availability
 
@@ -753,7 +754,7 @@ mod tests
         tal.get_passthru_call_count()
     }
 
-    fn await_asset<A: Asset>(handle: &Ash<A>) -> AssetData<A>
+    fn await_asset<A: Asset>(handle: &Ash<A>) -> OwnedAssetSnapshot<A>
     {
         futures::executor::block_on(handle)
     }
@@ -802,7 +803,7 @@ mod tests
             }));
 
             let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Box::new([]));
-            match await_asset(&req)
+            match await_asset(&req).snapshot()
             {
                 AssetData::Unavailable(AssetLoadError::Parse) => {},
                 other => panic!("Asset not unavailable(Test): {other:#?}"),
@@ -817,11 +818,7 @@ mod tests
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
             let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Box::new([]));
-            match req.data()
-            {
-                AssetData::Pending => {},
-                _ => panic!("Asset not pending"),
-            }
+            req.visit(|a| assert!(matches!(a, AssetState::Pending)));
 
             drop(await_asset(&req));
         }

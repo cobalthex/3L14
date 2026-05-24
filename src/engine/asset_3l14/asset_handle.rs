@@ -1,6 +1,5 @@
 use super::*;
 use crossbeam::channel::Sender;
-use nab_3l14::utils::ShortTypeName;
 use parking_lot::Mutex;
 use std::alloc::Layout;
 use std::error::Error;
@@ -8,9 +7,11 @@ use std::fmt::{Debug, Display, Formatter};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::mem::swap;
+use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
 use std::task::{Context, Poll, Waker};
+use arc_swap::ArcSwap;
 use triomphe::Arc;
 
 #[derive(Debug)]
@@ -18,6 +19,7 @@ use triomphe::Arc;
 pub enum AssetLoadError
 {
     Shutdown = 1, // The asset system has been shutdown and no new asset can be loaded
+    Cancelled, // load request was cancelled
     MismatchedAssetType, // asset key does not match handle type
     LifecyclerNotRegistered,
     Fetch,
@@ -32,10 +34,8 @@ impl Error for AssetLoadError { }
 #[derive(Debug)]
 pub enum AssetData<Asset>
 {
-    // unloaded?
-    Pending,
-    Unavailable(AssetLoadError),
-    Available(Arc<Asset>),
+    Unavailable(AssetLoadError), // TODO: store this elsewhere? (loaders spin forever?)
+    Available(Asset),
 }
 impl<A: Asset> AssetData<A>
 {
@@ -51,18 +51,17 @@ impl<A: Asset> AssetData<A>
     }
 
     #[inline] #[must_use]
-    pub fn unwrap(&self) -> Arc<A>
+    pub fn unwrap(&self) -> &A
     {
         match self
         {
             AssetData::Available(a) => a.clone(),
-            AssetData::Pending => panic!("Asset payload of type {:?} is pending", A::asset_type()),
             AssetData::Unavailable(err) => panic!("Asset payload of type {:?} is unavailable (error: {err:?})", A::asset_type()),
         }
     }
 
     #[inline]
-    pub fn map<U>(self, map_fn: impl FnOnce(Arc<A>) -> U) -> Option<U>
+    pub fn map<U>(self, map_fn: impl FnOnce(A) -> U) -> Option<U>
     {
         match self
         {
@@ -72,168 +71,148 @@ impl<A: Asset> AssetData<A>
     }
 }
 
-// The inner pointer to each asset handle. This should generally not be used by itself b/c it does not have any RAII for ref-counting
-pub(super) struct AssetHandleInner
-{
-    ref_count: AtomicIsize,
+pub type AssetRefCnt<A> = arc_swap::ArcSwapAny<Option<triomphe::Arc<A>>>;
 
-    key: AssetKey,
-    dropper: Sender<AssetLifecycleRequest>,
+// todo: just use visitor?
+pub struct AssetGuard<A: Asset>(arc_swap::Guard<Option<triomphe::Arc<AssetData<A>>>>);
+impl<A: Asset> AssetGuard<A>
+{
+    #[inline] #[must_use]
+    pub fn unwrap(&self) -> &'_ A
+    {
+        if let Some(asset) = self.0.as_ref()
+        {
+            match &**asset
+            {
+                AssetData::Unavailable(_) => panic!("Asset is unavailable"),
+                AssetData::Available(a) => a,
+            }
+        }
+        else { panic!("Asset is pending, cannot unwrap") }
+    }
+
+    // better name?
+    #[inline]
+    pub fn snapshot(&self) -> AssetState<'_, A>
+    {
+        self.0.as_ref().map_or(AssetState::Pending, |d| match &**d
+        {
+            AssetData::Unavailable(err) => AssetState::Unavailable(err),
+            AssetData::Available(asset) => AssetState::Available(asset),
+        })
+    }
+}
+#[must_use]
+#[derive(Debug)]
+pub enum AssetState<'a, A>
+{
+    Pending,
+    Unavailable(&'a AssetLoadError),
+    Available(&'a A),
+}
+
+// A strong reference to the asset data that can be dereferenced to access
+// Data must be available or this is UB
+#[must_use]
+pub struct AssetView<A: Asset>
+{
+    arc: Arc<AssetData<A>>,
+    ptr: *const A,
+}
+impl<A: Asset> Deref for AssetView<A>
+{
+    type Target = A;
+    fn deref(&self) -> &Self::Target
+    {
+        debug_assert!(matches!(self.arc.deref(), AssetData::Available(_)));
+        unsafe { &*self.ptr }
+    }
+}
+impl<A: Debug + Asset> Debug for AssetView<A>
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { self.deref().fmt(f) }
+}
+
+// non-generic members of AssetHandleInner
+#[repr(C)]
+pub(super) struct AssetHandleInnerHeader
+{
+    pub ref_count: AtomicIsize,
+
+    pub key: AssetKey,
+    pub dropper: Sender<AssetLifecycleRequest>,
     //
     // #[cfg(feature = "asset_names")]
     // name: Arc<str>, // stores optional
 
     // test only?
-    ready_waker: Mutex<Option<Waker>>,
+    pub ready_waker: Mutex<Option<Waker>>,
 
-    is_reloading: AtomicBool, // cleared before payload is set
-
-    payload: AtomicUsize, // if high bit is 1, stores Arc<Asset>
-
-    #[cfg(feature = "asset_debug_data")]
-    debug_data: AtomicUsize, // if 0, no debug data is stored, else stores Arc<AssetDebugData>
+    pub is_reloading: AtomicBool, // cleared before payload is set
+}
+impl AssetHandleInnerHeader
+{
+    #[inline] #[must_use]
+    pub fn ref_count(&self) -> isize { self.ref_count.load(Ordering::Acquire) }
 }
 
-impl AssetHandleInner
+// The inner pointer to each asset handle. This should generally not be used by itself b/c it does not have any RAII for ref-counting
+#[repr(C)]
+pub(super) struct AssetHandleInner<A: Asset>
 {
-    // if high bit is set, it is storing a pointer
-    const PAYLOAD_PTR_MASK: usize = 1 << (usize::BITS - 1);
+    header: AssetHandleInnerHeader,
 
-    pub fn store_payload<A: Asset>(&self, payload: AssetData<A>)
+    data: AssetRefCnt<AssetData<A>>,
+
+    #[cfg(feature = "asset_debug_data")]
+    debug_data: AssetRefCnt<A::DebugData>, // if 0, no debug data is stored, else stores Arc<AssetDebugData>
+}
+
+impl<A: Asset> AssetHandleInner<A>
+{
+    #[inline]
+    pub fn store_data(&self, new_data: Option<AssetData<A>>)
     {
-        debug_assert_eq!(A::asset_type(), self.key.asset_type());
+        debug_assert_eq!(A::asset_type(), self.header.key.asset_type());
         // (debug) store a TypeId to verify templates match?
 
         #[cfg(feature = "debug_asset_lifetimes")]
         log::debug!("{:?} storing new payload", self.key());
 
-        // can maybe get some inspiration from
-        // https://vorner.github.io/2020/09/03/performance-cheating.html
-
-        let new_val = match payload
-        {
-            AssetData::Pending => 0,
-            AssetData::Unavailable(err) => err as usize,
-            AssetData::Available(arc) =>
-            {
-                let raw = Arc::into_raw(arc);
-                debug_assert_eq!((raw as usize) & Self::PAYLOAD_PTR_MASK, 0); // rethink entire design if this ever fails :)
-                (raw as usize) | Self::PAYLOAD_PTR_MASK
-            },
-        };
-
-        let old_val = self.payload.swap(new_val, Ordering::AcqRel); // seqcst?
-
-        if (old_val & Self::PAYLOAD_PTR_MASK) != 0
-        {
-            // drop the old arc
-            let _arc = unsafe { Arc::from_raw((old_val & !Self::PAYLOAD_PTR_MASK) as *const A) };
-        }
-
-        // ideally this entire function should be atomic (RwLock the whole thing?)
-        self.is_reloading.store(false, Ordering::Release); // could this just be is_loading() ?
-
-        let mut locked = self.ready_waker.lock();
-        if let Some(waker) = locked.take()
-        {
-            waker.wake();
-        }
-    }
-
-    #[inline] #[must_use]
-    pub fn key(&self) -> AssetKey
-    {
-        self.key
-    }
-
-    #[inline] #[must_use]
-    pub fn asset_type(&self) -> AssetTypeId
-    {
-        self.key.asset_type()
-    }
-
-    #[inline] #[must_use]
-    pub fn data<A: Asset>(&self) -> AssetData<A> // TODO: this should return a non-cloneable refcount ptr (Guard obj)
-    {
-        debug_assert_eq!(A::asset_type(), self.asset_type());
-        let ptr = self.payload.load(Ordering::Acquire);
-
-        match ptr
-        {
-            0 => AssetData::Pending,
-            p if (ptr & Self::PAYLOAD_PTR_MASK) != 0 =>
-            {
-                let arc = unsafe { Arc::from_raw((p & !Self::PAYLOAD_PTR_MASK) as *const A) };
-                let avail = AssetData::Available(arc.clone());
-                std::mem::forget(arc);
-                avail
-            },
-            e=> AssetData::Unavailable(unsafe { std::mem::transmute(e as u16) }),
-        }
+        self.data.store(new_data.map(|d| Arc::new(d)));
     }
 
     #[cfg(feature = "asset_debug_data")]
-    pub fn store_debug_data<A: Asset>(&self, debug_data: Option<Arc<A::DebugData>>)
+    #[inline]
+    pub fn store_debug_data(&self, debug_data: Option<A::DebugData>)
     {
         #[cfg(feature = "debug_asset_lifetimes")]
         log::debug!("{:?} storing new debug data", self.key());
 
-        let old_val = match debug_data
-        {
-            Some(arc) => self.debug_data.swap(Arc::into_raw(arc) as usize, Ordering::AcqRel),
-            None => self.debug_data.swap(0, Ordering::AcqRel),
-        };
-
-        if old_val != 0
-        {
-            // drop the old arc
-            let _arc = unsafe { Arc::from_raw(old_val as *const A::DebugData) };
-        }
-    }
-
-    #[cfg(feature = "asset_debug_data")]
-    #[inline] #[must_use]
-    pub fn debug_data<A: Asset>(&self) -> Option<Arc<A::DebugData>>
-    {
-        // TODO: make available but return none if asset_debug_data disabled?
-
-        let ptr = self.debug_data.load(Ordering::Acquire);
-        match ptr
-        {
-            0 => None,
-            p =>
-            {
-                let arc = unsafe { Arc::from_raw(p as *const A::DebugData) };
-                let debug_data = arc.clone();
-                std::mem::forget(arc);
-                Some(debug_data)
-            }
-        }
-    }
-
-    #[inline] #[must_use]
-    pub fn ref_count(&self) -> isize
-    {
-        self.ref_count.load(Ordering::Acquire)
+        self.debug_data.store(debug_data.map(|d| Arc::new(d)));
     }
 }
 
 #[derive(PartialEq, Eq)]
-pub(super) struct UntypedAssetHandle(*const AssetHandleInner); // Internal only (does no ref-counting, use AssetHandle<A> - must never be null
-impl UntypedAssetHandle
+pub(super) struct ErasedAssetHandle(*const ()); // Internal only; does no ref-counting, use AssetHandle<A> - must never be null
+impl ErasedAssetHandle
 {
+    #[must_use]
     pub fn alloc<A: Asset>(key: AssetKey, dropper: Sender<AssetLifecycleRequest>) -> Self
     {
         let inner = AssetHandleInner
         {
-            ref_count: AtomicIsize::new(0), // this must be incremented by the caller
-            key,
-            dropper,
-            ready_waker: Mutex::new(None),
-            is_reloading: AtomicBool::new(false),
-            payload: AtomicUsize::new(0), // pending
+            header: AssetHandleInnerHeader
+            {
+                ref_count: AtomicIsize::new(0), // this must be incremented by the caller
+                key,
+                dropper,
+                ready_waker: Mutex::new(None),
+                is_reloading: AtomicBool::new(false),
+            },
+            data: AssetRefCnt::new(None),
             #[cfg(feature = "asset_debug_data")]
-            debug_data: AtomicUsize::new(0),
+            debug_data: AssetRefCnt::new(None),
         };
 
         #[cfg(feature = "debug_asset_lifetimes")]
@@ -242,18 +221,18 @@ impl UntypedAssetHandle
         let layout = Layout::for_value(&inner);
         Self(unsafe
         {
-            let alloc: *mut AssetHandleInner = std::alloc::alloc(layout).cast();
+            let alloc: *mut AssetHandleInner<A> = std::alloc::alloc(layout).cast();
             std::ptr::write(alloc, inner);
-            alloc as *const AssetHandleInner
+            alloc as *const ()
         })
     }
 
     pub unsafe fn dealloc<A: Asset>(self)
     {
         debug_assert!(!self.0.is_null());
-        debug_assert_eq!(A::asset_type(), unsafe { &*self.0 }.key.asset_type());
+        debug_assert_eq!(A::asset_type(), unsafe { &*(self.0 as *const AssetHandleInner<A>) }.header.key.asset_type());
 
-        unsafe { &*self.0 }.store_payload::<A>(AssetData::Pending); // clears the stored payload
+        unsafe { &*(self.0 as *const AssetHandleInner<A>) }.store_data(None); // clears the stored payload
 
         #[cfg(feature = "debug_asset_lifetimes")]
         log::debug!("{:?} de-alloc asset handle", unsafe { &*self.0 }.key);
@@ -261,41 +240,47 @@ impl UntypedAssetHandle
         let layout = Layout::for_value(unsafe { &*self.0 });
         unsafe { std::alloc::dealloc(self.0 as *mut u8, layout) };
     }
-}
-impl AsRef<AssetHandleInner> for UntypedAssetHandle
-{
-    fn as_ref(&self) -> &AssetHandleInner
+
+    #[inline] #[must_use]
+    pub fn header(&self) -> &AssetHandleInnerHeader
     {
-        unsafe { &*self.0 }
+        unsafe { &*(self.0 as *const AssetHandleInnerHeader) }
     }
 }
-unsafe impl Sync for UntypedAssetHandle { }
-unsafe impl Send for UntypedAssetHandle { }
+impl<A: Asset> AsRef<AssetHandleInner<A>> for ErasedAssetHandle
+{
+    fn as_ref(&self) -> &AssetHandleInner<A>
+    {
+        unsafe { &*(self.0 as *const AssetHandleInner<A>) }
+    }
+}
+unsafe impl Sync for ErasedAssetHandle { }
+unsafe impl Send for ErasedAssetHandle { }
 
 // A hot-reloadable handle to an asset.
 // Do not store references to the internal payload longer than necessary
 #[repr(transparent)]
 pub struct Ash<A: Asset>
 {
-    pub(super) inner: *const AssetHandleInner, // store v-table? (use box), would *maybe* allow calls to virtual methods (test?)
+    pub(super) inner: *const AssetHandleInner<A>,
     pub(super) phantom: PhantomData<A>,
 }
 impl<A: Asset> Ash<A>
 {
     #[must_use]
-    pub(super) unsafe fn into_inner(self) -> UntypedAssetHandle
+    pub(super) unsafe fn into_inner(self) -> ErasedAssetHandle
     {
-        let untyped = UntypedAssetHandle(self.inner);
+        let untyped = ErasedAssetHandle(self.inner as *const ());
         std::mem::forget(self);
         untyped
     }
 
     #[must_use]
-    pub(super) unsafe fn clone_from(untyped_handle: &UntypedAssetHandle) -> Self
+    pub(super) unsafe fn clone_from(untyped_handle: &ErasedAssetHandle) -> Self
     {
         let handle = Self
         {
-            inner: untyped_handle.0,
+            inner: untyped_handle.0 as *const AssetHandleInner<A>,
             phantom: PhantomData::default(),
         };
         handle.debug_assert_type();
@@ -304,11 +289,11 @@ impl<A: Asset> Ash<A>
     }
 
     #[must_use]
-    pub(super) unsafe fn attach_from(untyped_handle: UntypedAssetHandle) -> Self
+    pub(super) unsafe fn attach_from(untyped_handle: ErasedAssetHandle) -> Self
     {
         let handle = Self
         {
-            inner: untyped_handle.0,
+            inner: untyped_handle.0 as *const AssetHandleInner<A>,
             phantom: PhantomData::default(),
         };
         handle.debug_assert_type();
@@ -324,16 +309,13 @@ impl<A: Asset> Ash<A>
     // creation managed by <Assets>
 
     #[inline] #[must_use]
-    pub(super) fn inner(&self) -> &AssetHandleInner
-    {
-        unsafe { &*self.inner }
-    }
+    pub(super) fn inner(&self) -> &AssetHandleInner<A> { unsafe { &*self.inner } }
 
     // The key uniquely identifying this asset
     #[inline] #[must_use]
     pub fn key(&self) -> AssetKey
     {
-        self.inner().key
+        self.inner().header.key
     }
 
     // The name of this asset, only available with asset names enabled ("" otherwise)
@@ -346,39 +328,73 @@ impl<A: Asset> Ash<A>
     //     return "";
     // }
 
-    // Retrieve the current payload, holds a strong reference for as long as the guard exists
+    // Get an owned pointer to the asset data. Prefer visit()
     #[inline] #[must_use]
-    pub fn data(&self) -> AssetData<A> { self.inner().data() }
+    pub fn unwrap(&self) -> AssetView<A>
+    {
+        let arc = self.inner().data.load_full().unwrap();
+        AssetView
+        {
+            ptr: &*arc as *const _ as *const A,
+            arc,
+        }
+    }
+
+    // Inspect the data inside the visitor function
+    #[inline]
+    pub fn visit(&self, visitor: impl FnOnce(AssetState<'_, A>))
+    {
+        let guard = self.inner().data.load();
+        visitor(guard.as_ref().map_or(AssetState::Pending, |d| match &**d
+        {
+            AssetData::Unavailable(err) => AssetState::Unavailable(err),
+            AssetData::Available(asset) => AssetState::Available(asset),
+        }))
+    }
+
+    #[inline] #[must_use]
+    pub fn map<Out>(&self, mapper: impl FnOnce(AssetState<'_, A>) -> Out) -> Out
+    {
+        let guard = self.inner().data.load();
+        mapper(guard.as_ref().map_or(AssetState::Pending, |d| match &**d
+        {
+            AssetData::Unavailable(err) => AssetState::Unavailable(err),
+            AssetData::Available(asset) => AssetState::Available(asset),
+        }))
+    }
 
     // Retrieve optional debug data for this asset. Returns none if the asset_debug_data feature is disabled
     #[inline] #[must_use]
-    pub fn debug_data(&self) -> Option<Arc<A::DebugData>>
+    pub fn debug_data(&self) -> AssetState<A::DebugData>
     {
         #[cfg(feature = "asset_debug_data")]
-        return self.inner().debug_data::<A>();
+        todo!();
+        // return self.inner().debug_data.load();
         #[cfg(not(feature = "asset_debug_data"))]
         return None;
     }
 
     // The number of references to this asset
     #[inline] #[must_use]
-    pub fn ref_count(&self) -> isize
-    {
-        self.inner().ref_count()
-    }
+    pub fn ref_count(&self) -> isize { self.inner().header.ref_count() }
 
     // // Is this asset + all dependencies loaded
     #[inline] #[must_use]
     pub fn is_loaded_recursive(&self) -> bool
     {
-        self.data().is_loaded_recursive()
+        let guard = self.inner().data.load();
+        guard.as_ref().map_or(false, |d| match &**d
+        {
+            AssetData::Unavailable(err) => false,
+            AssetData::Available(asset) => true,
+        })
     }
 
     #[inline]
     pub(super) fn add_ref(&self) // add a ref (will cause a leak if misused)
     {
         // see Arc::clone() for details on ordering requirements
-        let old_refs = self.inner().ref_count.fetch_add(1, Ordering::Acquire);
+        let old_refs = self.inner().header.ref_count.fetch_add(1, Ordering::Acquire);
         debug_assert_ne!(old_refs, isize::MAX);
 
         #[cfg(feature = "debug_asset_lifetimes")]
@@ -386,10 +402,10 @@ impl<A: Asset> Ash<A>
     }
 
     #[inline]
-    pub(super) fn store_data(&self, data: AssetData<A>)
+    pub(super) fn store_data(&self, data: Option<AssetData<A>>)
     {
         let inner = unsafe { &*self.inner };
-        inner.store_payload(data);
+        inner.store_data(data);
     }
 }
 unsafe impl<A: Asset> Send for Ash<A> {}
@@ -412,7 +428,7 @@ impl<A: Asset> Drop for Ash<A>
     {
         // see Arc::drop() for details on ordering requirements
         let inner = unsafe { &*self.inner };
-        let old_refs = inner.ref_count.fetch_sub(1, Ordering::Release);
+        let old_refs = inner.header.ref_count.fetch_sub(1, Ordering::Release);
 
         #[cfg(feature = "debug_asset_lifetimes")]
         log::debug!("{self:?} decrement ref to {}", old_refs - 1);
@@ -426,36 +442,25 @@ impl<A: Asset> Drop for Ash<A>
         #[cfg(feature = "debug_asset_lifetimes")]
         log::debug!("{:?} dropping", self.key());
 
-        inner.dropper.send(AssetLifecycleRequest::Drop(UntypedAssetHandle(self.inner))).expect("Failed to drop asset as the drop channel already closed"); // todo: error handling (can just drop it here?)
+        inner.header.dropper.send(AssetLifecycleRequest::Drop(ErasedAssetHandle(self.inner as *const ())))
+            .expect("Failed to drop asset as the drop channel already closed"); // todo: error handling (can just drop it here?)
     }
 }
-impl<A: Asset> Future for &Ash<A> // non-reffing requires being able to consume an Arc
+impl<'a, A: Asset> Future for &'a Ash<A> // non-reffing requires being able to consume an Arc
 {
-    type Output = AssetData<A>;
+    type Output = OwnedAssetSnapshot<A>;
 
     // TODO: re-evaluate
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output>
     {
-        let inner = self.inner();
-
-        if inner.is_reloading.load(Ordering::Acquire)
+        let guard = self.data_ptr();
+        if guard.is_pending()
         {
-            let mut locked = inner.ready_waker.lock();
+            let mut locked = self.inner().header.ready_waker.lock();
             swap(&mut *locked, &mut Some(cx.waker().clone()));
-            return Poll::Pending;
+            return Poll::Pending
         }
-
-        let p = self.data();
-        match p
-        {
-            AssetData::Pending =>
-            {
-                let mut locked = inner.ready_waker.lock();
-                swap(&mut *locked, &mut Some(cx.waker().clone()));
-                Poll::Pending
-            },
-            AssetData::Available(_) | AssetData::Unavailable(_) => Poll::Ready(p),
-        }
+        return Poll::Ready(guard);
     }
 }
 impl<A: Asset> PartialEq for Ash<A>
@@ -477,14 +482,15 @@ impl<A: Asset> Debug for Ash<A>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
-        f.write_fmt(format_args!("{{ {:#?} {}, {} refs }}",
+        f.write_fmt(
+            format_args!("{{ {:#?} {}, {} refs }}",
             self.key(),
-            match self.data()
+            self.map(|snap| match snap
             {
-                AssetData::Pending => "pending",
-                AssetData::Unavailable(_) => "unavailable",
-                AssetData::Available(_) => "available",
-            },
+                AssetState::Pending => "pending",
+                AssetState::Unavailable(_) => "unavailable",
+                AssetState::Available(_) => "available"
+            }),
             self.ref_count(),
         ))
     }

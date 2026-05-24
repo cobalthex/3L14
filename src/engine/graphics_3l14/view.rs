@@ -128,9 +128,12 @@ pub struct View<'f>
     camera_mtx: Mat4,
     camera_pos: Vec3,
     camera_clip: CameraClip,
-    sorter: PipelineSorter,
+
     used_uniforms_pools: Vec<UniformsPoolEntryGuard<'f>>,
     // current_txfms_writer: CurrentUniformsWriter<'f>,
+
+    shadow_pass: PipelineSorter,
+    opaque_pass: PipelineSorter,
 
     placeholder_texture: Texture,
     placeholder_texture_view: TextureView,
@@ -178,7 +181,8 @@ impl<'f> View<'f>
             camera_mtx: Mat4::IDENTITY,
             camera_pos: Vec3::ZERO,
             camera_clip: CameraClip::default(),
-            sorter: PipelineSorter::default(),
+            shadow_pass: PipelineSorter::default(),
+            opaque_pass: PipelineSorter::default(),
             used_uniforms_pools: used_uniforms,
             // current_txfms_writer,
             renderer,
@@ -194,7 +198,8 @@ impl<'f> View<'f>
         self.camera_mtx = camera.matrix();
         self.camera_pos = camera.transform().position;
         self.camera_clip = CameraClip::new(clip_camera);
-        self.sorter.clear();
+        self.shadow_pass.clear();
+        self.opaque_pass.clear();
         self.used_uniforms_pools.clear();
     }
 
@@ -212,9 +217,11 @@ impl<'f> View<'f>
             camera_writer.write_type(0, CameraUniform::new(self.camera_mtx, self.runtime));
         }
 
-        for (pipeline_hash, draws) in self.sorter.sort()
+        // TODO: each pass has explicit rules
+        let passes = [&mut self.shadow_pass, &mut self.opaque_pass];
+        for (pipeline_key, draws) in passes.into_iter().flat_map(|pass| pass.sort())
         {
-            if !self.pipeline_cache.try_apply(render_pass, pipeline_hash)
+            if !self.pipeline_cache.try_apply(render_pass, pipeline_key)
             {
                 // panic!("can this happen?");
                 continue;
@@ -231,43 +238,46 @@ impl<'f> View<'f>
                     self.used_uniforms_pools[(poses_uniform_id >> 8) as usize].bind(render_pass, 2, poses_uniform_id as u8);
                 }
 
-                // TODO: don't create on the fly
-                let mut bge = ArrayVec::<_, 18>::new();
-                bge.push(BindGroupEntry
+                if let Some(mtl) = draw.material
                 {
-                    binding: bge.len() as u32,
-                    resource: draw.material.props.as_entire_binding(),
-                });
-                bge.push(BindGroupEntry
-                {
-                    binding: bge.len() as u32,
-                    resource: BindingResource::Sampler(self.pipeline_cache.default_sampler())
-                });
-                for tex in &draw.textures
-                {
+                    // TODO: don't create on the fly
+                    let mut bge = ArrayVec::<_, 18>::new();
                     bge.push(BindGroupEntry
                     {
                         binding: bge.len() as u32,
-                        resource: BindingResource::TextureView(&tex.gpu_view),
-                    })
-                }
-                // TODO: TEMP HACK
-                if draw.material.textures.is_empty()
-                {
+                        resource: mtl.0.props.as_entire_binding(),
+                    });
                     bge.push(BindGroupEntry
                     {
                         binding: bge.len() as u32,
-                        resource: BindingResource::TextureView(&self.placeholder_texture_view),
-                    })
-                }
+                        resource: BindingResource::Sampler(self.pipeline_cache.default_sampler())
+                    });
+                    for tex in &mtl.1
+                    {
+                        bge.push(BindGroupEntry
+                        {
+                            binding: bge.len() as u32,
+                            resource: BindingResource::TextureView(&tex.gpu_view),
+                        })
+                    }
+                    // TODO: TEMP HACK
+                    if mtl.1.is_empty()
+                    {
+                        bge.push(BindGroupEntry
+                        {
+                            binding: bge.len() as u32,
+                            resource: BindingResource::TextureView(&self.placeholder_texture_view),
+                        })
+                    }
 
-                let mtl_bind_group = self.renderer.device().create_bind_group(&BindGroupDescriptor
-                {
-                    label: debug_label!("TODO mtl bind group"),
-                    layout: &self.pipeline_cache.get_or_create_bind_layout(draw.material.class),
-                    entries: &bge,
-                });
-                render_pass.set_bind_group(3, &mtl_bind_group, &[]);
+                    let mtl_bind_group = self.renderer.device().create_bind_group(&BindGroupDescriptor
+                    {
+                        label: debug_label!("TODO mtl bind group"),
+                        layout: &self.pipeline_cache.get_or_create_bind_layout(mtl.0.class),
+                        entries: &bge,
+                    });
+                    render_pass.set_bind_group(3, &mtl_bind_group, &[]);
+                }
 
                 // bind sub-buffers?
                 render_pass.set_vertex_buffer(0, draw.geometry.vertices.slice(..));
@@ -293,8 +303,9 @@ impl<'f> View<'f>
             return false;
         }
 
-        let geo = model.geometry.data().unwrap();
-        if !self.can_see(&geo, world_transform) { return false; }
+        let geo_ptr = model.geometry.data_ptr();
+        let geo = geo_ptr.unwrap();
+        if !self.can_see(geo, world_transform) { return false; }
 
         // TODO: these should be per-mesh
         let rad = world_transform.x_axis.x.max(world_transform.y_axis.y.max(world_transform.z_axis.z));
@@ -327,8 +338,8 @@ impl<'f> View<'f>
 
         for mesh_index in 0..model.mesh_count
         {
-            let mtl = model.materials[mesh_index as usize].data().unwrap();
-            let textures = mtl.textures.iter().map(|t| t.data().unwrap()).collect();
+            let mtl = model.materials[mesh_index as usize].data_ptr().unwrap();
+            let textures = mtl.textures.iter().map(|t| t.data_ptr().unwrap()).collect();
 
             // TODO: this key needs to be generated based on pass, as shadows don't need mtls/debug mode
             let shadow_pipeline = self.pipeline_cache.get_or_create(
@@ -338,13 +349,25 @@ impl<'f> View<'f>
                 self.debug_mode,
             );
 
+            self.shadow_pass.push(pipeline_sorter::Draw
+            {
+                transform: world_transform,
+                depth,
+                mesh_index,
+                transform_uniform_id: txfm_uniform_id,
+                poses_uniform_id: poses_uniforms,
+                pipeline_hash: shadow_pipeline,
+                geometry: geo.clone(),
+                material: None,
+            });
+
             let opaque_pipeline = self.pipeline_cache.get_or_create(
                 EngineRenderPass::Opaque,
                 geo.vertex_layout,
                 Some(mtl.class),
                 self.debug_mode);
 
-            self.sorter.push(pipeline_sorter::Draw
+            self.opaque_pass.push(pipeline_sorter::Draw
             {
                 transform: world_transform,
                 depth,
@@ -353,8 +376,7 @@ impl<'f> View<'f>
                 poses_uniform_id: poses_uniforms,
                 pipeline_hash: opaque_pipeline,
                 geometry: geo.clone(),
-                material: mtl,
-                textures,
+                material: Some((mtl, textures)),
             });
         }
 

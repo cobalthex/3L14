@@ -118,13 +118,13 @@ pub(super) trait UntypedAssetLifecycler: Sync + Send
     fn load_untyped(
         &self,
         assets: &Assets,
-        untyped_handle: UntypedAssetHandle,
+        untyped_handle: ErasedAssetHandle,
         input: AssetPayload,
         #[cfg(feature = "asset_debug_data")] maybe_debug_input: Option<AssetPayload>);
 
     fn error_untyped(
         &self,
-        untyped_handle: UntypedAssetHandle,
+        untyped_handle: ErasedAssetHandle,
         error: AssetLoadError);
 
     fn display_name(&self) -> &str;
@@ -134,7 +134,7 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
     fn load_untyped(
         &self,
         assets: &Assets,
-        untyped_handle: UntypedAssetHandle,
+        untyped_handle: ErasedAssetHandle,
         input: AssetPayload,
         #[cfg(feature = "asset_debug_data")] mut maybe_debug_input: Option<AssetPayload>)
     {
@@ -143,18 +143,18 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
         let retyped = unsafe { Ash::<A>::attach_from(untyped_handle) };
 
         #[cfg(feature = "asset_debug_data")]
-        retyped.inner().store_debug_data::<A>(None);
+        retyped.inner().store_debug_data(None);
 
         match self.load(AssetLoadRequest { asset_key: retyped.key(), input, assets })
         {
             Ok(asset) =>
             {
-                retyped.store_data(AssetData::Available(Arc::new(asset)))
+                retyped.store_data(Some(AssetData::Available(asset)));
             }
             Err(err) =>
             {
                 log::error!("Failed to load {retyped:#?}: {err:?}");
-                retyped.store_data(AssetData::Unavailable(AssetLoadError::Parse))
+                retyped.store_data(Some(AssetData::Unavailable(AssetLoadError::Parse)));
             },
         }
 
@@ -170,20 +170,20 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
                     return;
                 },
             };
-            retyped.inner().store_debug_data::<A>(Some(Arc::new(hydrated)));
+            retyped.inner().store_debug_data(Some(hydrated));
         }
     }
 
     // this doesn't really make sense here
     // special case for internal errors
-    fn error_untyped(&self, untyped_handle: UntypedAssetHandle, error: AssetLoadError)
+    fn error_untyped(&self, untyped_handle: ErasedAssetHandle, error: AssetLoadError)
     {
         let retyped = unsafe { Ash::<A>::attach_from(untyped_handle) };
 
         #[cfg(feature = "asset_debug_data")]
-        retyped.inner().store_debug_data::<A>(None);
+        retyped.inner().store_debug_data(None);
 
-        retyped.store_data(AssetData::Unavailable(error));
+        retyped.store_data(Some(AssetData::Unavailable(error)));
     }
 
     fn display_name(&self) -> &str
@@ -215,7 +215,7 @@ pub(super) struct RegisteredAssetType
     #[allow(dead_code)]
     #[cfg(debug_assertions)] // use one of the features?
     pub type_name: &'static str,
-    pub dealloc_fn: fn(UntypedAssetHandle),
+    pub dealloc_fn: fn(ErasedAssetHandle),
 }
 
 #[derive(Default)]
@@ -279,9 +279,9 @@ pub type AssetPayload<'r> = Cursor<&'r [u8]>;
 pub(super) enum AssetLifecycleRequest
 {
     StopWorkers,
-    Drop(UntypedAssetHandle),
-    LoadFileBacked(UntypedAssetHandle), // loads the file pointed by the asset path
-    LoadFromMemory(UntypedAssetHandle, Box<[u8]>),
+    Drop(ErasedAssetHandle),
+    LoadFileBacked(ErasedAssetHandle), // loads the file pointed by the asset path
+    LoadFromMemory(ErasedAssetHandle, Box<[u8]>),
 }
 
 
