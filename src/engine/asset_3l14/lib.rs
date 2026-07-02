@@ -18,3 +18,6 @@ pub use asset_types::*;
 
 mod asset_meta;
 pub use asset_meta::*;
+
+mod asset_load_list;
+pub use asset_load_list::*;

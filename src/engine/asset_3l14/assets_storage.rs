@@ -18,7 +18,7 @@ use notify::{event::ModifyKind, EventKind, RecommendedWatcher, RecursiveMode};
 #[cfg(feature = "hot_reloading")]
 use notify_debouncer_full::{Debouncer, RecommendedCache};
 
-type AssetHandleBank = HashMap<AssetKey, ErasedAssetHandle>;
+type AssetHandleBank = HashMap<AssetKey, ErasedAsh>;
 
 pub enum AssetNotification
 {
@@ -55,13 +55,13 @@ impl Assets
               there is serialization provided by the mutex preventing use-after-free issues.
             */
 
-            ErasedAssetHandle::alloc::<A>(asset_key, self.lifecycle_channel.clone())
+            ErasedAsh::alloc::<A>(asset_key, self.lifecycle_channel.clone())
         });
 
         (pre_existing, unsafe { Ash::<A>::clone_from(handle) })
     }
 
-    fn drop_handle(&self, untyped_handle: ErasedAssetHandle)
+    fn drop_handle(&self, untyped_handle: ErasedAsh)
     {
         let mut handle_bank = self.handles.lock(); // must lock before below to make sure that the handle doesn't get cloned between the drop and below
 
@@ -92,7 +92,7 @@ impl Assets
     }
 
     #[must_use]
-    fn enqueue_load<A: Asset, F: FnOnce(ErasedAssetHandle) -> AssetLifecycleRequest>(
+    fn enqueue_load<A: Asset, F: FnOnce(ErasedAsh) -> AssetLifecycleRequest>(
         &self,
         asset_key: AssetKey,
         input_fn: F) -> Ash<A>
@@ -105,8 +105,6 @@ impl Assets
         {
             let request = input_fn(unsafe { asset_handle.clone().into_inner() });
 
-            // don't clear payload?
-            asset_handle.store_data(None);
             if pre_existed
             {
                 self.notification_channel.0.send(AssetNotification::Reload(asset_key)).unwrap(); // todo: error handling
@@ -754,7 +752,7 @@ mod tests
         tal.get_passthru_call_count()
     }
 
-    fn await_asset<A: Asset>(handle: &Ash<A>) -> OwnedAssetSnapshot<A>
+    fn await_asset<A: Asset>(handle: &Ash<A>) -> AssetSnapshot<A>
     {
         futures::executor::block_on(handle)
     }
@@ -772,7 +770,7 @@ mod tests
             let assets = Assets::new(AssetLifecyclers::default(), AssetsConfig::test());
 
             let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Box::new([]));
-            await_asset(&req);
+            let _ = await_asset(&req);
         }
 
         #[test]
@@ -818,7 +816,7 @@ mod tests
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
             let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Box::new([]));
-            req.visit(|a| assert!(matches!(a, AssetState::Pending)));
+            req.visit(|a| assert!(matches!(a, AssetSnapshot::Pending)));
 
             drop(await_asset(&req));
         }
@@ -841,7 +839,7 @@ mod tests
             assert_eq!(Some(0), get_passthru_call_count::<TestAssetLifecycler>(&assets));
 
             let _req1: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Box::new([]));
-            await_asset(&_req1);
+            let _ = await_asset(&_req1);
             assert_eq!(Some(1), get_passthru_call_count::<TestAssetLifecycler>(&assets));
 
             let _req2: Ash<TestAsset>;
@@ -851,7 +849,7 @@ mod tests
                 // TODO: this appears to be non-deterministic
                 assert_eq!(Some(1), get_passthru_call_count::<TestAssetLifecycler>(&assets));
             }
-            await_asset(&_req2);
+            let _ = await_asset(&_req2);
             assert_eq!(Some(2), get_passthru_call_count::<TestAssetLifecycler>(&assets));
         }
 

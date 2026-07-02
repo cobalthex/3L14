@@ -4,6 +4,7 @@ use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::fmt::{Debug, Write};
 use triomphe::Arc;
+use asset_3l14::AssetView;
 
 const MAX_VISIT_DEPTH: u32 = 100; // smaller number?
 
@@ -65,7 +66,7 @@ struct Visit
 
 pub struct Instance
 {
-    circuit: Arc<Circuit>,
+    circuit: AssetView<Circuit>,
     scope: LocalScope,
 
     hydrated_latches: HashMap<u32, HydratedLatch>, // array?
@@ -77,7 +78,7 @@ pub struct Instance
 impl Instance
 {
     #[inline] #[must_use]
-    pub fn new(circuit: Arc<Circuit>) -> Self
+    pub fn new(circuit: AssetView<Circuit>) -> Self
     {
         Self
         {

@@ -175,7 +175,7 @@ impl Renderer
 
         let debug_gui = egui::Context::default();
         let font_scale = 1.25;
-        debug_gui.style_mut(|s| s.text_styles.iter_mut().for_each(|(ts, fid)| { fid.size *= font_scale; }));
+        debug_gui.style_mut(|s| s.text_styles.iter_mut().for_each(|(_, fid)| { fid.size *= font_scale; }));
         debug_gui.set_visuals(Visuals
         {
             window_shadow: Shadow::NONE,
@@ -254,7 +254,7 @@ impl Renderer
             let mut surf_config = self.surface_config.write();
             surface_format = surf_config.format;
 
-            println!("Resizing renderer from {}x{} to {}x{}",
+            log::info!("Resizing from {}x{} to {}x{}",
                      surf_config.width, surf_config.height,
                      new_width, new_height);
 

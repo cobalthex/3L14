@@ -1,6 +1,4 @@
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
-use crate::builders::shader_builder::{ShaderCompilation, ShaderCompileFlag, ShaderBuilder};
-use crate::builders::texture_builder::TextureBuilder;
 use arrayvec::ArrayVec;
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use enumflags2::BitFlags;
@@ -14,14 +12,12 @@ use math_3l14::{DualQuat, Ratio, Sphere, AABB};
 use metrohash::MetroHash64;
 use nab_3l14::utils::alloc_slice::{alloc_slice_default, alloc_u8_slice};
 use nab_3l14::utils::as_u8_array;
-use nab_3l14::utils::inline_hash::InlineWriteHash;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
-use std::path::{Path, PathBuf};
 use unicase::UniCase;
 use graphics_3l14::material_classes::{MaterialClass, PbrProps};
 
@@ -272,11 +268,11 @@ impl ModelBuilder
             {
                 let tex_index = tex.texture().source().index();
                 let tex_data = &images[tex_index];
-            
+
                 let tex_asset = outputs.add_output(AssetTypeId::Texture, |mut tex_output|
                 {
                     tex.texture().name().map(|n| tex_output.set_name(n));
-            
+
                     let (pixel_format, need_conv) = match tex_data.format
                     {
                         Format::R8 => (TextureFilePixelFormat::R8, false),
@@ -290,7 +286,7 @@ impl ModelBuilder
                         Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
                         Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
                     };
-            
+
                     tex_output.serialize(&TextureFile
                     {
                         width: tex_data.width,
@@ -300,7 +296,7 @@ impl ModelBuilder
                         mip_offsets: Default::default(),
                         pixel_format,
                     })?;
-            
+
                     // TODO: texture compression
                     if need_conv
                     {
@@ -320,10 +316,10 @@ impl ModelBuilder
                     } else {
                         tex_output.write_all(&tex_data.pixels)?;
                     }
-            
+
                     Ok(())
                 })?;
-            
+
                 textures.try_push(tex_asset)?;
             }
 
@@ -346,6 +342,8 @@ impl ModelBuilder
                         roughness: pbr.roughness_factor(),
                     }),
                 })?;
+
+                // TODO: add shader dependencies
 
                 Ok(())
             })?;

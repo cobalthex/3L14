@@ -9,7 +9,7 @@ use enumflags2::BitFlags;
 use triomphe::Arc;
 use wgpu::util::make_spirv;
 use wgpu::{ShaderModuleDescriptor, ShaderModuleDescriptorPassthrough};
-use asset_3l14::{AssetKey, AssetKeySynthHash, AssetLifecycler, AssetLoadRequest, AssetTypeId};
+use asset_3l14::{AssetKeySynthHash, AssetLifecycler, AssetLoadRequest};
 use debug_3l14::debug_gui::DebugGui;
 use crate::material_classes::MaterialClass;
 use crate::vertex_layouts::VertexCaps;
@@ -45,6 +45,11 @@ pub enum EngineRenderPass // todo: better name to not clash with wgpu::RenderPas
     UI,
 }
 
+/* TODO:
+ * Are shaders one->many? (one source file generates several permutes)
+ * should model importer just hard code shaders?
+ */
+
 pub mod shader_key
 {
     use super::*;
@@ -67,7 +72,27 @@ pub mod shader_key
         AssetKeySynthHash(val as u64)
     }
 }
+pub mod shader_source
+{
+    use super::*;
+    use std::io::Write;
 
+    #[must_use]
+    pub fn vertex(output: &mut impl Write, layout: BitFlags<VertexCaps>, pass: EngineRenderPass)
+    {
+        for cap in layout
+        {
+            let _ = write!(output, "{cap:?}");
+        }
+        let _ = write!(output, ".{}.hlsl", ShaderStage::Vertex.prefix());
+    }
+
+    #[must_use]
+    pub fn pixel(output: &mut impl Write, class: MaterialClass, pass: EngineRenderPass) -> String
+    {
+        todo!()
+    }
+}
 
 #[derive(Encode, Decode, Debug)]
 pub struct ShaderFile

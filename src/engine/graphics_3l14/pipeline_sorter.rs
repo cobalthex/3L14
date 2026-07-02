@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use triomphe::Arc;
 use arrayvec::ArrayVec;
 use glam::Mat4;
+use asset_3l14::AssetView;
 use crate::assets::{Geometry, Material, Shader, Texture, MAX_MATERIAL_TEXTURE_BINDINGS};
 use crate::pipeline_cache::PipelineKey;
 
@@ -15,10 +16,10 @@ pub struct Draw
     pub transform_uniform_id: u32,
     pub poses_uniform_id: Option<u32>, // separate draw call?
     pub pipeline_hash: PipelineKey,
-    pub geometry: Arc<Geometry>,
+    pub geometry: AssetView<Geometry>,
     pub material: Option<(
-        Arc<Material>,
-        ArrayVec<Arc<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS>
+        AssetView<Material>,
+        ArrayVec<AssetView<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS>
     )>, 
 }
 // vertex textures?

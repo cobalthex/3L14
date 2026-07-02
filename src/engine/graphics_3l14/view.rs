@@ -6,7 +6,7 @@ use triomphe::Arc;
 use std::time::Duration;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, Extent3d, QueueWriteBufferView, RenderPass, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView};
 use wgpu::util::{DeviceExt, TextureDataOrder};
-use asset_3l14::Asset;
+use asset_3l14::{Asset, AssetData, AssetView};
 use math_3l14::{CanSee, DualQuat, Sphere, StaticGeoUniform};
 use nab_3l14::utils::array::init_array;
 use crate::assets::{Geometry, Model, EngineRenderPass};
@@ -143,7 +143,9 @@ impl<'f> View<'f>
     #[must_use]
     pub fn new(renderer: Arc<Renderer>, pipeline_cache: &'f PipelineCache) -> Self
     {
-        let used_uniforms = vec![pipeline_cache.uniforms.take_transforms()];
+        let used_uniforms = vec![
+            // pipeline_cache.uniforms.take_transforms(),
+        ];
         // let rc = renderer.clone();
         // let current_txfms_writer = CurrentUniformsWriter
         // {
@@ -231,11 +233,18 @@ impl<'f> View<'f>
             {
                 let mesh = &draw.geometry.meshes[draw.mesh_index as usize];
 
+                // todo: codify bind group indices into enum?
+
                 camera.bind(render_pass, 0, 0);
                 self.used_uniforms_pools[(draw.transform_uniform_id >> 8) as usize].bind(render_pass, 1, draw.transform_uniform_id as u8);
                 if let Some(poses_uniform_id) = draw.poses_uniform_id
                 {
                     self.used_uniforms_pools[(poses_uniform_id >> 8) as usize].bind(render_pass, 2, poses_uniform_id as u8);
+                }
+                else
+                {
+                    // data is unused/unread, so buffer index does not matter
+                    self.pipeline_cache.uniforms.take_poses().bind(render_pass, 2, 0);
                 }
 
                 if let Some(mtl) = draw.material
@@ -295,7 +304,7 @@ impl<'f> View<'f>
         self.camera_clip.can_see(geo_transform)
     }
 
-    fn draw_model_common(&mut self, model: Arc<Model>, world_transform: Mat4, poses_uniforms: Option<u32>) -> bool
+    fn draw_model_common(&mut self, model: AssetView<Model>, world_transform: Mat4, poses_uniforms: Option<u32>) -> bool
     {
         // this may be heavy-handed
         if !model.all_dependencies_loaded()
@@ -303,9 +312,8 @@ impl<'f> View<'f>
             return false;
         }
 
-        let geo_ptr = model.geometry.data_ptr();
-        let geo = geo_ptr.unwrap();
-        if !self.can_see(geo, world_transform) { return false; }
+        let geo = model.geometry.data().unwrap();
+        if !self.can_see(geo.as_ref(), world_transform) { return false; }
 
         // TODO: these should be per-mesh
         let rad = world_transform.x_axis.x.max(world_transform.y_axis.y.max(world_transform.z_axis.z));
@@ -338,8 +346,8 @@ impl<'f> View<'f>
 
         for mesh_index in 0..model.mesh_count
         {
-            let mtl = model.materials[mesh_index as usize].data_ptr().unwrap();
-            let textures = mtl.textures.iter().map(|t| t.data_ptr().unwrap()).collect();
+            let mtl = model.materials[mesh_index as usize].data().unwrap();
+            let textures = mtl.textures.iter().map(|t| t.data().unwrap()).collect();
 
             // TODO: this key needs to be generated based on pass, as shadows don't need mtls/debug mode
             let shadow_pipeline = self.pipeline_cache.get_or_create(
@@ -385,12 +393,12 @@ impl<'f> View<'f>
         true
     }
 
-    pub fn draw_model_static(&mut self, model: Arc<Model>, world_transform: Mat4) -> bool
+    pub fn draw_model_static(&mut self, model: AssetView<Model>, world_transform: Mat4) -> bool
     {
         self.draw_model_common(model, world_transform, None)
     }
 
-    pub fn draw_model_skinned(&mut self, model: Arc<Model>, world_transform: Mat4, poses: &[DualQuat]) -> bool
+    pub fn draw_model_skinned(&mut self, model: AssetView<Model>, world_transform: Mat4, poses: &[DualQuat]) -> bool
     {
         // TODO: this needs to pass vis-checks first
 

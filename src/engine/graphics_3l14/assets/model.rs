@@ -1,10 +1,8 @@
 use crate::assets::{Geometry, Material, Skeleton};
-use crate::Renderer;
 use asset_3l14::{Asset, Ash, AssetKey, AssetLifecycler, AssetLoadRequest, AssetTypeId};
 use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
 use std::error::Error;
-use triomphe::Arc;
 use proc_macros_3l14::LayoutHash;
 
 #[derive(LayoutHash, Encode, Decode)]
@@ -34,17 +32,7 @@ impl Asset for Model
     }
 }
 
-pub struct ModelLifecycler
-{
-    renderer: Arc<Renderer>,
-}
-impl ModelLifecycler
-{
-    pub fn new(renderer: Arc<Renderer>) -> Self
-    {
-        Self { renderer }
-    }
-}
+pub struct ModelLifecycler;
 impl AssetLifecycler for ModelLifecycler
 {
     type Asset = Model;

@@ -12,7 +12,7 @@ use dashmap::mapref::one::Ref;
 use triomphe::Arc;
 use enumflags2::BitFlags;
 use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
-use asset_3l14::{Ash, AssetKey, AssetData, AssetTypeId, Assets};
+use asset_3l14::{Ash, AssetKey, AssetData, AssetTypeId, Assets, AssetSnapshot, AssetView};
 use crate::assets::shader_key::pixel;
 use crate::material_classes::{MaterialClass, SimpleOpaque};
 use crate::vertex_layouts::{VertexCaps, VertexLayoutBuilder};
@@ -162,10 +162,14 @@ impl PipelineCache
                 material,
             } =>
             {
-                let AssetData::Available(vsh) = vertex_shader.data() else { return false; };
+                let AssetSnapshot::Available(vsh) = vertex_shader.data() else { return false; };
                 let mtl = material.as_ref().and_then(|(material_class, pixel_shader)|
                 {
-                    pixel_shader.data().map(|psh| (*material_class, psh))
+                    if let AssetSnapshot::Available(psh) = pixel_shader.data()
+                    { 
+                        Some((*material_class, psh)) 
+                    }
+                    else { None }
                 });
                 let debug_mode = DebugMode::None; // TODO
                 let pipeline = self.create_pipeline(*vertex_layout, vsh, mtl, debug_mode);
@@ -226,8 +230,8 @@ impl PipelineCache
     fn create_pipeline(
         &self,
         vertex_layout: BitFlags<VertexCaps>,
-        vertex_shader: Arc<Shader>,
-        material: Option<(MaterialClass, Arc<Shader>)>,
+        vertex_shader: AssetView<Shader>,
+        material: Option<(MaterialClass, AssetView<Shader>)>,
         debug_mode: DebugMode) -> RenderPipeline
     {
         // move up?
@@ -247,11 +251,14 @@ impl PipelineCache
             bind_group_layouts.push(layout.value());
         }
 
+        #[cfg(feature = "debug_gpu_labels")]
+        let layout_name = format!("({vertex_layout})+{:?} pipeline", material.as_ref().map(|m| m.0));
+
         // if there end up being a lot of pipelines created, it may be worth saving
         let pipeline_layout = self.renderer.device().create_pipeline_layout(&PipelineLayoutDescriptor
         {
             // TODO: add pass name + debug mode
-            label: debug_label!(&format!("({vertex_layout})+{:?} pipeline layout", material.as_ref().map(|m| m.0))),
+            label: debug_label!(&format!("{} layout", layout_name)),
             bind_group_layouts: &bind_group_layouts,
             push_constant_ranges: &[],
         });
@@ -279,7 +286,7 @@ impl PipelineCache
 
         let pipeline = self.renderer.device().create_render_pipeline(&RenderPipelineDescriptor
         {
-            label: debug_label!(&format!("[{vertex_layout}]+_TODO MATERIAL_ pipeline")),
+            label: debug_label!(&layout_name),
             layout: Some(&pipeline_layout),
             vertex: VertexState
             {

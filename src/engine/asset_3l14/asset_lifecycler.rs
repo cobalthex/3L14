@@ -118,13 +118,13 @@ pub(super) trait UntypedAssetLifecycler: Sync + Send
     fn load_untyped(
         &self,
         assets: &Assets,
-        untyped_handle: ErasedAssetHandle,
+        untyped_handle: ErasedAsh,
         input: AssetPayload,
         #[cfg(feature = "asset_debug_data")] maybe_debug_input: Option<AssetPayload>);
 
     fn error_untyped(
         &self,
-        untyped_handle: ErasedAssetHandle,
+        untyped_handle: ErasedAsh,
         error: AssetLoadError);
 
     fn display_name(&self) -> &str;
@@ -134,7 +134,7 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
     fn load_untyped(
         &self,
         assets: &Assets,
-        untyped_handle: ErasedAssetHandle,
+        untyped_handle: ErasedAsh,
         input: AssetPayload,
         #[cfg(feature = "asset_debug_data")] mut maybe_debug_input: Option<AssetPayload>)
     {
@@ -176,7 +176,7 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
 
     // this doesn't really make sense here
     // special case for internal errors
-    fn error_untyped(&self, untyped_handle: ErasedAssetHandle, error: AssetLoadError)
+    fn error_untyped(&self, untyped_handle: ErasedAsh, error: AssetLoadError)
     {
         let retyped = unsafe { Ash::<A>::attach_from(untyped_handle) };
 
@@ -215,7 +215,7 @@ pub(super) struct RegisteredAssetType
     #[allow(dead_code)]
     #[cfg(debug_assertions)] // use one of the features?
     pub type_name: &'static str,
-    pub dealloc_fn: fn(ErasedAssetHandle),
+    pub dealloc_fn: fn(ErasedAsh),
 }
 
 #[derive(Default)]
@@ -279,9 +279,9 @@ pub type AssetPayload<'r> = Cursor<&'r [u8]>;
 pub(super) enum AssetLifecycleRequest
 {
     StopWorkers,
-    Drop(ErasedAssetHandle),
-    LoadFileBacked(ErasedAssetHandle), // loads the file pointed by the asset path
-    LoadFromMemory(ErasedAssetHandle, Box<[u8]>),
+    Drop(ErasedAsh),
+    LoadFileBacked(ErasedAsh), // loads the file pointed by the asset path
+    LoadFromMemory(ErasedAsh, Box<[u8]>),
 }
 
 
