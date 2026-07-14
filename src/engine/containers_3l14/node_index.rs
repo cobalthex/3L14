@@ -11,6 +11,9 @@ impl NodeIndex
 
     #[inline] #[must_use] pub const fn is_none(self) -> bool { self.0 == Self::NONE }
     #[inline] #[must_use] pub const fn is_some(self) -> bool { self.0 != Self::NONE }
+
+    // Get the underlying value, or zero if none
+    #[inline] #[must_use] pub const fn unwrap_or_zero(self) -> usize { if self.is_some() { self.0 } else { 0 } }
 }
 impl Default for NodeIndex
 {
