@@ -1,19 +1,16 @@
 use bitcode::{Decode, Encode};
 
-#[derive(Copy, Clone, PartialEq, Eq, Encode, Decode)]
-pub struct NodeIndex(pub usize);
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Encode, Decode)]
+pub struct NodeIndex(pub u32);
 impl NodeIndex
 {
-    const NONE: usize = usize::MAX;
+    const NONE: u32 = u32::MAX;
 
     #[inline] #[must_use] pub const fn none() -> Self { Self(Self::NONE) }
-    #[inline] #[must_use] pub const fn some(n: usize) -> Self { Self(n) }
+    #[inline] #[must_use] pub const fn some(n: u32) -> Self { Self(n) }
 
     #[inline] #[must_use] pub const fn is_none(self) -> bool { self.0 == Self::NONE }
     #[inline] #[must_use] pub const fn is_some(self) -> bool { self.0 != Self::NONE }
-
-    // Get the underlying value, or zero if none
-    #[inline] #[must_use] pub const fn unwrap_or_zero(self) -> usize { if self.is_some() { self.0 } else { 0 } }
 }
 impl Default for NodeIndex
 {
@@ -31,6 +28,6 @@ mod tests
         assert!(NodeIndex::none().is_none());
         assert!(NodeIndex::some(0).is_some());
         assert!(NodeIndex::some(1).is_some());
-        assert!(NodeIndex::some(usize::MAX - 1).is_some());
+        assert!(NodeIndex::some(u32::MAX - 1).is_some());
     }
 }

@@ -33,7 +33,7 @@ impl AABB
         return 2.0 * (size.x * size.y + size.y * size.z + size.z * size.x);
     }
 
-    #[inline] #[must_use] pub fn center(self) -> Vec3 { (self.min + self.max) / 2.0 }
+    #[inline] #[must_use] pub fn centroid(self) -> Vec3 { (self.min + self.max) / 2.0 }
 
     #[inline] #[must_use]
     pub fn max_axis(self) -> f32
@@ -102,7 +102,7 @@ mod tests
     {
         let aabb = AABB::default();
         assert_eq!(aabb.size(), Vec3::ZERO);
-        assert_eq!(aabb.center(), Vec3::ZERO);
+        assert_eq!(aabb.centroid(), Vec3::ZERO);
         assert_eq!(aabb.volume(), 0.0);
         assert_eq!(aabb.surface_area(), 0.0);
     }
@@ -112,7 +112,7 @@ mod tests
     {
         let aabb = AABB::new(Vec3::splat(-2.0), Vec3::splat(2.0));
         assert_eq!(aabb.size(), Vec3::splat(4.0));
-        assert_eq!(aabb.center(), Vec3::ZERO);
+        assert_eq!(aabb.centroid(), Vec3::ZERO);
         assert_eq!(aabb.volume(), 4.0f32.powi(3));
         assert_eq!(aabb.surface_area(), 4.0 * 4.0 * 6.0);
     }
