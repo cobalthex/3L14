@@ -49,6 +49,7 @@ pub struct SourceMetadata
     pub version_hash: VersionHash,
     // is_dependent? (don't self build, omit source_id)
     pub build_config: toml::Value, // default to empty table?
+    pub notes: Option<String>, // author/user provided notes
 }
 impl TomlRead for SourceMetadata { }
 impl TomlWrite for SourceMetadata { }

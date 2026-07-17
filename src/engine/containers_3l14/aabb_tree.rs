@@ -2,7 +2,6 @@ use bitcode::{Decode, Encode};
 use math_3l14::AABB;
 use nab_3l14::debug_panic;
 use std::fmt::{Debug, Formatter};
-use std::mem::forget;
 use smallvec::{smallvec, SmallVec};
 use crate::NodeIndex;
 
@@ -103,7 +102,7 @@ impl<T> AabbTree<T>
             self.root_index = new_parent_index;
         }
 
-        let should_rotate = false; // TODO
+        let should_rotate = true;
         self.refit_parents(self.node(leaf_index).parent_index, should_rotate);
     }
 
@@ -152,7 +151,6 @@ impl<T> AabbTree<T>
 
         if gparent_index.is_some()
         {
-            println!("removed {:?}", &parent.bounds);
             let gparent = &mut self.node_mut(gparent_index);
             // destroy parent and replace w/ leaf sibling
             if gparent.left_child_index == parent_index
@@ -167,7 +165,8 @@ impl<T> AabbTree<T>
             self.node_mut(sibling_index).parent_index = gparent_index;
             self.free_node(parent_index);
 
-            self.refit_parents(gparent_index, false);
+            let should_rotate = true;
+            self.refit_parents(gparent_index, should_rotate);
         }
         else
         {
@@ -577,6 +576,7 @@ impl<T> AabbTree<T>
         }
 
         self.nodes = nodes; // in place sort?
+        self.root_index = NodeIndex::some(0);
         self.values.shrink_to_fit(); // necessary if this is being used before serializing?
     }
 
