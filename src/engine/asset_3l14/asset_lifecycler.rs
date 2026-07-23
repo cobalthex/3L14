@@ -7,7 +7,6 @@ use std::io::{Cursor, Seek, SeekFrom};
 use enumflags2::{bitflags, BitFlags};
 use debug_3l14::debug_gui::DebugGui;
 use nab_3l14::utils::{varint, ShortTypeName};
-use triomphe::Arc;
 
 pub struct AssetLoadRequest<'r>
 {

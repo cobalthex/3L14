@@ -133,8 +133,8 @@ fn main() -> ExitReason
         // let min_frame_time = Duration::from_secs_f32(1.0 / 150.0); // todo: this should be based on display refresh-rate
 
         let model_key = AssetKey::from(0x00a00000e3fb55e4);
-        let base_anim_key = AssetKey::from(0x00b00000e3fb55e4);
-        let overlay_anim_key = AssetKey::from(0x00b00010e3fb55e4);
+        let base_anim_key = AssetKey::from(0x00c00000e3fb55e4);
+        let overlay_anim_key = AssetKey::from(0x00c00010e3fb55e4);
 
         let plane_model_key = AssetKey::from(0x00a000005cc338e8);
 

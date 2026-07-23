@@ -1,20 +1,19 @@
 use super::*;
+use std::hint::unreachable_unchecked;
 use crossbeam::channel::Sender;
 use parking_lot::Mutex;
 use std::alloc::Layout;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::future::Future;
-use std::hint::unreachable_unchecked;
 use std::marker::PhantomData;
 use std::mem::swap;
 use std::ops::Deref;
 use std::pin::Pin;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::task::{Context, Poll, Waker};
-use arc_swap::{ArcSwap, Guard};
-use futures::FutureExt;
+use arc_swap::Guard;
 use triomphe::Arc;
 
 // There is a lot of shenaigans in here to safely do type-erasure
@@ -57,8 +56,7 @@ pub struct AssetView<A: Asset>
 }
 impl<A: Asset> AssetView<A>
 {
-    #[cfg(test)]
-    pub fn new(asset: A) -> Self
+    pub fn new_for_testing(asset: A) -> Self
     {
         let arc = Arc::new(AssetData::Available(asset));
         let ptr = if let AssetData::Available(a) = &*arc { NonNull::from_ref(a) } else { unsafe { unreachable_unchecked() } };
@@ -160,7 +158,7 @@ impl AshInnerHeader
         #[cfg(feature = "debug_asset_lifetimes")]
         log::debug!("{:?} dropping", self.key());
 
-        let erased = ErasedAsh(unsafe { self as *const _ as *const () }); // this is only safe as header is the first member, and AshInner is repr(C)
+        let erased = ErasedAsh(self as *const _ as *const ()); // this is only safe as header is the first member, and AshInner is repr(C)
         self.dropper.send(AssetLifecycleRequest::Drop(erased))
             .expect("Failed to drop asset as the drop channel already closed"); // todo: error handling (can just drop it here?)
     }
@@ -379,7 +377,7 @@ impl<A: Asset> Ash<A>
         let guard = self.inner().data.load();
         guard.as_ref().map_or(false, |d| match &**d
         {
-            AssetData::Unavailable(err) => false,
+            AssetData::Unavailable(_) => false,
             AssetData::Available(asset) => asset.all_dependencies_loaded(),
         })
     }

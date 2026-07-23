@@ -2,23 +2,7 @@ use std::error::Error;
 use glam::{Quat, Vec3};
 use serde::{Deserialize, Serialize};
 use asset_3l14::AssetKey;
-use world_3l14::{Scene, SceneFile};
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
-
-#[derive(Serialize, Deserialize)]
-pub struct StaticPlacement
-{
-    model: AssetKey,
-    position: Vec3,
-    orientation: Quat,
-    scale: Vec3,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SceneDescFile
-{
-    static_placements: Box<[StaticPlacement]>,
-}
 
 pub struct SceneBuilder;
 impl AssetBuilder for SceneBuilder

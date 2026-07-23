@@ -250,7 +250,7 @@ mod tests
             num_local_vars: 0,
         };
 
-        Runtime::spawn(&Runtime::new(), Arc::new(circuit), None);
+        Runtime::spawn(&Runtime::new(), AssetView::new_for_testing(circuit), None);
     }
 }
 

@@ -1,33 +1,37 @@
 use proc_macros_3l14::FancyEnum;
 
-// All the supported asset types
+// All the supported (runtime) asset types
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, FancyEnum)]
 #[repr(u16)]
 pub enum AssetTypeId
 {
-    Invalid = 0,
+    Invalid = 0x0,
 
     #[cfg(test)]
-    Test1 = 1,
+    Test1 = 0x1,
     #[cfg(test)]
-    Test2 = 2,
+    Test2 = 0x2,
 
-    Untyped = 3, // non-descript, untyped data
+    Untyped = 0x3, // non-descript, untyped data
 
-    Geometry = 4,
-    Skeleton = 5,
-    Texture = 6,
-    TextureMips = 7,
-    Material = 8,
-    Shader = 9,
-    Model = 10,
-    SkeletalAnimation = 11,
+    Geometry = 0x4,
+    Skeleton = 0x5,
+    Texture = 0x6,
+    TextureMips = 0x7,
+    Material = 0x8,
+    Shader = 0x9,
+    Model = 0xa,
+    Look = 0xb,
+    SkeletalAnimation = 0xc,
 
-    Scene = 12,
+    Circuit = 0xd,
 
-    Circuit = 13,
+    Scene = 0xe,
+    SceneChunk = 0xf,
 
     // ComputePipeline
 
     // Surface -- physics
 }
+
+// assert asset type max value < ASSET_TYPE_BITS * 8

@@ -18,7 +18,7 @@ publish = false
 
 [workspace]
 resolver = "2"
-members = ["./src/engine/*", "src/exe/*", "src/build"]
+members = ["./src/engine/*", "src/exe/*", "src/tooling/*", "src/build"]
 
 [dependencies]
 
@@ -36,6 +36,8 @@ latch_3l14 = { path = "./src/engine/latch_3l14" }
 math_3l14 = { path = "./src/engine/math_3l14" }
 nab_3l14 = { path = "./src/engine/nab_3l14" }
 world_3l14 = { path = "./src/engine/world_3l14" }
+
+scene_design_3l14 = { path = "./src/tooling/scene_design_3l14" }
 
 #egui_wgpu_backend = "0.33.0"
 #puffin = "0.19.1"

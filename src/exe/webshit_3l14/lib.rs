@@ -139,7 +139,7 @@ impl App
     #[must_use]
     pub fn new() -> Self
     {
-        let circuit = Arc::new(Circuit
+        let circuit = AssetView::new_for_testing(Circuit
         {
             auto_entries: Box::new([BlockId::latch(0)]),
             signaled_entries: Box::new([

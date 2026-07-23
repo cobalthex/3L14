@@ -175,7 +175,8 @@ impl AssetsBuilder
                 {
                     source_id: meta.source_id,
                     version_hash: builder.version_hash,
-                    build_config: builder.builder.default_config()
+                    build_config: builder.builder.default_config(),
+                    notes: None,
                 }
             },
             Err(err) if err.kind() == ErrorKind::NotFound =>
@@ -186,6 +187,7 @@ impl AssetsBuilder
                     source_id,
                     version_hash: builder.version_hash,
                     build_config: builder.builder.default_config(),
+                    notes: None,
                 }
             },
             Err(err) =>
@@ -245,6 +247,7 @@ impl AssetsBuilder
                     source_id,
                     version_hash: builder.version_hash,
                     build_config: builder.builder.default_config(),
+                    notes: None,
                 };
 
                 {

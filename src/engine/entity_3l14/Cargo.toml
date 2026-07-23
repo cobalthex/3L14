@@ -1,0 +1,12 @@
+[package]
+name = "entity_3l14"
+description = "Base entity/ecs code"
+workspace = "../../.."
+edition.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+proc_macros_3l14.workspace = true
+nab_3l14.workspace = true

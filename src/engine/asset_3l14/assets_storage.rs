@@ -760,7 +760,8 @@ mod tests
     mod load
     {
         use super::*;
-        use std::{io::Cursor, time::Duration};
+        use std::time::Duration;
+        use std::assert_matches;
         // TODO: disable threading and add 'loop_once' function for worker
 
         #[test]
@@ -783,7 +784,7 @@ mod tests
             let req: Ash<TestAsset> = assets.load::<TestAsset>(TEST_ASSET_1);
             match await_asset(&req)
             {
-                AssetData::Unavailable(AssetLoadError::Fetch) => {},
+                AssetSnapshot::Unavailable(AssetLoadError::Fetch) => {},
                 other => panic!("Invalid load result: {other:#?}"),
             }
         }
@@ -801,9 +802,9 @@ mod tests
             }));
 
             let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Box::new([]));
-            match await_asset(&req).snapshot()
+            match await_asset(&req)
             {
-                AssetData::Unavailable(AssetLoadError::Parse) => {},
+                AssetSnapshot::Unavailable(AssetLoadError::Parse) => {},
                 other => panic!("Asset not unavailable(Test): {other:#?}"),
             }
         }
@@ -816,7 +817,7 @@ mod tests
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
             let req: Ash<TestAsset> = assets.load_from::<TestAsset>(TEST_ASSET_1, Box::new([]));
-            req.visit(|a| assert!(matches!(a, AssetSnapshot::Pending)));
+            assert_matches!(req.data(), AssetSnapshot::Pending);
 
             drop(await_asset(&req));
         }
@@ -877,7 +878,7 @@ mod tests
             let req2: Ash<NestedAsset> = assets.load_from::<NestedAsset>(TEST_ASSET_2, Box::new([]));
             match await_asset(&req2)
             {
-                AssetData::Available(a) => assert_eq!(a.id, 123),
+                AssetSnapshot::Available(a) => assert_eq!(a.id, 123),
                 other => panic!("Asset not available: {other:?}"),
             }
             assert!(req2.is_loaded_recursive());
@@ -903,7 +904,7 @@ mod tests
             let req = assets.load_from::<TestAsset>(TEST_ASSET_1, loaded_asset_payload);
             match await_asset(&req)
             {
-                AssetData::Available(a) => assert_eq!(a.value, test_value),
+                AssetSnapshot::Available(a) => assert_eq!(a.value, test_value),
                 _ => panic!("Asset not available"),
             }
         }
@@ -929,7 +930,7 @@ mod tests
             let mut req = assets.load_from::<TestAsset>(TEST_ASSET_1, input_bytes);
             match await_asset(&req)
             {
-                AssetData::Available(a) => assert_eq!(a.value, first_val),
+                AssetSnapshot::Available(a) => assert_eq!(a.value, first_val),
                 _ => panic!("Asset not available"),
             }
 
@@ -938,7 +939,7 @@ mod tests
             std::thread::sleep(Duration::from_millis(10)); // TODO: HACK
             match await_asset(&req)
             {
-                AssetData::Available(a) => assert_eq!(a.value, second_val),
+                AssetSnapshot::Available(a) => assert_eq!(a.value, second_val),
                 _ => panic!("Asset not available"),
             }
         }
