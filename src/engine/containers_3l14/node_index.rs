@@ -5,6 +5,7 @@ pub struct NodeIndex(pub u32);
 impl NodeIndex
 {
     const NONE: u32 = u32::MAX;
+    pub const MAX: u32 = u32::MAX - 1;
 
     #[inline] #[must_use] pub const fn none() -> Self { Self(Self::NONE) }
     #[inline] #[must_use] pub const fn some(n: u32) -> Self { Self(n) }
