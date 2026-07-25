@@ -1,8 +1,7 @@
 use std::error::Error;
-use glam::{Quat, Vec3};
 use serde::{Deserialize, Serialize};
-use asset_3l14::AssetKey;
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
+use world_3l14::SceneFile;
 
 pub struct SceneBuilder;
 impl AssetBuilder for SceneBuilder

@@ -86,10 +86,8 @@ toml = { version = "0.9.8", features = ["parse"] }
 triomphe = { version = "0.1.15", features = ["arc-swap"] }
 unicase = "2.9.0"
 walkdir = "2.5.0"
-windows = { version = "0.62.2", features = ["Win32_Storage_FileSystem"] }
 wgpu = { version = "27.0.1", features = ["spirv"] }
-
-# workspace dev-dependencies
+windows = { version = "0.62.2", features = ["Win32_Storage_FileSystem"] }
 
 # workspace build-dependencies
 symlink = "0.1.0"

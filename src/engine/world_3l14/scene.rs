@@ -22,12 +22,14 @@ pub enum Light
 
 struct Statics
 {
+    hierarchy: AabbTree,
     geo: Box<[Ash<Model>]>,
     lights: Box<[Light]>,
 }
 #[derive(Encode, Decode)]
 struct StaticsFile
 {
+    hierarchy: AabbTree,
     geo: Box<[AssetKey]>,
     lights: Box<[Light]>,
 }
@@ -35,12 +37,12 @@ struct StaticsFile
 #[asset]
 pub struct Scene
 {
-    statics: AabbTree<Statics>,
+    statics: Statics,
 }
 #[derive(LayoutHash, Encode, Decode)]
 pub struct SceneFile
 {
-    statics: AabbTree<StaticsFile>,
+    statics: StaticsFile,
 }
 
 pub struct SceneLifecycler
@@ -57,11 +59,12 @@ impl AssetLifecycler for SceneLifecycler
 
         let scene = Scene
         {
-            statics: input.statics.map(|st| Statics
+            statics: Statics
             {
-                geo: st.geo.iter().map(|asset_key| request.load_dependency(*asset_key)).collect(),
-                lights: st.lights,
-            }),
+                hierarchy: input.statics.hierarchy,
+                geo: input.statics.geo.iter().map(|asset_key| request.load_dependency(*asset_key)).collect(),
+                lights: input.statics.lights,
+            },
         };
         Ok(scene)
     }
