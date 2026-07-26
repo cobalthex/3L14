@@ -15,7 +15,7 @@ pub enum AssetFileType // TODO: better name?
     DebugData,
 }
 
-pub trait Asset: Send + 'static
+pub trait Asset: Send + Sync + 'static
 {
     type DebugData: Encode + DecodeOwned;
 

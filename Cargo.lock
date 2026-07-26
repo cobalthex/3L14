@@ -3518,6 +3518,7 @@ dependencies = [
 name = "webshit_3l14"
 version = "0.0.0"
 dependencies = [
+ "asset_3l14",
  "bitcode",
  "console_error_panic_hook",
  "console_log",

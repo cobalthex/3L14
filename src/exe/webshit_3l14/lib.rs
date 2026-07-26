@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use triomphe::Arc;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::wasm_bindgen;
+use asset_3l14::{AssetView};
 use latch_3l14::{BlockId, BlockVisitor, Circuit, ImpulseBlock, Inlet, InstRunId, LatchActions, LatchBlock, LatchingOutlet, Plug, PulsedOutlet, Runtime, Scope, SharedScope, VarId, VarScope, VarValue};
 use latch_3l14::impulses::{DebugLog, NoOp, SetVars};
 use latch_3l14::latches::{ConditionLatch, Latch};
@@ -22,7 +23,7 @@ pub fn run_app() -> App
 
 static S_LOG: Mutex<String> = Mutex::new(String::new());
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Encode, Decode, Deserialize)]
 enum LogType
 {
     String(String),
@@ -71,13 +72,13 @@ impl ImpulseBlock for LogPrint
     }
 }
 
-fn defer<TFn: Fn() + Send + 'static>(duration: Duration, f: TFn)
+fn defer<TFn: FnMut() + 'static>(duration: Duration, f: TFn)
 {
     #[wasm_bindgen]
     extern "C"
     {
         #[wasm_bindgen(js_name = setTimeout)]
-        fn set_timeout(closure: &Closure<dyn Fn()>, time: u32) -> i32;
+        fn set_timeout(closure: &Closure<dyn FnMut()>, time: u32) -> i32;
     }
 
     let id = Box::new(0);

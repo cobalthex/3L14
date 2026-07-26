@@ -9,6 +9,7 @@ path = "lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
+asset_3l14.workspace = true
 latch_3l14 = { workspace = true, features = ["action_history"] }
 nab_3l14.workspace = true
 proc_macros_3l14.workspace = true

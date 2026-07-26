@@ -50,7 +50,7 @@ impl Debug for BlockId
     }
 }
 
-pub trait Block: Debug + Send
+pub trait Block: Debug + Send + Sync
 {
 }
 
