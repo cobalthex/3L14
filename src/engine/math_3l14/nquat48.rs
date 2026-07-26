@@ -176,7 +176,7 @@ mod tests
     fn not_normalized()
     {
         let q = Quat::from_xyzw(10.0, 10.0, 10.0, 10.0);
-        let q48 =  NQuat48::from(q);
+        let _q48 =  NQuat48::from(q);
     }
 
     #[test]
@@ -185,7 +185,7 @@ mod tests
     fn zero()
     {
         let q = Quat::from_xyzw(0.0, 0.0, 0.0, 0.0);
-        let q48 =  NQuat48::from(q);
+        let _q48 =  NQuat48::from(q);
     }
 
     #[test]

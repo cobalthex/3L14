@@ -191,6 +191,9 @@ impl<A: Asset> AshInner<A>
         log::debug!("{:?} storing new payload", self.key());
 
         self.data.store(new_data.map(|d| Arc::new(d)));
+
+        let mut waker_guard = self.header.ready_waker.lock();
+        waker_guard.take().map(|waker| waker.wake());
     }
 
     #[cfg(feature = "asset_debug_data")]
