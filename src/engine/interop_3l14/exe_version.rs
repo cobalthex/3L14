@@ -1,7 +1,4 @@
-use std::{error::Error, ffi::OsStr, fmt::{Debug, Display, Formatter}, os::windows::ffi::OsStrExt};
-
-use nab_3l14::utils::alloc_slice::alloc_slice_uninit;
-use windows::{Win32::{Foundation::{ERROR_FILE_NOT_FOUND, ERROR_RESOURCE_DATA_NOT_FOUND, GetLastError}, Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VS_FIXEDFILEINFO, VerQueryValueW}}, core::PCWSTR};
+use std::{error::Error, ffi::OsStr, fmt::{Debug, Display, Formatter}};
 
 #[derive(Default)]
 pub struct Version
@@ -27,6 +24,7 @@ impl Version
 #[derive(Debug)]
 pub enum GetVersionError
 {
+    NotWindows,
     FileNotFound,
     NoVersionInfo,
     Win32Error(u32),
@@ -37,17 +35,23 @@ impl Display for GetVersionError
 }
 impl Error for GetVersionError {}
 
-fn to_widestr(s: &OsStr) -> Box<[u16]>
-{
-    s.encode_wide().chain(Some(0)).collect()
-}
-
+#[cfg(not(target_os = "windows"))]
 pub fn get_exe_version(bin_path: impl AsRef<OsStr>) -> Result<Version, GetVersionError>
 {
-    let wide = to_widestr(bin_path.as_ref());
+    Err(GetVersionError::NotWindows)
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_exe_version(bin_path: impl AsRef<OsStr>) -> Result<Version, GetVersionError>
+{
+    use std::os::windows::ffi::OsStrExt;
+    use windows::{Win32::{Foundation::{ERROR_FILE_NOT_FOUND, ERROR_RESOURCE_DATA_NOT_FOUND, GetLastError}, Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VS_FIXEDFILEINFO, VerQueryValueW}}, core::PCWSTR};
+    use nab_3l14::utils::alloc_slice::alloc_slice_uninit;
+
+    let bin_path_wide = bin_path.encode_wide().chain(Some(0)).collect()();
 
     let mut handle = 0u32;
-    let size = unsafe { GetFileVersionInfoSizeW(PCWSTR(wide.as_ptr()), Some(&mut handle)) };
+    let size = unsafe { GetFileVersionInfoSizeW(PCWSTR(bin_path_wide.as_ptr()), Some(&mut handle)) };
     if size == 0
     {
         return match unsafe { GetLastError() }
@@ -63,10 +67,10 @@ pub fn get_exe_version(bin_path: impl AsRef<OsStr>) -> Result<Version, GetVersio
     {
         let mut buffer = alloc_slice_uninit(size as usize);
         if let Err(e) = GetFileVersionInfoW(
-                PCWSTR(wide.as_ptr()),
-                None,
-                size,
-                buffer.as_mut_ptr() as *mut _)
+            PCWSTR(bin_path_wide.as_ptr()),
+            None,
+            size,
+            buffer.as_mut_ptr() as *mut _)
         {
             return Err(GetVersionError::Win32Error(e.code().0 as u32));
         }

@@ -12,5 +12,5 @@ proc_macros_3l14.workspace = true
 
 nab_3l14.workspace = true
 
-[target.'cfg(windows)'.dependencies]
+[target.'cfg(target_os="windows")'.dependencies]
 windows.workspace = true
