@@ -72,13 +72,13 @@ impl ImpulseBlock for LogPrint
     }
 }
 
-fn defer<TFn: FnMut() + 'static>(duration: Duration, f: TFn)
+fn defer<TFn: Fn() + Send + 'static>(duration: Duration, f: TFn)
 {
     #[wasm_bindgen]
     extern "C"
     {
         #[wasm_bindgen(js_name = setTimeout)]
-        fn set_timeout(closure: &Closure<dyn FnMut()>, time: u32) -> i32;
+        fn set_timeout(closure: &Closure<dyn Fn()>, time: u32) -> i32;
     }
 
     let id = Box::new(0);

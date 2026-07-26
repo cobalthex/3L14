@@ -951,7 +951,7 @@ mod traversal_tests
             num_local_vars: 0,
         };
 
-        let mut instance = Instance::new(Arc::new_for_testing(circuit));
+        let mut instance = Instance::new(AssetView::new_for_testing(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
 
@@ -1008,7 +1008,7 @@ mod traversal_tests
             num_local_vars: 0,
         };
 
-        let mut instance = Instance::new(Arc::new_for_testing(circuit));
+        let mut instance = Instance::new(AssetView::new_for_testing(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
 
@@ -1077,7 +1077,7 @@ mod traversal_tests
             num_local_vars: 0,
         };
 
-        let mut instance = Instance::new(Arc::new_for_testing(circuit));
+        let mut instance = Instance::new(AssetView::new_for_testing(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
 
@@ -1175,7 +1175,7 @@ mod traversal_tests
             num_local_vars: 0,
         };
 
-        let mut instance = Instance::new(Arc::new_for_testing(circuit));
+        let mut instance = Instance::new(AssetView::new_for_testing(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
 
@@ -1254,7 +1254,7 @@ mod traversal_tests
             num_local_vars: 0,
         };
 
-        let mut instance = Instance::new(Arc::new_for_testing(circuit));
+        let mut instance = Instance::new(AssetView::new_for_testing(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
         instance.power_on(run_cxt.clone());
@@ -1363,7 +1363,7 @@ mod var_tests
             num_local_vars: 1,
         };
 
-        let mut instance = Instance::new(Arc::new_for_testing(circuit));
+        let mut instance = Instance::new(AssetView::new_for_testing(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
 
@@ -1423,7 +1423,7 @@ mod var_tests
             num_local_vars: 1,
         };
 
-        let mut instance = Instance::new(Arc::new_for_testing(circuit));
+        let mut instance = Instance::new(AssetView::new_for_testing(circuit));
         let shared_scope = SharedScope::default();
         let run_cxt = gen_run_cxt(&shared_scope);
 

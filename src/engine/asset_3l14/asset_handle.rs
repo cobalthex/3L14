@@ -67,6 +67,9 @@ impl<A: Asset> AssetView<A>
         }
     }
 }
+// required b/c NonNull is not Send/Sync
+unsafe impl<A: Asset> Send for AssetView<A> { }
+unsafe impl<A: Asset> Sync for AssetView<A> { }
 impl<A: Asset> Deref for AssetView<A>
 {
     type Target = A;
