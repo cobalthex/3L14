@@ -15,8 +15,11 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Setup SDL
       id: setup_sdl
@@ -28,8 +31,10 @@ jobs:
       uses: Swatinem/rust-cache@v2
       with:
         save-if: "${{ github.ref == 'refs/heads/main' }}"
+        cache-on-failure: true
 
     - name: Build and test 3L14
       id: build_test_3l14
+      timeout-minutes: 120
       run: |
         cargo test --verbose --release --all
