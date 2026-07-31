@@ -1,4 +1,5 @@
 use std::time::Instant;
+use egui::TouchPhase;
 use glam::IVec2;
 use sdl2::event::Event;
 use sdl2::keyboard::Mod;
@@ -207,6 +208,7 @@ impl Input
             },
             unit: egui::MouseWheelUnit::Point,
             modifiers: ri.modifiers,
+            phase: TouchPhase::Move,
         });
 
         for i in 0..self.mouse.buttons.len()

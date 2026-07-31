@@ -1,6 +1,6 @@
 use bitcode::{Decode, Encode};
 use glam::Vec3;
-use crate::{Intersection, Intersects, Sphere};
+use crate::{Intersection, Intersects, Ray, Sphere};
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Encode, Decode)]
 pub struct AABB
@@ -90,6 +90,17 @@ impl Intersects<AABB> for AABB
         todo!()
     }
 }
+impl Intersects<Sphere> for AABB
+{
+    fn get_intersection(&self, other: Sphere) -> Intersection
+    {
+        let mut min_t = f32::INFINITY;
+        let mut max_t = f32::NEG_INFINITY;
+        todo!()
+    }
+}
+// TODO: raycast
+
 // todo: proper shapes library?
 
 #[cfg(test)]

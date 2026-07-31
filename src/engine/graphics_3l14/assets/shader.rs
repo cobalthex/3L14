@@ -135,7 +135,7 @@ impl AssetLifecycler for ShaderLifecycler
 
         let module = match
             cfg!(feature = "load_shaders_directly") &&
-            self.renderer.supports_feature(wgpu::Features::EXPERIMENTAL_PASSTHROUGH_SHADERS)
+            self.renderer.supports_feature(wgpu::Features::PASSTHROUGH_SHADERS)
         {
             true => unsafe
             {
@@ -143,7 +143,6 @@ impl AssetLifecycler for ShaderLifecycler
                 self.renderer.device().create_shader_module_passthrough(ShaderModuleDescriptorPassthrough
                 {
                     label: debug_label!(&format!("{:?} ({:?})", request.asset_key, shader_file.stage)),
-                    runtime_checks: Default::default(),
                     spirv: Some(Cow::Borrowed(std::mem::transmute(shader_file.module_bytes.as_ref()))),
                     .. Default::default()
                 })

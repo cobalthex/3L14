@@ -145,7 +145,7 @@ impl AshInnerHeader
     pub fn ref_count(&self) -> isize { self.ref_count.load(Ordering::Acquire) }
 
     // This is a bit hacky, but allows for fully type erased drops
-    pub fn enqueue_drop(&self)
+    pub fn decrement_ref(&self)
     {
         let old_refs = self.ref_count.fetch_sub(1, Ordering::Release);
 
@@ -424,7 +424,7 @@ impl<A: Asset> Drop for Ash<A>
 {
     fn drop(&mut self)
     {
-        self.inner().header.enqueue_drop();
+        self.inner().header.decrement_ref();
     }
 }
 impl<'a, A: Asset> Future for &'a Ash<A> // non-reffing requires being able to consume an Arc

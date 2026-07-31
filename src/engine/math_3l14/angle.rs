@@ -3,9 +3,10 @@ use std::ops::{Neg, Rem};
 
 use bitcode::{Decode, Encode};
 use glam::FloatExt;
+use serde::{Deserialize, Serialize};
 
 // Angle, stored as radians internally
-#[derive(Debug, Default, Copy, Clone, PartialEq, PartialOrd, Encode, Decode)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, PartialOrd, Encode, Decode, Serialize, Deserialize)]
 pub struct Angle(f32);
 impl Angle
 {

@@ -9,7 +9,7 @@ path = "proc_macros.rs"
 proc-macro = true
 
 [dependencies]
-syn = { version =  "2.0.109", features = ["extra-traits"] } # TODO: switch to unsynn? ; extra-traits only for debugging
-quote = "1.0.42"
-proc-macro2 = "1.0.103"
+syn = { version =  "3.0.3", features = ["extra-traits"] } # TODO: switch to unsynn? ; extra-traits only for debugging
+quote = "1.0.47"
+proc-macro2 = "1.0.107"
 metrohash.workspace = true

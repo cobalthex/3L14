@@ -19,3 +19,4 @@ proc_macros_3l14.workspace = true
 bitcode.workspace = true
 egui.workspace = true
 glam.workspace = true
+serde = { version = "1.0.228", features = ["derive"] }

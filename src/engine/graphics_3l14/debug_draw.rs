@@ -99,7 +99,7 @@ impl DebugDraw
                     write_mask: ColorWrites::ALL,
                 })],
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         let lines_geo = DynamicGeo::new(renderer, &lines_pipeline.get_bind_group_layout(0));
@@ -145,7 +145,7 @@ impl DebugDraw
                     write_mask: ColorWrites::ALL,
                 })],
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         let solids_geo = DynamicGeo::new(renderer, &solids_pipeline.get_bind_group_layout(0));

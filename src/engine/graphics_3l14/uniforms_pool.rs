@@ -5,7 +5,7 @@ use egui::Ui;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BufferAddress, BufferBindingType, BufferDescriptor, BufferSize, BufferUsages, QueueWriteBufferView, RenderPass, ShaderStages};
 use containers_3l14::{ReusePool, ObjectPoolEntryGuard};
 use math_3l14::{DualQuat, StaticGeoUniform};
-use nab_3l14::utils::ShortTypeName;
+use nab_3l14::utils::{AsU8Slice, ShortTypeName};
 use crate::assets::MAX_SKINNED_BONES;
 use crate::camera::CameraUniform;
 
@@ -217,13 +217,7 @@ impl BufferWrite for QueueWriteBufferView
     #[inline]
     fn write_slice<T>(&mut self, index: usize, slice: &[T])
     {
-        unsafe
-        {
-            let num_bytes = slice.len() * size_of::<T>();
-            std::ptr::copy(
-                slice.as_ptr() as *const u8,
-                self.as_mut_ptr().add(index),
-                num_bytes,);
-        }
+        let u8_slice = unsafe { slice.as_u8_slice() };
+        unsafe { self.slice(index..(index + u8_slice.len())).copy_from_slice(u8_slice); }
     }
 }

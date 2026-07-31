@@ -1,6 +1,6 @@
 use std::error::Error;
 use debug_3l14::debug_gui::DebugGui;
-use egui::epaint::Shadow;
+use egui::epaint::{Shadow, TextOptions};
 use egui::{CornerRadius, Pos2, Rect, Stroke, Ui, Visuals};
 use parking_lot::{Mutex, RwLock};
 use sdl2::video::Window;
@@ -66,7 +66,7 @@ impl Renderer
         #[allow(deprecated)]
         let window_handle = SurfaceTargetUnsafe::RawHandle
         {
-            raw_display_handle: window.raw_display_handle().expect("Failed to get display handle"),
+            raw_display_handle: window.raw_display_handle().ok(),
             raw_window_handle: window.raw_window_handle().expect("Failed to get window handle"),
         };
         let window_size = window.size();
@@ -88,12 +88,13 @@ impl Renderer
 
         let bin_dir = std::env::current_exe().ok().map(|mut p| { p.pop(); p });
 
-        let instance = Instance::new(&InstanceDescriptor
+        let instance = Instance::new(InstanceDescriptor
         {
             backends: Backends::PRIMARY,
             flags: InstanceFlags::from_build_config(),
             backend_options: BackendOptions::from_env_or_default(),
             memory_budget_thresholds: MemoryBudgetThresholds::default(),
+            display: None,
         });
 
         let surface = unsafe { instance.create_surface_unsafe(window_handle).expect("Failed to create swap-chain") };
@@ -106,6 +107,7 @@ impl Renderer
                 force_fallback_adapter: false,
                 // Request an adapter which can render to our surface
                 compatible_surface: Some(&surface),
+                apply_limit_buckets: false,
             }).await
             .expect("Failed to find an appropriate adapter");
 
@@ -118,15 +120,18 @@ impl Renderer
                 label: debug_label!("Primary WGPU device"),
                 required_features: Features::empty()
                     | Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
-                    | Features::PUSH_CONSTANTS
                     | Features::VERTEX_WRITABLE_STORAGE
-                    | (if cfg!(feature = "load_shaders_directly") { Features::EXPERIMENTAL_PASSTHROUGH_SHADERS } else { Features::empty() })
+                    | Features::TEXTURE_COMPRESSION_BC
+                    | Features::SHADER_F16
+                    | Features::IMMEDIATES
+                    | (if cfg!(feature = "load_shaders_directly") { Features::PASSTHROUGH_SHADERS } else { Features::empty() })
+                     // | Features::PARTIALLY_BOUND_BINDING_ARRAY
                     ,
                 experimental_features: unsafe { ExperimentalFeatures::enabled() }, // TODO: only if feature enabled?
                 // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
                 required_limits: Limits
                 {
-                    max_push_constant_size: 128, // doesn't support WebGPU
+                    max_immediate_size: 128,
                     .. Default::default()
                 }.using_resolution(adapter.limits()),
                 memory_hints: MemoryHints::Performance,
@@ -175,7 +180,7 @@ impl Renderer
 
         let debug_gui = egui::Context::default();
         let font_scale = 1.25;
-        debug_gui.style_mut(|s| s.text_styles.iter_mut().for_each(|(_, fid)| { fid.size *= font_scale; }));
+        debug_gui.all_styles_mut(|s| s.text_styles.iter_mut().for_each(|(_, fid)| { fid.size *= font_scale; }));
         debug_gui.set_visuals(Visuals
         {
             window_shadow: Shadow::NONE,
@@ -343,15 +348,29 @@ impl Renderer
             puffin::profile_scope!("Wait for frame ready");
             back_buffer = match self.surface.get_current_texture()
             {
-                Ok(texture) => texture,
-                Err(SurfaceError::Timeout) => self.surface.get_current_texture().expect("Get swap chain target timed out"),
-                Err(SurfaceError::Outdated | SurfaceError::Lost | SurfaceError::OutOfMemory) =>
+                // Ok(texture) => texture,
+                // Err(SurfaceError::Timeout) => self.surface.get_current_texture().expect("Get swap chain target timed out"),
+                // Err(SurfaceError::Outdated | SurfaceError::Lost | SurfaceError::OutOfMemory) =>
+                // {
+                //     let surf_conf = self.surface_config.read();
+                //     self.surface.configure(&self.device, &surf_conf);
+                //     self.surface.get_current_texture().expect("Failed to get swap chain target")
+                // },
+                // Err(SurfaceError::Other) => panic!("Failed to get swap chain target: {:?}", SurfaceError::Other.source()), // error callback?
+
+                CurrentSurfaceTexture::Success(texture) => texture,
+                CurrentSurfaceTexture::Suboptimal(_) |
+                CurrentSurfaceTexture::Outdated =>
                 {
                     let surf_conf = self.surface_config.read();
                     self.surface.configure(&self.device, &surf_conf);
-                    self.surface.get_current_texture().expect("Failed to get swap chain target")
-                },
-                Err(SurfaceError::Other) => panic!("Failed to get swap chain target: {:?}", SurfaceError::Other.source()), // error callback?
+                    match self.surface.get_current_texture()
+                    {
+                        CurrentSurfaceTexture::Success(tex) => tex,
+                        err => panic!("Failed to get updated swap chain target: {err:?}")
+                    }
+                }
+                err => panic!("Failed to get swap chain target: {err:?}"), // TODO: recover?
             };
 
             let render_frames = self.render_frames.read();
@@ -439,6 +458,7 @@ impl Renderer
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             gui_renderer.render(&mut render_pass.forget_lifetime(), &primitives, &desc);
             // gui_renderer.execute(&mut command_encoder, &target, primitives.as_slice(), &desc, None).unwrap();
@@ -455,7 +475,7 @@ impl Renderer
             [back_buffer_size.width, back_buffer_size.height],
             &frame.back_buffer_view);
         self.queue.submit([gui_commands]);
-        frame.back_buffer.present();
+        self.queue.present(frame.back_buffer);
     }
 
     // taken from MSAA line sample

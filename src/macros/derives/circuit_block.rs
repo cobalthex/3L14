@@ -1,5 +1,4 @@
 use proc_macro::TokenStream;
-use proc_macro2::Span;
 use std::hash::Hasher;
 use metrohash::MetroHash64;
 use quote::quote;
@@ -128,7 +127,7 @@ pub fn circuit_block(input: TokenStream) -> TokenStream
 
     let path_hydrate = path("block_meta::HydrateBlock");
     let path_block = path("Block");
-    let path_impulseblock = path("ImpulseBlock");
+    // let path_impulseblock = path("ImpulseBlock");
     let path_latchblock = path("LatchBlock");
     let path_blockbuildmeta = path("block_meta::BlockBuildMeta");
     let path_blockruntimemeta = path("block_meta::BlockRuntimeMeta");

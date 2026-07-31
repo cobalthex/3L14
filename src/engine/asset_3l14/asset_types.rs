@@ -26,8 +26,8 @@ pub enum AssetTypeId
 
     Circuit = 0xd,
 
-    Scene = 0xe,
-    SceneChunk = 0xf,
+    Map = 0xe,
+    MapChunk = 0xf,
 
     // ComputePipeline
 

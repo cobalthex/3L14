@@ -1,5 +1,5 @@
 [package]
-name = "scene_design_3l14"
+name = "map_design_3l14"
 description = "Scene design-time tooling for 3L14"
 workspace = "../../.."
 edition.workspace = true
@@ -10,6 +10,7 @@ path = "lib.rs"
 [dependencies]
 asset_3l14.workspace = true
 nab_3l14.workspace = true
+world_3l14.workspace = true
 proc_macros_3l14.workspace = true
 
 glam.workspace = true

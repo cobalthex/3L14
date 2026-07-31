@@ -52,7 +52,7 @@ impl Drop for AssetLoadList
     {
         while let Some((erased, _)) = self.pending.pop()
         {
-            AshInnerHeader::enqueue_drop(erased.header());
+            AshInnerHeader::decrement_ref(erased.header());
         }
     }
 }

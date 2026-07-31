@@ -1,23 +1,16 @@
 use bitcode::{Decode, Encode};
-use glam::Vec3;
 use asset_3l14::{Ash, AssetKey, AssetLifecycler};
 use containers_3l14::AabbTree;
 use graphics_3l14::assets::Model;
-use math_3l14::Angle;
 use proc_macros_3l14::{asset, LayoutHash};
 use std::error::Error;
+use crate::Light;
 
-#[derive(Encode, Decode)]
-pub enum Light
+#[repr(u8)]
+enum StaticClassification
 {
-    Point(Vec3),
-    Directional(Vec3),
-    Spot
-    {
-        angle: Angle,
-        range: f32,
-    },
-    // rect/disc area lights
+    Model = 0,
+    Light = 1,
 }
 
 struct Statics
@@ -35,29 +28,29 @@ struct StaticsFile
 }
 
 #[asset]
-pub struct Scene
+pub struct Map
 {
     statics: Statics,
 }
 #[derive(LayoutHash, Encode, Decode)]
-pub struct SceneFile
+pub struct MapFile
 {
     statics: StaticsFile,
 }
 
-pub struct SceneLifecycler
+pub struct MapLifecycler
 {
 
 }
-impl AssetLifecycler for SceneLifecycler
+impl AssetLifecycler for MapLifecycler
 {
-    type Asset = Scene;
+    type Asset = Map;
 
     fn load(&self, mut request: asset_3l14::AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
     {
-        let mut input: SceneFile = request.deserialize()?;
+        let mut input: MapFile = request.deserialize()?;
 
-        let scene = Scene
+        let scene = Map
         {
             statics: Statics
             {

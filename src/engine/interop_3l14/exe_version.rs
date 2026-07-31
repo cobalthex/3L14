@@ -48,7 +48,7 @@ pub fn get_exe_version(bin_path: impl AsRef<OsStr>) -> Result<Version, GetVersio
     use windows::{Win32::{Foundation::{ERROR_FILE_NOT_FOUND, ERROR_RESOURCE_DATA_NOT_FOUND, GetLastError}, Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VS_FIXEDFILEINFO, VerQueryValueW}}, core::PCWSTR};
     use nab_3l14::utils::alloc_slice::alloc_slice_uninit;
 
-    let bin_path_wide = bin_path.encode_wide().chain(Some(0)).collect()();
+    let bin_path_wide: Vec<_> = OsStrExt::encode_wide(bin_path.as_ref()).chain(Some(0)).collect();
 
     let mut handle = 0u32;
     let size = unsafe { GetFileVersionInfoSizeW(PCWSTR(bin_path_wide.as_ptr()), Some(&mut handle)) };

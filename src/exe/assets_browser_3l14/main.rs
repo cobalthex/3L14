@@ -215,71 +215,74 @@ fn main() -> ExitReason
         }
 
         let render_frame = renderer.frame(app_frame_number, &input);
-        let view_size = renderer.display_size();
-        let asset_list = egui::SidePanel::left("asset_list")
-            .resizable(true)
-            .default_width(400.0)
+        egui::Area::new("Assets browser".into())
+            .default_size(renderer.display_size().as_vec2().to_array())
             .show(renderer.debug_gui(), |ui|
             {
-                ui.heading("Assets");
-                if let Some(filter_by_type) = app_run.args.only_type
-                {
-                    // same line?
-                    ui.label(format!("Filtered by type: {:?}", app_run.args.only_type));
-                }
-                ui.separator();
+                egui::containers::Panel::left("asset_list")
+                    .resizable(true)
+                    .default_size(400.0)
+                    .show(ui, |ui|
+                    {
+                        ui.heading("Assets");
+                        if let Some(filter_by_type) = app_run.args.only_type
+                        {
+                            // same line?
+                            ui.label(format!("Filtered by type: {:?}", app_run.args.only_type));
+                        }
+                        ui.separator();
 
-                let row_height = ui.text_style_height(&egui::TextStyle::Body);
-                let z = egui::ScrollArea::vertical().show_rows(ui, row_height, assets_list.len(),|sui, vis|
-                {
-                   for (i, asset) in assets_list[vis.clone()].iter().enumerate()
-                   {
-                       let idx = i + vis.start;
-                       let is_selected = idx == selected_asset_index;
-                       let resp = sui.selectable_label(is_selected, asset.display_name.as_str());
-                       if resp.clicked()
-                       {
-                           selected_asset_index = idx;
-                       }
-                       else if resp.secondary_clicked()
-                       {
-                           let text = format!("{:#x}", asset.asset_meta.key);
-                           // egui clipboard not working
-                           let _ = sdl_video.clipboard().set_clipboard_text(&text);
-                       }
-                   }
-                });
-            });
+                        let row_height = ui.text_style_height(&egui::TextStyle::Body);
+                        let z = egui::ScrollArea::vertical().show_rows(ui, row_height, assets_list.len(), |sui, vis|
+                            {
+                                for (i, asset) in assets_list[vis.clone()].iter().enumerate()
+                                {
+                                    let idx = i + vis.start;
+                                    let is_selected = idx == selected_asset_index;
+                                    let resp = sui.selectable_label(is_selected, asset.display_name.as_str());
+                                    if resp.clicked()
+                                    {
+                                        selected_asset_index = idx;
+                                    } else if resp.secondary_clicked()
+                                    {
+                                        let text = format!("{:#x}", asset.asset_meta.key);
+                                        // egui clipboard not working
+                                        let _ = sdl_video.clipboard().set_clipboard_text(&text);
+                                    }
+                                }
+                            });
+                    });
 
-        let info_panel = egui::CentralPanel::default()
-            .show(renderer.debug_gui(), |ui|
-            {
-                if selected_asset_index != usize::MAX
-                {
-                    let asset = &assets_list[selected_asset_index];
+                egui::CentralPanel::default()
+                    .show(ui, |ui|
+                    {
+                        if selected_asset_index != usize::MAX
+                        {
+                            let asset = &assets_list[selected_asset_index];
 
-                    let build_time = chrono::DateTime::<chrono::Local>::from(asset.asset_meta.build_timestamp);
+                            let build_time = chrono::DateTime::<chrono::Local>::from(asset.asset_meta.build_timestamp);
 
-                    ui.heading(&asset.display_name);
-                    ui.add_space(20.0);
-                    // TODO: table
-                    ui.monospace(format!("       Name: {}", asset.asset_meta.name.as_deref().unwrap_or_default()));
-                    ui.monospace(format!("        Key: {:#x}", asset.asset_meta.key));
-                    ui.monospace(format!(" Build time: {}", build_time.format("%Y-%m-%d %H:%M:%S").to_string()));
-                    ui.monospace(format!("Source path: {}", asset.asset_meta.source_path.display()));
+                            ui.heading(&asset.display_name);
+                            ui.add_space(20.0);
+                            // TODO: table
+                            ui.monospace(format!("       Name: {}", asset.asset_meta.name.as_deref().unwrap_or_default()));
+                            ui.monospace(format!("        Key: {:#x}", asset.asset_meta.key));
+                            ui.monospace(format!(" Build time: {}", build_time.format("%Y-%m-%d %H:%M:%S").to_string()));
+                            ui.monospace(format!("Source path: {}", asset.asset_meta.source_path.display()));
 
-                    // if ui.button("debug").clicked()
-                    // {
-                    //     #[cfg(target_arch = "x86_64")]
-                    //     unsafe { std::arch::asm!("int3"); }
-                    //     #[cfg(target_arch = "aarch64")]
-                    //     unsafe { std::arch::asm!("brk #0xf000"); }
-                    // }
-                }
-                else
-                {
-                    ui.centered_and_justified(|cui| cui.label("No asset selected"));
-                }
+                            // if ui.button("debug").clicked()
+                            // {
+                            //     #[cfg(target_arch = "x86_64")]
+                            //     unsafe { std::arch::asm!("int3"); }
+                            //     #[cfg(target_arch = "aarch64")]
+                            //     unsafe { std::arch::asm!("brk #0xf000"); }
+                            // }
+                        }
+                        else
+                        {
+                            ui.centered_and_justified(|cui| cui.label("No asset selected"));
+                        }
+                    });
             });
 
         renderer.present(render_frame);

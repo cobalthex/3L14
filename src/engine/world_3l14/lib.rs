@@ -1,4 +1,5 @@
-mod scene;
-mod static_geo;
+mod map;
+pub use map::*;
 
-pub use scene::*;
+mod light;
+pub use light::*;

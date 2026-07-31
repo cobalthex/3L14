@@ -11,7 +11,7 @@ use dashmap::DashMap;
 use dashmap::mapref::one::Ref;
 use triomphe::Arc;
 use enumflags2::BitFlags;
-use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
+use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MipmapFilterMode, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
 use asset_3l14::{Ash, AssetKey, AssetData, AssetTypeId, Assets, AssetSnapshot, AssetView};
 use crate::assets::shader_key::pixel;
 use crate::material_classes::{MaterialClass, SimpleOpaque};
@@ -242,13 +242,14 @@ impl PipelineCache
 
         let mut bind_group_layouts: ArrayVec<_, 8> = ArrayVec::new();
         // Todo: define based on render pass
-        bind_group_layouts.push(&self.uniforms.camera_bind_layout);
-        bind_group_layouts.push(&self.uniforms.transform_bind_layout);
-        bind_group_layouts.push(&self.uniforms.poses_bind_layout);
+        // TODO: use None for layouts not used
+        bind_group_layouts.push(Some(&self.uniforms.camera_bind_layout));
+        bind_group_layouts.push(Some(&self.uniforms.transform_bind_layout));
+        bind_group_layouts.push(Some(&self.uniforms.poses_bind_layout));
 
         if let Some(layout) = &mtl_layout
         {
-            bind_group_layouts.push(layout.value());
+            bind_group_layouts.push(Some(layout.value()));
         }
 
         #[cfg(feature = "debug_gpu_labels")]
@@ -260,7 +261,7 @@ impl PipelineCache
             // TODO: add pass name + debug mode
             label: debug_label!(&format!("{} layout", layout_name)),
             bind_group_layouts: &bind_group_layouts,
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         // todo: if these update, this will invalidate the pipeline
@@ -293,7 +294,7 @@ impl PipelineCache
                 module: &vertex_shader.module,
                 entry_point: Some(ShaderStage::Vertex.entry_point()),
                 compilation_options: PipelineCompilationOptions::default(),
-                buffers: &[vbuffers.as_vertex_buffer_layout()],
+                buffers: &[Some(vbuffers.as_vertex_buffer_layout())],
             },
             primitive: PrimitiveState
             {
@@ -313,8 +314,8 @@ impl PipelineCache
             depth_stencil: Some(DepthStencilState
             {
                 format: TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(CompareFunction::Less),
                 stencil: StencilState::default(),
                 bias: DepthBiasState::default(),
             }),
@@ -326,8 +327,8 @@ impl PipelineCache
                 alpha_to_coverage_enabled: false,
             },
             fragment,
-            multiview: None,
             cache: None, // todo
+            multiview_mask: None,
         });
 
         pipeline
@@ -345,7 +346,7 @@ impl PipelineCache
             address_mode_w: AddressMode::Repeat,
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Nearest,
-            mipmap_filter: FilterMode::Nearest,
+            mipmap_filter: MipmapFilterMode::Nearest,
             lod_min_clamp: 0.0,
             lod_max_clamp: 0.0,
             compare: None,
