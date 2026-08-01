@@ -1,5 +1,8 @@
 use std::error::Error;
+use std::ffi::{OsStr, OsString};
+use std::fs::File;
 use std::io::Read;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use map_design_3l14::{MapDef, MapLayer};
 use nab_3l14::utils::osstr::OsStrUtils;
@@ -12,7 +15,25 @@ pub struct MapBuilderConfig
 
 }
 
+#[derive(Debug)]
+enum MapBuildError
+{
+    NoLayers,
+}
+impl std::fmt::Display for MapBuildError
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+    {
+        match self
+        {
+            MapBuildError::NoLayers => write!(f, "Map definitions must have at least one layer"),
+        }
+    }
+}
+impl std::error::Error for MapBuildError {}
+
 pub struct MapBuilder;
+inventory::submit! { MapBuilder }
 impl AssetBuilder for MapBuilder
 {
     type BuildConfig = MapBuilderConfig;
@@ -45,21 +66,32 @@ impl AssetBuilder for MapBuilder
         let layers =
         {
             // does this break down if building from memory is possible?
-            let map_def_name = input.source_path().file_name().expect("How did the input not have a file name?");
+            // let map_def_name = input.source_path().file_name().expect("How did the input not have a file name?");
             let map_def_dir = input.source_path().parent().expect("How did the input not exist in a directory?");
 
+            let layer_def_suffix =
+            {
+                let mut str = OsString::from(".");
+                str.push(input.source_path().file_stem().expect("How did the input not have a file stem?"));
+                str.push(OsStr::new("layerdef"));
+                str
+            };
             let mut layers = Vec::new();
             for layer_file in map_def_dir.read_dir()?
             {
                 let layer_path = layer_file?.path();
                 if !layer_path.is_file() { continue; }
-                let layer_file_name = layer_path.file_name()
-                    .expect("How did the layer not have a file name?")
-                    .ends_with(map_def_name);
+                let Some(is_layer_file) = layer_path.file_name().expect("How did the layer not have a file name?").position(&layer_def_suffix) else { continue };
+                let layer_name = layer_path
+                    .as_os_str()
+                    .substr(0, is_layer_file)
+                    .to_string_lossy()
+                    .to_string();
 
                 toml_str.clear();
-                
-                layers.push(toml::from_str::<MapLayer>(toml_str.as_str())?);
+                File::open(layer_path)?
+                    .read_to_string(&mut toml_str)?;
+                layers.push((layer_name, toml::from_str::<MapLayer>(toml_str.as_str())?));
             }
             layers
         };

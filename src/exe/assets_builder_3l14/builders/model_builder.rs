@@ -76,6 +76,7 @@ pub struct ModelBuildConfig
     pub import: ModelImportSettings,
 }
 pub struct ModelBuilder;
+inventory::submit! { ModelBuilder }
 impl AssetBuilder for ModelBuilder
 {
     type BuildConfig = ModelBuildConfig;

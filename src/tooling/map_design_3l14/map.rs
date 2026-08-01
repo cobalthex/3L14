@@ -26,7 +26,6 @@ pub struct EntityPlacement
 pub struct MapLayer
 {
     // activation flags
-    name: String,
     models: Vec<ModelPlacement>,
     lights: Vec<Light>,
     entities: Vec<EntityPlacement>,
