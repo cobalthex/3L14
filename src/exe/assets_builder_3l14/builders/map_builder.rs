@@ -33,7 +33,6 @@ impl std::fmt::Display for MapBuildError
 impl std::error::Error for MapBuildError {}
 
 pub struct MapBuilder;
-inventory::submit! { MapBuilder }
 impl AssetBuilder for MapBuilder
 {
     type BuildConfig = MapBuilderConfig;
@@ -73,20 +72,23 @@ impl AssetBuilder for MapBuilder
             {
                 let mut str = OsString::from(".");
                 str.push(input.source_path().file_stem().expect("How did the input not have a file stem?"));
-                str.push(OsStr::new("layerdef"));
+                str.push(OsStr::new(".layerdef"));
                 str
             };
+
             let mut layers = Vec::new();
             for layer_file in map_def_dir.read_dir()?
             {
                 let layer_path = layer_file?.path();
                 if !layer_path.is_file() { continue; }
-                let Some(is_layer_file) = layer_path.file_name().expect("How did the layer not have a file name?").position(&layer_def_suffix) else { continue };
-                let layer_name = layer_path
-                    .as_os_str()
-                    .substr(0, is_layer_file)
-                    .to_string_lossy()
-                    .to_string();
+                println!(">> {:?}", layer_path);
+                let Some(layer_name) = layer_path
+                    .file_name()
+                    .expect("How did the layer not have a file name?")
+                    .strip_suffix(&layer_def_suffix)
+                else { continue };
+
+                let layer_name = layer_name.to_string_lossy().to_string();
 
                 toml_str.clear();
                 File::open(layer_path)?
@@ -95,7 +97,11 @@ impl AssetBuilder for MapBuilder
             }
             layers
         };
-
+        println!("map: {}", map_def.name);
+        for (layer_name, _) in &layers
+        {
+            println!("layer: {}", layer_name);
+        }
         todo!()
     }
 }

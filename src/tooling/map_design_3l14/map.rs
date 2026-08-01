@@ -22,7 +22,8 @@ pub struct EntityPlacement
     id: Ident,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MapLayer
 {
     // activation flags
@@ -31,10 +32,11 @@ pub struct MapLayer
     entities: Vec<EntityPlacement>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MapDef
 {
-    pub name: Option<String>,
+    pub name: String,
     pub model_palette: Vec<AssetKey>,
     pub entity_palette: Vec<AssetKey>,
     // all activation flags

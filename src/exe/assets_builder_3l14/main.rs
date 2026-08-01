@@ -70,6 +70,7 @@ fn main()
     builder_cfg.add_builder(builders::ModelBuilder);
     builder_cfg.add_builder(builders::TextureBuilder);
     builder_cfg.add_builder(builders::ShaderBuilder::new(src_assets_root.join("shaders"), None).unwrap());
+    builder_cfg.add_builder(builders::MapBuilder);
     builder_cfg.add_builder(builders::CircuitBuilder::new());
     let builder = AssetsBuilder::new(builder_cfg);
 
