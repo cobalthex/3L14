@@ -18,6 +18,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use unicase::UniCase;
 use graphics_3l14::material_classes::{MaterialClass, PbrProps};
 
@@ -44,36 +45,13 @@ impl Display for ModelImportError
 }
 impl Error for ModelImportError { }
 
-#[derive(Serialize, Deserialize)]
-pub struct ModelImportSettings
-{
-    geometry: bool,
-    skeleton: bool,
-    skeletal_animations: bool,
-    textures: bool,
-    materials: bool,
-}
-impl Default for ModelImportSettings
-{
-    fn default() -> Self
-    {
-        Self
-        {
-            geometry: true,
-            skeleton: true,
-            skeletal_animations: true,
-            textures: true,
-            materials: true,
-        }
-    }
-}
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ModelBuildConfig
 {
     // optimize (meshoptimizer)
-    pub import: ModelImportSettings,
+    material_mappings: HashMap<String, String>, // maps gltf's material name to an external material def
 }
 pub struct ModelBuilder;
 impl AssetBuilder for ModelBuilder

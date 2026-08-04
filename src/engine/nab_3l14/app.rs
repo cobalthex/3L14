@@ -59,8 +59,7 @@ where I: Iterator,
     out
 }
 
-pub trait CliArgs: clap::Parser + Debug { }
-impl<T: clap::Parser + Debug> CliArgs for T { }
+pub trait CliArgs: clap::Parser + Debug { fn be_quiet(&self) -> bool { false } }
 
 fn crate_name<T>() -> &'static str // hacky
 {
@@ -94,26 +93,39 @@ impl<TCliArgs: CliArgs> AppRun<TCliArgs>
     #[must_use]
     pub fn startup_with_args(app_name: &'static str, app_version: &'static str, args: impl Iterator<Item=OsString>) -> Self
     {
-        #[cfg(debug_assertions)]
-        let default_log_levels = (log::LevelFilter::Warn, log::LevelFilter::Debug);
-        #[cfg(not(debug_assertions))]
-        let default_log_levels = (log::LevelFilter::Warn, log::LevelFilter::Info);
+        let cli_args = TCliArgs::parse_from(args);
+
+        let (default_filter_level, self_filter_level) =
+            if cli_args.be_quiet()
+            {
+                (log::LevelFilter::Warn, log::LevelFilter::Warn)
+            }
+            else if cfg!(debug_assertions)
+            {
+                (log::LevelFilter::Warn, log::LevelFilter::Debug)
+            }
+            else
+            {
+                (log::LevelFilter::Warn, log::LevelFilter::Info)
+            };
+
         let app_crate = crate_name::<TCliArgs>();
         colog::basic_builder()
-            .filter_level(default_log_levels.0)
-            .filter_module(app_crate, default_log_levels.1)
-            .filter_module(crate_name::<Self>(), default_log_levels.1)
+            .filter_level(default_filter_level)
+            .filter_module(app_crate, self_filter_level)
+            .filter_module(crate_name::<Self>(), self_filter_level)
             // TODO: automate this
-            .filter_module("asset_3l14", default_log_levels.1)
-            .filter_module("containers_3l14", default_log_levels.1)
-            .filter_module("debug_3l14", default_log_levels.1)
-            .filter_module("graphics_3l14", default_log_levels.1)
-            .filter_module("input_3l14", default_log_levels.1)
-            .filter_module("interop_3l14", default_log_levels.1)
-            .filter_module("latch_3l14", default_log_levels.1)
-            .filter_module("math_3l14", default_log_levels.1)
-            .filter_module("nab_3l14", default_log_levels.1)
-            .filter_module("world_3l14", default_log_levels.1)
+            .filter_module("asset_3l14", self_filter_level)
+            .filter_module("containers_3l14", self_filter_level)
+            .filter_module("debug_3l14", self_filter_level)
+            .filter_module("graphics_3l14", self_filter_level)
+            .filter_module("input_3l14", self_filter_level)
+            .filter_module("interop_3l14", self_filter_level)
+            .filter_module("latch_3l14", self_filter_level)
+            .filter_module("map_design_3l14", self_filter_level)
+            .filter_module("math_3l14", self_filter_level)
+            .filter_module("nab_3l14", self_filter_level)
+            .filter_module("world_3l14", self_filter_level)
             .parse_default_env()
             .init();
 
@@ -129,7 +141,7 @@ impl<TCliArgs: CliArgs> AppRun<TCliArgs>
             app_name,
             version_str: app_version,
             start_time: chrono::Local::now(),
-            args: TCliArgs::parse_from(args),
+            args: cli_args,
             pid: std::process::id(),
             #[cfg(not(target_family="wasm"))]
             is_elevated: is_root::is_root(),

@@ -1,4 +1,4 @@
-use crate::AssetTypeId;
+use crate::{AssetKey, AssetTypeId};
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use bitcode::{DecodeOwned, Encode};

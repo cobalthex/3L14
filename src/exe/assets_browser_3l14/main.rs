@@ -41,13 +41,20 @@ struct CliArgs
 {
     //// CLI ////
 
-    #[arg(long, group="cli", conflicts_with="gui")]
+    #[arg(long, short = 'q', global = true, default_value_t = false, help = "Reduce logging to a minimum")]
+    quiet: bool,
+
+    #[arg(long, alias = "key", group="cli", conflicts_with="gui")]
     asset_key: Option<String>,
 
     //// GUI ////
 
     #[arg(long, group="gui", conflicts_with="cli", value_parser=parse_asset_type)] // alias=type?
     only_type: Option<AssetTypeId>,
+}
+impl nab_3l14::app::CliArgs for CliArgs
+{
+    fn be_quiet(&self) -> bool { self.quiet }
 }
 
 fn main() -> ExitReason
@@ -84,7 +91,7 @@ fn main() -> ExitReason
             },
             asset_meta,
         };
-        log::info!("{:#?}", info);
+        println!("{:#?}", info);
 
         return ExitReason::NormalExit
     }

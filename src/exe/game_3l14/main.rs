@@ -35,6 +35,7 @@ struct CliArgs
     #[arg(long, default_value_t = false)]
     keep_alive_on_panic: bool,
 }
+impl nab_3l14::app::CliArgs for CliArgs { }
 
 // Check if the app was launched from an the shell, vs from an existing console (running from CLI),
 // io::IsTerminal is insufficient here

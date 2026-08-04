@@ -1,0 +1,6 @@
+source_id = "0e0c7c3f3"
+version_hash = "5cPFy4iv7hQ"
+
+[build_config]
+quality = "Standard"
+usage = "Model"

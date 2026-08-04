@@ -1,8 +1,8 @@
-use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
+use crate::core::{AssetBuilder, BuildOutputs, SourceInput, SymbolsDict, VersionBuilder};
 use asset_3l14::AssetTypeId;
 use indexmap::IndexMap;
 use latch_3l14::block_meta::{BlockBuildMeta, HydrateBlock};
-use latch_3l14::{BlockDebugData, BlockId, BlockKind, CircuitDebugData, CircuitFile, CircuitFileBlock, Inlet, LatchingOutlet, Plug, PulsedOutlet};
+use latch_3l14::{BlockDebugData, BlockId, BlockKind, CircuitDebugData, CircuitFile, CircuitFileBlock, EntryPoints, Inlet, LatchingOutlet, Plug, PulsedOutlet};
 use logos::{Lexer, Logos};
 use nab_3l14::{Signal, Symbol};
 use serde::{Deserialize, Serialize};
@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::io::{Read, Write};
+use triomphe::Arc;
 use unicase::UniCase;
 
 #[derive(Debug)]
@@ -25,6 +26,7 @@ pub enum ParseError
     ImpulsesDoNotHavePowerOffInlets { block_name: String, outlet_name: String, target_block_name: String },
     BlockDeserializeError { block_name: String, error: erased_serde::Error },
     UnknownBlockType { type_name: String },
+    SignalNotFound { signal: String },
 }
 impl Display for ParseError
 {
@@ -49,20 +51,21 @@ pub struct CircuitBuilder
 {
     known_impulses: HashMap<UniCase<&'static str>, &'static BlockBuildMeta<0>>,
     known_latches: HashMap<UniCase<&'static str>, &'static BlockBuildMeta<1>>,
+    symbols_dict: Arc<SymbolsDict>,
 }
 impl CircuitBuilder
 {
     #[must_use]
-    pub fn new() -> Self
+    pub fn new(symbols_dict: Arc<SymbolsDict>) -> Self
     {
         let known_impulses = inventory::iter::<BlockBuildMeta<0>>()
             .map(|b| (UniCase::unicode(b.type_name), b)).collect();
         let known_latches = inventory::iter::<BlockBuildMeta<1>>()
             .map(|b| (UniCase::unicode(b.type_name), b)).collect();
-        Self { known_impulses, known_latches }
+        Self { known_impulses, known_latches, symbols_dict }
     }
 
-    fn parse<'p>(&self, mut lexed: CircuitLex<'p>) -> Result<CircuitParse<'p>, ParseError>
+    fn parse<'p>(&self, mut lexed: CircuitLex<'p>, symbols: &'p SymbolsDict) -> Result<CircuitParse<'p>, ParseError>
     {
         let mut depths = HashMap::new();
         let mut stack = Vec::new();
@@ -278,10 +281,10 @@ impl CircuitBuilder
                 }).collect(),
                 signaled_entries: lexed.signal_entries.iter().map(|(name, entries)|
                 {
-                    let signal = <Signal as Symbol>::INVALID; // TODO
-                    let sigentries = entries.iter().map(|entry| block_ids.get(entry).unwrap().clone()).collect();
-                    (signal, sigentries)
-                }).collect(),
+                    let Some(signal) = symbols.get::<Signal>(name) else { return Err(ParseError::SignalNotFound { signal: name.to_string() }) };
+                    let sigentries: EntryPoints = entries.iter().map(|entry| block_ids.get(entry).unwrap().clone()).collect();
+                    Ok((signal, sigentries))
+                }).collect::<Result<_, _>>()?,
                 impulses: impulse_blocks.into_boxed_slice(),
                 latches: latch_blocks.into_boxed_slice(),
                 num_local_vars: 0, // todo
@@ -331,7 +334,7 @@ impl AssetBuilder for CircuitBuilder
                 let mut str = String::new();
                 input.read_to_string(&mut str)?;
                 let lexed = lex_circuit_dsl(&str)?;
-                let circuit = self.parse(lexed)?;
+                let circuit = self.parse(lexed, &self.symbols_dict)?;
                 output.serialize(&circuit.circuit)?;
                 output.write_all(&circuit.block_mem)?;
 

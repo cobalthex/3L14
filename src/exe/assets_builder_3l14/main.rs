@@ -2,11 +2,15 @@ mod core;
 mod builders;
 mod helpers;
 
-use crate::core::{validate_symbols, AssetsBuilder, AssetsBuilderConfig, BuildRule};
-use std::path::Path;
+use std::ffi::{OsStr, OsString};
+use std::fs::File;
+use crate::core::{validate_symbols, AssetsBuilder, AssetsBuilderConfig, BuildRule, SymbolsDict, ScanError};
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use clap::{Parser, Subcommand};
+use triomphe::Arc;
 use unicase::UniCase;
-use asset_3l14::AssetTypeId;
+use asset_3l14::{AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetTypeId, SourceMetadataStub, TomlRead};
 use latch_3l14::block_meta::BlockBuildMeta;
 use nab_3l14::app::{set_panic_hook, AppRun, ExitReason};
 
@@ -34,11 +38,32 @@ pub enum CliCommands
     #[clap(about = "List known assets and info about them")]
     Assets,
 
-    #[clap(about = "Reset the import settings of one or more source assets")]
+    #[clap(alias = "reimport", about = "Reset the import settings of one or more source assets")]
     ResetImport
     {
         #[arg(long, value_delimiter = ',', num_args = 1..)]
         source: Vec<String>,
+    },
+
+    #[clap(alias = "key", about = "Get the asset key for a given source ID or synth hash")]
+    GetAssetKey
+    {
+        #[arg(alias = "type", value_enum)]
+        asset_type: AssetTypeId,
+
+        #[arg(long, default_value = "0")]
+        derived_id: u16,
+
+        #[arg(long, alias = "source", group = "from_what")]
+        source_file: PathBuf,
+
+        // TODO
+
+        // #[arg(long, group = "from_what")]
+        // source_id: u64,
+
+        // #[arg(long, group = "from_what")]
+        // synth_hash: u64,
     },
 
     #[clap(about = "List all known latch types")]
@@ -49,12 +74,19 @@ pub enum CliCommands
 #[derive(Debug, Parser)]
 struct CliArgs
 {
+    #[arg(long, short = 'q', global = true, default_value_t = false, help = "Reduce logging to a minimum")]
+    quiet: bool,
+
     #[command(subcommand)]
     command: CliCommands,
 
     // todo:
     //  - reset source build config
 
+}
+impl nab_3l14::app::CliArgs for CliArgs
+{
+    fn be_quiet(&self) -> bool { self.quiet }
 }
 
 fn main()
@@ -66,12 +98,15 @@ fn main()
     let src_assets_root = assets_root.join("src");
     let built_assets_root = assets_root.join("built");
 
+    let symbols_dict = Arc::new(SymbolsDict::new(assets_root.join("symbols")));
+
     let mut builder_cfg = AssetsBuilderConfig::new(&src_assets_root, &built_assets_root);
     builder_cfg.add_builder(builders::ModelBuilder);
     builder_cfg.add_builder(builders::TextureBuilder);
+    builder_cfg.add_builder(builders::MaterialBuilder);
     builder_cfg.add_builder(builders::ShaderBuilder::new(src_assets_root.join("shaders"), None).unwrap());
     builder_cfg.add_builder(builders::MapBuilder);
-    builder_cfg.add_builder(builders::CircuitBuilder::new());
+    builder_cfg.add_builder(builders::CircuitBuilder::new(symbols_dict));
     let builder = AssetsBuilder::new(builder_cfg);
 
     match &app_run.args.command
@@ -139,6 +174,26 @@ fn main()
                     Err(err) => log::error!("Failed to regenerate source meta for {source}: {err}"),
                 }
             }
+        }
+
+        CliCommands::GetAssetKey { asset_type, source_file, derived_id, .. } =>
+        {
+            let mut source_fname = src_assets_root.join(source_file);
+            source_fname.add_extension(OsStr::new(AssetsBuilderConfig::SOURCE_META_FILE_EXTENSION.as_ref()));
+            let mut fin = match File::open(&source_fname)
+            {
+                Ok(fin) => fin,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => { log::error!("Source file not found: {source_fname:?}"); return; },
+                Err(err) => { log::error!("Failed to open source file: {err}"); return; },
+            };
+            let meta = SourceMetadataStub::load(&mut fin).unwrap();
+            let key = AssetKey::unique(*asset_type, AssetKeyDerivedId(*derived_id), meta.source_id);
+            println!("{:x}", key);
+        }
+
+        CliCommands::GetAssetKey { .. } =>
+        {
+            todo!()
         }
 
         CliCommands::DumpLatchTypes =>

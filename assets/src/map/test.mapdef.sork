@@ -2,3 +2,4 @@ source_id = "0aba05bb8"
 version_hash = "gmzHdWjguss"
 
 [build_config]
+class = "PbrOpaque"

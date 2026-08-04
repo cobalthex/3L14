@@ -99,6 +99,7 @@ mod format_binary_tests
     }
 }
 
+// TODO: convert to a derive macro?
 pub trait ShortTypeName
 {
     fn short_type_name() -> &'static str;

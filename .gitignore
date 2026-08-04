@@ -3,3 +3,6 @@ ignored/
 
 /target
 /macros/target
+
+# annoying dependency issue
+SDL2*

@@ -6,7 +6,7 @@ use triomphe::Arc;
 use std::time::Duration;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, Extent3d, QueueWriteBufferView, RenderPass, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView};
 use wgpu::util::{DeviceExt, TextureDataOrder};
-use asset_3l14::{Asset, AssetData, AssetView};
+use asset_3l14::{Asset, AssetView};
 use math_3l14::{CanSee, DualQuat, Sphere, StaticGeoUniform};
 use nab_3l14::utils::array::init_array;
 use crate::assets::{Geometry, Model, EngineRenderPass};

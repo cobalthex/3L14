@@ -36,7 +36,7 @@ impl Display for AssetLoadError
 impl Error for AssetLoadError { }
 
 #[derive(Debug)]
-pub enum AssetData<Asset>
+pub(super) enum AssetData<Asset>
 {
     Unavailable(AssetLoadError), // TODO: store this elsewhere? (loaders spin forever?)
     Available(Asset),

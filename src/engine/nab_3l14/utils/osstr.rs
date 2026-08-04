@@ -42,7 +42,7 @@ impl OsStrUtils for OsStr
     {
         let bytes = self.as_encoded_bytes();
         let predicate_bytes = predicate.as_ref().as_encoded_bytes();
-        if predicate_bytes.len() == 0 { return Some(0); }
+        if predicate_bytes.is_empty() { return Some(0); }
         bytes.windows(predicate_bytes.len()).position(|test| test == predicate_bytes)
     }
     fn substr(&self, range: impl RangeBounds<usize>) -> &OsStr

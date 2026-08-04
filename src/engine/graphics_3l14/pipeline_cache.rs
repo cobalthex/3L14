@@ -12,7 +12,7 @@ use dashmap::mapref::one::Ref;
 use triomphe::Arc;
 use enumflags2::BitFlags;
 use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MipmapFilterMode, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
-use asset_3l14::{Ash, AssetKey, AssetData, AssetTypeId, Assets, AssetSnapshot, AssetView};
+use asset_3l14::{Ash, AssetKey, AssetTypeId, Assets, AssetSnapshot, AssetView};
 use crate::assets::shader_key::pixel;
 use crate::material_classes::{MaterialClass, SimpleOpaque};
 use crate::vertex_layouts::{VertexCaps, VertexLayoutBuilder};

@@ -20,6 +20,7 @@ use std::time::SystemTime;
 use dashmap::DashMap;
 use unicase::UniCase;
 use walkdir::WalkDir;
+use nab_3l14::Symbol;
 // TODO: split this file out some?
 
 struct AssetBuilderEntry

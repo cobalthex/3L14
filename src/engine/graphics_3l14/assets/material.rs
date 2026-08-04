@@ -8,6 +8,7 @@ use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{Buffer, BufferUsages};
 use asset_3l14::{Ash, Asset, AssetKey, AssetLifecycler, AssetLoadRequest, AssetTypeId};
 use debug_3l14::debug_gui::DebugGui;
+use proc_macros_3l14::LayoutHash;
 use crate::assets::Texture;
 use crate::material_classes::MaterialClass;
 
@@ -21,6 +22,7 @@ pub struct MaterialFile
     pub props: Box<[u8]>,
 }
 
+#[derive(LayoutHash)]
 pub struct Material
 {
     pub class: MaterialClass,

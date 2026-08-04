@@ -2,12 +2,11 @@ use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
 use std::io::Read;
-use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use map_design_3l14::{MapDef, MapLayer};
 use nab_3l14::utils::osstr::OsStrUtils;
+use world_3l14::assets::map::MapFile;
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
-use world_3l14::MapFile;
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct MapBuilderConfig
@@ -81,7 +80,6 @@ impl AssetBuilder for MapBuilder
             {
                 let layer_path = layer_file?.path();
                 if !layer_path.is_file() { continue; }
-                println!(">> {:?}", layer_path);
                 let Some(layer_name) = layer_path
                     .file_name()
                     .expect("How did the layer not have a file name?")
@@ -97,6 +95,7 @@ impl AssetBuilder for MapBuilder
             }
             layers
         };
+        
         println!("map: {}", map_def.name);
         for (layer_name, _) in &layers
         {

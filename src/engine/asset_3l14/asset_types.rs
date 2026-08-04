@@ -1,7 +1,7 @@
-use proc_macros_3l14::FancyEnum;
+use proc_macros_3l14::{EnumFromStr, FancyEnum};
 
 // All the supported (runtime) asset types
-#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, FancyEnum)]
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, FancyEnum, EnumFromStr)]
 #[repr(u16)]
 pub enum AssetTypeId
 {
