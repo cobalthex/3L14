@@ -3,7 +3,6 @@ use std::ffi::{OsStr, OsString};
 use std::fs::File;
 use std::io::Read;
 use serde::{Deserialize, Serialize};
-use map_design_3l14::{MapDef, MapLayer};
 use nab_3l14::utils::osstr::OsStrUtils;
 use world_3l14::assets::map::MapFile;
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};

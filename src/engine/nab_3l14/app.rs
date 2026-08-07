@@ -122,7 +122,7 @@ impl<TCliArgs: CliArgs> AppRun<TCliArgs>
             .filter_module("input_3l14", self_filter_level)
             .filter_module("interop_3l14", self_filter_level)
             .filter_module("latch_3l14", self_filter_level)
-            .filter_module("map_design_3l14", self_filter_level)
+            .filter_module("source_defs_3l14", self_filter_level)
             .filter_module("math_3l14", self_filter_level)
             .filter_module("nab_3l14", self_filter_level)
             .filter_module("world_3l14", self_filter_level)

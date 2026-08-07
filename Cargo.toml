@@ -18,7 +18,7 @@ publish = false
 
 [workspace]
 resolver = "2"
-members = ["./src/engine/*", "src/exe/*", "src/tooling/*", "src/build"]
+members = ["./src/engine/*", "src/exe/*", "src/build"]
 
 [dependencies]
 
@@ -35,9 +35,8 @@ interop_3l14 = { path = "./src/engine/interop_3l14" }
 latch_3l14 = { path = "./src/engine/latch_3l14" }
 math_3l14 = { path = "./src/engine/math_3l14" }
 nab_3l14 = { path = "./src/engine/nab_3l14" }
+source_defs_3l14 = { path = "./src/engine/source_defs_3l14" }
 world_3l14 = { path = "./src/engine/world_3l14" }
-
-map_design_3l14 = { path = "./src/tooling/map_design_3l14" }
 
 #egui_wgpu_backend = "0.33.0"
 #puffin = "0.19.1"
@@ -51,8 +50,8 @@ clap = { version = "4.6.4", features = ["derive"] }
 colog = "1.4.0"
 crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
 dashmap = { version = "6.1.0" }
-egui = { git="https://github.com/emilk/egui.git", rev = "3fcadda", features = ["persistence"] }
-egui-wgpu = { git="https://github.com/emilk/egui.git", rev = "3fcadda" }
+egui = { version = "0.36.0", features = ["persistence"] }
+egui-wgpu = { version = "0.36.0" }
 enumflags2 = { version = "0.7.12", features = ["serde"] }
 erased-serde = "0.4.10"
 futures = { version = "0.3.33", features = ["thread-pool"] }

@@ -1,5 +1,5 @@
 use super::*;
-use asset_3l14::{Asset, AssetFileType, AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetMetadata, AssetTypeId, VersionHash, SourceMetadata, TomlRead, TomlWrite};
+use asset_3l14::{Asset, AssetFileType, AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetMetadata, AssetTypeId, VersionHash, SourceMetadata, TomlRead, TomlWrite, SourceMetadataStub, MetaFileError};
 use bitcode::Encode;
 use clap::ValueEnum;
 use metrohash::MetroHash64;
@@ -110,7 +110,7 @@ pub struct AssetsBuilder
 {
     config: AssetsBuilderConfig,
     // TODO: use Path -- and make case insensitive?
-    sources: DashMap<String, AssetKeySourceId>, // paths relative to assets root, only tracks sources which have been referenced this run
+    sources: DashMap<PathBuf, AssetKeySourceId>, // maps source paths (relative to sources root) to their source ID. Only tracks sources which have attempted to be built this run
 }
 impl AssetsBuilder
 {
@@ -131,6 +131,37 @@ impl AssetsBuilder
     #[inline] #[must_use]
     pub fn builders_version_hash(&self) -> u64 { self.config.builders_version_hash }
 
+    // Query a source file to get its source ID, or none if the source is not known/does not exist
+    pub fn query_source(&self, source_path: impl AsRef<Path>) -> Result<SourceMetadata, MetaFileError>
+    {
+        // TODO: validate that
+        let canonical_path = self.canonicalize_source_path(&source_path).map_err(MetaFileError::FileReadError)?;
+        if !std::fs::metadata(&canonical_path).map_err(MetaFileError::FileReadError)?.is_file()
+        {
+            return Err(MetaFileError::NotAFile);
+        }
+
+        // todo: this should probably get its own error
+        let source_meta_path = canonical_path.with_extension(AssetsBuilderConfig::SOURCE_META_FILE_EXTENSION.as_ref());
+        let mut fin = File::open(&source_meta_path).map_err(MetaFileError::FileReadError)?;
+        SourceMetadata::load(&mut fin)
+    }
+
+    // Check to see if an asset corresponds to a real asset
+    pub fn query_asset(&self, asset_key: AssetKey) -> Result<AssetMetadata, MetaFileError> // TODO: specific error?
+    {
+        let asset_path = self.config.assets_root.join(&format!("{asset_key:x}.{}", AssetFileType::Asset.file_extension()));
+        if !std::fs::metadata(&asset_path).map_err(MetaFileError::FileReadError)?.is_file()
+        {
+            return Err(MetaFileError::NotAFile);
+        }
+
+        // todo: this should probably get its own error
+        let asset_meta_path = self.config.assets_root.join(&format!("{asset_key:x}.{}", AssetFileType::MetaData.file_extension()));
+        let mut fin = File::open(asset_meta_path).map_err(MetaFileError::FileReadError)?;
+        AssetMetadata::load(&mut fin)
+    }
+
     #[inline] #[must_use]
     pub fn scan_sources(&self) -> ScanSources
     {
@@ -145,7 +176,7 @@ impl AssetsBuilder
         ScanAssets { walk_dir: walker.into_iter() }
     }
 
-    fn canonicalize_path(&self, path: impl AsRef<Path>) -> io::Result<PathBuf>
+    fn canonicalize_source_path(&self, path: impl AsRef<Path>) -> io::Result<PathBuf>
     {
         (if path.as_ref().is_relative()
         {
@@ -159,7 +190,8 @@ impl AssetsBuilder
 
     pub fn reset_import(&self, source_path: impl AsRef<Path>) -> Result<(), BuildError> // unique error?
     {
-        let canonical_path = self.canonicalize_path(&source_path).map_err(BuildError::SourceIOError)?;
+        let canonical_path = self.canonicalize_source_path(&source_path).map_err(BuildError::SourceIOError)?;
+        // TODO: remove path from sources list?
         let file_ext = canonical_path.extension().unwrap_or(OsStr::new("")).to_string_lossy();
         let source_meta_file_path = canonical_path.with_extension(
             format!("{}.{}", file_ext.as_ref(), AssetsBuilderConfig::SOURCE_META_FILE_EXTENSION));
@@ -194,23 +226,21 @@ impl AssetsBuilder
             Err(err) =>
             {
                 log::warn!("Failed to open source asset meta-file for reading: {err}");
-                return Err(BuildError::SourceMetaError(Box::new(err)));
+                return Err(BuildError::SourceMetaError(MetaFileError::FileReadError(err)));
             }
         };
 
-        let mut writer = File::create(&source_meta_file_path)
-            .map_err(BuildError::SourceMetaIOError)?;
-
         let mut meta_writer = File::create(&source_meta_file_path)
-            .map_err(BuildError::SourceMetaIOError)?;
+            .map_err(|err| BuildError::SourceMetaError(MetaFileError::FileWriteError(err)))?;
         source_meta.save(true, &mut meta_writer).map_err(BuildError::SourceMetaError)
     }
 
     // transform a source file into one or more built asset, returns the built count
     pub fn build_source(&self, source_path: impl AsRef<Path>, build_rule: BuildRule) -> Result<BuildResults, BuildError>
     {
-        let canonical_path = self.canonicalize_path(&source_path).map_err(BuildError::SourceIOError)?;
+        // TODO: this should enqueue a build rather than build immediate
 
+        let canonical_path = self.canonicalize_source_path(&source_path).map_err(BuildError::SourceIOError)?;
         let rel_path = canonical_path.strip_prefix(&self.config.sources_root).map_err(|_| BuildError::InvalidSourcePath)?;
 
         let file_ext = rel_path.extension().unwrap_or(OsStr::new("")).to_string_lossy();
@@ -230,11 +260,12 @@ impl AssetsBuilder
             Ok(mut fin) =>
             {
                 let meta_modtime = fin.metadata()
-                    .map_err(BuildError::SourceMetaIOError)?
+                    .map_err(|err| BuildError::SourceMetaError(MetaFileError::FileReadError(err)))?
                     .modified()
-                    .map_err(BuildError::SourceMetaIOError)?;
+                    .map_err(|err| BuildError::SourceMetaError(MetaFileError::FileReadError(err)))?;
 
                 let meta = SourceMetadata::load(&mut fin).map_err(BuildError::SourceMetaError)?;
+
                 (meta, meta_modtime)
             },
             Err(err) if err.kind() == ErrorKind::NotFound =>
@@ -253,9 +284,11 @@ impl AssetsBuilder
 
                 {
                     let mut meta_writer = File::create(&source_meta_file_path)
-                        .map_err(BuildError::SourceMetaIOError)?;
+                        .map_err(|err| BuildError::SourceMetaError(MetaFileError::FileWriteError(err)))?;
                     new_meta.save(true, &mut meta_writer).map_err(BuildError::SourceMetaError)?;
                 }
+
+                debug_assert!(!self.sources.contains_key(rel_path));
 
                 log::info!("{:?} is a new asset, assigned source ID: {source_id:?}", source_path.as_ref());
 
@@ -264,9 +297,27 @@ impl AssetsBuilder
             Err(err) =>
             {
                 log::warn!("Failed to open source asset meta-file for reading: {err}");
-                return Err(BuildError::SourceMetaError(Box::new(err)));
+                return Err(BuildError::SourceMetaError(MetaFileError::FileReadError(err)));
             }
         };
+
+        // check if this asset has already been built
+        let known_entry = self.sources.entry(rel_path.to_path_buf());
+        if let dashmap::Entry::Occupied(existing_entry) = known_entry
+        {
+            if *existing_entry.get() != source_meta.source_id
+            {
+                log::error!("Source path ID collision: {:?} => {:?} (existing: {:?})",
+                    source_path.as_ref(),
+                    source_meta.source_id,
+                    *existing_entry.get());
+            }
+            return Ok(BuildResults::default());
+        }
+        else
+        {
+            known_entry.insert(source_meta.source_id);
+        }
 
         let mut source_read =
         {
@@ -336,10 +387,9 @@ impl AssetsBuilder
         }
     }
 
-    // Build all (known) assets. Files without an accompanying .sork are skipped
+    // Build all (known) sources. Files without an accompanying .sork are skipped
     pub fn build_all(&self, build_rule: BuildRule) -> Result<(), ()> // TODO
     {
-        // TODO: parallelize
         for source in self.scan_sources()
         {
             let Ok((source, _)) = source else { continue };
@@ -371,14 +421,12 @@ pub enum BuildError
     InvalidSourcePath, // lies outside the sources root
     InvalidSyntheticAssetKey, // asset key was not synthetic
     NoBuilderForSource(String),
+    SourceMetaError(MetaFileError),
+    AssetMetaError(MetaFileError),
     SourceIOError(io::Error),
-    SourceMetaError(Box<dyn Error>),
-    SourceMetaIOError(io::Error),
-    AssetMetaIOError(io::Error),
-    AssetMetaError(Box<dyn Error>),
     TooManyDerivedIDs,
     BuilderError(Box<dyn Error>),
-    OutputMetaError(Box<dyn Error>),
+    OutputMetaError(MetaFileError),
     OutputIOError(io::Error),
     OutputDebugIOError(io::ErrorKind), // error kind b/c error is not cloneable and lazy makes this stupid
 }
@@ -542,10 +590,10 @@ impl<'b> BuildOutputs<'b>
     #[inline] #[must_use]
     pub fn source_path(&self) -> &Path { self.rel_source_path }
 
-    pub fn add_dependency(&mut self, source_name: impl AsRef<Path>, asset_type: AssetTypeId, sub_index: u16) -> AssetKey
+    pub fn add_dependency(&mut self, asset_key: AssetKey) -> Result<(), BuildError>
     {
-        let derived_id = AssetKeyDerivedId(sub_index);
-        todo!()
+        let asset_meta = self.assets_builder.query_asset(asset_key).map_err(BuildError::AssetMetaError)?;
+        self.assets_builder.build_source(asset_meta.source_path, self.build_rule).map(|_| ())
     }
 
     // Produce an output from this build. Assets of the same type have sequential derived IDs
@@ -579,6 +627,7 @@ impl<'b> BuildOutputs<'b>
         self.add_asset(asset_key, self.build_rule, builder_fn)
     }
 
+    // TODO: this should probably just care about source changing and not outputs
     // build an asset (if rules allow) and add an output to the asset build
     fn add_asset(
         &mut self,
@@ -602,7 +651,7 @@ impl<'b> BuildOutputs<'b>
                         {
                             let mut bytes = Vec::new();
                             fin.read_to_end(&mut bytes)
-                                .map_err(BuildError::AssetMetaIOError)?;
+                                .map_err(|err| BuildError::AssetMetaError(MetaFileError::FileReadError(err)))?;
                             let meta = AssetMetadata::load(&mut Cursor::new(bytes))
                                 .map_err(BuildError::AssetMetaError)?;
 
@@ -611,7 +660,7 @@ impl<'b> BuildOutputs<'b>
                             // check timestamps?
                         }
                         Err(e) if e.kind() == io::ErrorKind::NotFound => true,
-                        Err(e) => return Err(BuildError::AssetMetaIOError(e)),
+                        Err(e) => return Err(BuildError::AssetMetaError(MetaFileError::FileReadError(e))),
                     }
                 }
             },

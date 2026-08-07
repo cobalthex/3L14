@@ -1,5 +1,6 @@
 use bitcode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use asset_3l14::AssetKey;
 use crate::Rgba;
 
 #[repr(u8)]
@@ -23,7 +24,8 @@ pub struct PbrProps
     pub roughness: f32,
 }
 #[repr(C)]
-pub struct SimpleOpaque
+pub struct PbrOpaque
 {
+    pub albedo_tex: AssetKey,
     pub pbr: PbrProps,
 }

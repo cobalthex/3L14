@@ -14,7 +14,7 @@ use enumflags2::BitFlags;
 use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MipmapFilterMode, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
 use asset_3l14::{Ash, AssetKey, AssetTypeId, Assets, AssetSnapshot, AssetView};
 use crate::assets::shader_key::pixel;
-use crate::material_classes::{MaterialClass, SimpleOpaque};
+use crate::material_classes::{MaterialClass, PbrOpaque};
 use crate::vertex_layouts::{VertexCaps, VertexLayoutBuilder};
 
 #[derive(Debug, Clone, Copy, Hash)]
@@ -84,7 +84,7 @@ impl PipelineCache
                     MaterialClass::DebugLines => const { &[] }, // todo: uniforms?
                     MaterialClass::PbrOpaque => const
                     {&[
-                        uniform::<SimpleOpaque>(0),
+                        uniform::<PbrOpaque>(0),
                         sampler(1),
                         tex2D(2, "albedo"),
                     ]},

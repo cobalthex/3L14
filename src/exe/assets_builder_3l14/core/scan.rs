@@ -11,7 +11,7 @@ use crate::core::AssetsBuilderConfig;
 pub enum ScanError
 {
     IOError(io::Error),
-    MetaParseError(Box<dyn Error>),
+    MetaFileError(asset_3l14::MetaFileError),
     NoSourceFile
     {
         source_path: PathBuf,
@@ -38,7 +38,7 @@ impl ScanSources
     fn read_source_meta(file: impl AsRef<Path>) -> Result<SourceMetadataStub, ScanError>
     {
         let mut fin = File::open(file).map_err(ScanError::IOError)?;
-        SourceMetadataStub::load(&mut fin).map_err(|e| ScanError::MetaParseError(e))
+        SourceMetadataStub::load(&mut fin).map_err(ScanError::MetaFileError)
     }
 }
 impl Iterator for ScanSources
@@ -98,7 +98,7 @@ impl ScanAssets
     fn read_asset_meta(file: impl AsRef<Path>) -> Result<AssetMetadata, ScanError>
     {
         let mut fin = File::open(file).map_err(ScanError::IOError)?;
-        AssetMetadata::load(&mut fin).map_err(ScanError::MetaParseError)
+        AssetMetadata::load(&mut fin).map_err(ScanError::MetaFileError)
     }
 }
 impl Iterator for ScanAssets

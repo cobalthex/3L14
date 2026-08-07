@@ -1,6 +1,6 @@
 [package]
-name = "map_design_3l14"
-description = "Scene design-time tooling for 3L14"
+name = "source_defs_3l14"
+description = "Design time structures for 3L14"
 workspace = "../../.."
 edition.workspace = true
 

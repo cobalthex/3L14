@@ -251,7 +251,7 @@ dependencies = [
  "chrono",
  "crossbeam",
  "debug_3l14",
- "egui 0.35.0",
+ "egui 0.36.0",
  "enumflags2",
  "futures",
  "log",
@@ -277,7 +277,7 @@ dependencies = [
  "build_3l14",
  "chrono",
  "clap",
- "egui 0.35.0",
+ "egui 0.36.0",
  "graphics_3l14",
  "input_3l14",
  "log",
@@ -311,7 +311,6 @@ dependencies = [
  "latch_3l14",
  "log",
  "logos",
- "map_design_3l14",
  "math_3l14",
  "metrohash",
  "nab_3l14",
@@ -850,7 +849,7 @@ dependencies = [
 name = "debug_3l14"
 version = "0.0.0"
 dependencies = [
- "egui 0.35.0",
+ "egui 0.36.0",
  "indexmap",
  "log",
  "nab_3l14",
@@ -905,11 +904,12 @@ dependencies = [
 
 [[package]]
 name = "ecolor"
-version = "0.35.0"
-source = "git+https://github.com/emilk/egui.git?rev=3fcadda#3fcadda5ba186c9a0f8c1546e2a3fefae6b1e863"
+version = "0.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30429559efada7bd06098ced68e90f1f745acb9a25b51caf158741493c5b94bb"
 dependencies = [
  "bytemuck",
- "emath 0.35.0",
+ "emath 0.36.0",
  "serde",
 ]
 
@@ -934,14 +934,15 @@ dependencies = [
 
 [[package]]
 name = "egui"
-version = "0.35.0"
-source = "git+https://github.com/emilk/egui.git?rev=3fcadda#3fcadda5ba186c9a0f8c1546e2a3fefae6b1e863"
+version = "0.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8e70d4e8e8896ba5becb0bc1c8c06d203cb44ff16a93d7a619a5e565500085d"
 dependencies = [
  "accesskit 0.24.1",
  "ahash",
  "bitflags 2.13.1",
- "emath 0.35.0",
- "epaint 0.35.0",
+ "emath 0.36.0",
+ "epaint 0.36.0",
  "itertools 0.15.0",
  "log",
  "nohash-hasher",
@@ -950,17 +951,19 @@ dependencies = [
  "serde",
  "smallvec",
  "unicode-segmentation",
+ "web-sys",
 ]
 
 [[package]]
 name = "egui-wgpu"
-version = "0.35.0"
-source = "git+https://github.com/emilk/egui.git?rev=3fcadda#3fcadda5ba186c9a0f8c1546e2a3fefae6b1e863"
+version = "0.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a262a88482609aeda48457fa6f76f5b754b2965e88797c22ac8ab2709f397906"
 dependencies = [
  "ahash",
  "bytemuck",
  "document-features",
- "epaint 0.35.0",
+ "epaint 0.36.0",
  "log",
  "profiling",
  "thiserror 2.0.19",
@@ -1000,8 +1003,9 @@ dependencies = [
 
 [[package]]
 name = "emath"
-version = "0.35.0"
-source = "git+https://github.com/emilk/egui.git?rev=3fcadda#3fcadda5ba186c9a0f8c1546e2a3fefae6b1e863"
+version = "0.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60b4d19daeb47a1e42e9e67fdc8dd003364b4d3e6c6bc4df865a2b5ad2c920e0"
 dependencies = [
  "bytemuck",
  "serde",
@@ -1110,13 +1114,14 @@ dependencies = [
 
 [[package]]
 name = "epaint"
-version = "0.35.0"
-source = "git+https://github.com/emilk/egui.git?rev=3fcadda#3fcadda5ba186c9a0f8c1546e2a3fefae6b1e863"
+version = "0.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84a7cb8f831a5a43423e4838101ac4a3264910f2f326670c24f4f4b7ee43d9c8"
 dependencies = [
  "ahash",
  "bytemuck",
- "ecolor 0.35.0",
- "emath 0.35.0",
+ "ecolor 0.36.0",
+ "emath 0.36.0",
  "epaint_default_fonts",
  "font-types",
  "harfrust",
@@ -1135,8 +1140,9 @@ dependencies = [
 
 [[package]]
 name = "epaint_default_fonts"
-version = "0.35.0"
-source = "git+https://github.com/emilk/egui.git?rev=3fcadda#3fcadda5ba186c9a0f8c1546e2a3fefae6b1e863"
+version = "0.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d16e23bfeaa81d590306ae25da24269a0686d240c623013badbda44d3f5fab46"
 
 [[package]]
 name = "equator"
@@ -1279,9 +1285,9 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "font-types"
-version = "0.11.3"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b38ad915f6dadd993ced50848a8291a543bd41ca62bc10740d5e64e2ab4cfd7"
+checksum = "0a7299a780854a6d391be2ae1c8521c9368471b559dbfd6a8dbd9f407eaff100"
 dependencies = [
  "bytemuck",
  "serde",
@@ -1393,7 +1399,7 @@ dependencies = [
  "clap",
  "containers_3l14",
  "debug_3l14",
- "egui 0.35.0",
+ "egui 0.36.0",
  "glam",
  "graphics_3l14",
  "input_3l14",
@@ -1470,9 +1476,9 @@ dependencies = [
 
 [[package]]
 name = "glifo"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d99fc21d493812643aae86d53b7bbd02f376434a90317e8a790bc209fdd6605e"
+checksum = "ed4a1bb24121291d27230c1b1b44e07d6a9b28cefdb32fe1581dfb84e14f940a"
 dependencies = [
  "bytemuck",
  "foldhash 0.2.0",
@@ -1569,7 +1575,7 @@ dependencies = [
  "containers_3l14",
  "dashmap",
  "debug_3l14",
- "egui 0.35.0",
+ "egui 0.36.0",
  "egui-wgpu",
  "enumflags2",
  "futures",
@@ -1611,9 +1617,9 @@ dependencies = [
 
 [[package]]
 name = "harfrust"
-version = "0.7.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0431e8e389aa0f1e72bb9d1c2db8957a1a7a3580e8ed97db819c14837aac9b3e"
+checksum = "c03d949a14aa089bbb282f7dd76a498a7f684428e4257202efc119ec010376f9"
 dependencies = [
  "bitflags 2.13.1",
  "bytemuck",
@@ -1803,7 +1809,7 @@ name = "input_3l14"
 version = "0.0.0"
 dependencies = [
  "debug_3l14",
- "egui 0.35.0",
+ "egui 0.36.0",
  "glam",
  "log",
  "nab_3l14",
@@ -2112,18 +2118,6 @@ name = "lz4_flex"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ef0d4ed8669f8f8826eb00dc878084aa8f253506c4fd5e8f58f5bce72ddb97e"
-
-[[package]]
-name = "map_design_3l14"
-version = "0.0.0"
-dependencies = [
- "asset_3l14",
- "glam",
- "nab_3l14",
- "proc_macros_3l14",
- "serde",
- "world_3l14",
-]
 
 [[package]]
 name = "math_3l14"
@@ -2474,9 +2468,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.21.3"
+version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
+checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "ordered-float"
@@ -2911,12 +2905,13 @@ dependencies = [
 
 [[package]]
 name = "read-fonts"
-version = "0.39.2"
+version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4ed38b89c2c77ff968c524145ad65fb010f38af5c7a224b53b81d47ac2daa81"
+checksum = "046a7d674daf459825b32f5062056d6882db0d2f5a479fbd76ccfc870ac18709"
 dependencies = [
  "bytemuck",
  "font-types",
+ "once_cell",
 ]
 
 [[package]]
@@ -3141,9 +3136,9 @@ dependencies = [
 
 [[package]]
 name = "skrifa"
-version = "0.42.1"
+version = "0.44.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c34617370ae968efb7161bb2beb517d9084659aae19e24b89e3db25b46e4564"
+checksum = "819ab7d62b1d3e72d9d9dea5650bac30424f9111364bb94928dbf5ecad1baa68"
 dependencies = [
  "bytemuck",
  "read-fonts",
@@ -3174,6 +3169,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "source_defs_3l14"
+version = "0.0.0"
+dependencies = [
+ "asset_3l14",
+ "glam",
+ "nab_3l14",
+ "proc_macros_3l14",
+ "serde",
+ "world_3l14",
 ]
 
 [[package]]
@@ -3260,7 +3267,7 @@ dependencies = [
  "chrono",
  "crossbeam",
  "debug_3l14",
- "egui 0.35.0",
+ "egui 0.36.0",
  "futures",
  "log",
  "metrohash",
@@ -3526,14 +3533,13 @@ checksum = "eab68b56840f69efb0fefbe3ab6661499217ffdc58e2eef7c3f6f69835386322"
 
 [[package]]
 name = "vello_common"
-version = "0.0.9"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19d672facaa2d697285a786cd9d44d614cd2ce54cdc022504bf339f8fff3b750"
+checksum = "b2e9aed918117e8152c9eddfd8362d73c465c23f26c44786aa331707b8a64fa2"
 dependencies = [
  "bytemuck",
  "fearless_simd",
  "guillotiere",
- "hashbrown 0.17.1",
  "log",
  "peniko",
  "smallvec",
@@ -3542,9 +3548,9 @@ dependencies = [
 
 [[package]]
 name = "vello_cpu"
-version = "0.0.9"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "588691169aed86b5c8fb487266afee01323234e6fd0a3f2aaec0eaa8e4007f23"
+checksum = "ac7349e1f55f6b801c7c277958df4ea53e7f20f21e8014910ad888b2ecda93ea"
 dependencies = [
  "bytemuck",
  "glifo",
@@ -4369,7 +4375,7 @@ dependencies = [
  "bitcode",
  "containers_3l14",
  "debug_3l14",
- "egui 0.35.0",
+ "egui 0.36.0",
  "glam",
  "graphics_3l14",
  "math_3l14",

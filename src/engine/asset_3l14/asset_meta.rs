@@ -6,30 +6,40 @@ use std::path::PathBuf;
 use base64::Engine;
 use crate::{AssetKey, AssetKeySourceId};
 
+// TODO: move to somewhere more central?
+#[derive(Debug)]
+pub enum MetaFileError
+{
+    NotAFile,
+    FileReadError(std::io::Error),
+    FileWriteError(std::io::Error),
+    TomlReadError(toml::de::Error),
+    TomlWriteError(toml::ser::Error),
+}
+
 // TODO: is this really better than just fs_read_to_string() and toml parse?
 pub trait TomlRead: DeserializeOwned
 {
-    fn load(reader: &mut impl Read) -> Result<Self, Box<dyn std::error::Error>>
+    fn load(reader: &mut impl Read) -> Result<Self, MetaFileError>
     {
         let mut buf = String::new();
-        reader.read_to_string(&mut buf)?;
-        Ok(toml::from_str(&buf)?)
+        reader.read_to_string(&mut buf).map_err(MetaFileError::FileReadError)?;
+        toml::from_str(&buf).map_err(MetaFileError::TomlReadError)
     }
 }
 pub trait TomlWrite: Serialize
 {
-    fn save(&self, prettify: bool, writer: &mut impl Write) -> Result<(), Box<dyn std::error::Error>>
+    fn save(&self, prettify: bool, writer: &mut impl Write) -> Result<(), MetaFileError>
     {
         let toml = if prettify
         {
-            toml::ser::to_string_pretty(self).expect("Failed to (pretty) serialize TOML")
+            toml::ser::to_string_pretty(self).map_err(MetaFileError::TomlWriteError)?
         }
         else
         {
-            toml::ser::to_string(self).expect("Failed to serialize TOML")
+            toml::ser::to_string(self).map_err(MetaFileError::TomlWriteError)?
         };
-        writer.write_all(toml.as_bytes())?;
-        Ok(())
+        writer.write_all(toml.as_bytes()).map_err(MetaFileError::FileWriteError)
     }
 }
 

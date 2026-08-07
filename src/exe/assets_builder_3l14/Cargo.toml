@@ -20,7 +20,6 @@ interop_3l14 = { workspace = true, features = [] }
 latch_3l14 = { workspace = true, features = [] }
 math_3l14 = { workspace = true, features = [] }
 world_3l14 = { workspace = true, features = [] }
-map_design_3l14 = { workspace = true, features = [] }
 proc_macros_3l14 = { workspace = true, features = [] }
 
 arrayvec.workspace = true

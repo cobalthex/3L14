@@ -414,7 +414,7 @@ impl Renderer
 
         let output = self.debug_gui.end_pass();
         output.textures_delta.set.iter().for_each(|td|
-            gui_renderer.update_texture(&self.device, &self.queue, td.0, &td.1));
+            gui_renderer.update_texture(&self.device, &self.queue, *td.0, *td.1));
         output.textures_delta.free.iter().for_each(|t|
             gui_renderer.free_texture(t));
         // gui_renderer.add_textures(&self.device, &self.queue, &output.textures_delta).unwrap();

@@ -1,5 +1,5 @@
 use std::time::Instant;
-use egui::TouchPhase;
+use egui::{Modifiers, TouchPhase};
 use glam::IVec2;
 use sdl2::event::Event;
 use sdl2::keyboard::Mod;
@@ -187,16 +187,22 @@ impl Input
         const EGUI_SCROLL_WHEEL_SCALE: f32 = 20.0;
 
         let mut ri = egui::RawInput::default();
-        ri.modifiers.ctrl = self.keyboard.has_keymod(KeyMods::CTRL);
-        ri.modifiers.shift = self.keyboard.has_keymod(KeyMods::SHIFT);
-        ri.modifiers.alt = self.keyboard.has_keymod(KeyMods::ALT);
 
+        let keymods = egui::Modifiers
+        {
+            ctrl: self.keyboard.has_keymod(KeyMods::CTRL),
+            shift: self.keyboard.has_keymod(KeyMods::SHIFT),
+            alt: self.keyboard.has_keymod(KeyMods::ALT),
+            command: self.keyboard.has_keymod(KeyMods::CTRL),
+            mac_cmd: false,
+        };
+
+        // TODO: Context::egui_wants_pointer_input and egui_wants_keyboard_input
         let mouse_pos = egui::Pos2
         {
             x: self.mouse.position.x as f32 / zoom_scale_factor,
             y: self.mouse.position.y as f32 / zoom_scale_factor,
         };
-
         ri.events.push(egui::Event::PointerMoved(mouse_pos));
 
         ri.events.push(egui::Event::MouseWheel
@@ -207,7 +213,7 @@ impl Input
                 y: self.mouse.wheel_delta.y as f32 * EGUI_SCROLL_WHEEL_SCALE
             },
             unit: egui::MouseWheelUnit::Point,
-            modifiers: ri.modifiers,
+            modifiers: keymods,
             phase: TouchPhase::Move,
         });
 
@@ -233,7 +239,7 @@ impl Input
                     _ => panic!("Unknown pointer button")
                 },
                 pressed,
-                modifiers: ri.modifiers,
+                modifiers: keymods,
             })
         }
 

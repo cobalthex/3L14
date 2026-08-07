@@ -1,4 +1,4 @@
-use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
+use crate::core::{AssetBuilder, BuildError, BuildOutputs, SourceInput, VersionBuilder};
 use arrayvec::ArrayVec;
 use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
 use enumflags2::BitFlags;
@@ -51,7 +51,7 @@ impl Error for ModelImportError { }
 pub struct ModelBuildConfig
 {
     // optimize (meshoptimizer)
-    material_mappings: HashMap<String, String>, // maps gltf's material name to an external material def
+    material_mappings: HashMap<String, AssetKey>, // maps gltf's material name to an external material def
 }
 pub struct ModelBuilder;
 impl AssetBuilder for ModelBuilder
@@ -100,7 +100,7 @@ impl AssetBuilder for ModelBuilder
 
             for gltf_node in document.nodes()
             {
-                self.parse_gltf_mesh(gltf_node, &buffers, &images, &skeletons, outputs)?;
+                self.parse_gltf_mesh(gltf_node, &buffers, &images, &skeletons, &config, outputs)?;
             }
         }
 
@@ -115,6 +115,7 @@ impl ModelBuilder
         buffers: &Vec<gltf::buffer::Data>,
         images: &Vec<gltf::image::Data>,
         skeletons: &[SkelInfo],
+        config: &ModelBuildConfig,
         outputs: &mut BuildOutputs)
     -> Result<(), Box<dyn Error>>
     {
@@ -239,92 +240,102 @@ impl ModelBuilder
                 }
             }
 
-            let mut textures = ArrayVec::new();
-
-            let pbr = in_prim.material().pbr_metallic_roughness();
-            if let Some(tex) = pbr.base_color_texture()
+            let material = if let Some(mtl_name) = in_prim.material().name() &&
+                let Some(mtl_mapping) = config.material_mappings.get(mtl_name)
             {
-                let tex_index = tex.texture().source().index();
-                let tex_data = &images[tex_index];
+                // add built dependency?
+                outputs.add_dependency(*mtl_mapping)?;
+                *mtl_mapping
+            }
+            else
+            {
+                let mut textures = ArrayVec::new();
 
-                let tex_asset = outputs.add_output(AssetTypeId::Texture, |mut tex_output|
+                let pbr = in_prim.material().pbr_metallic_roughness();
+                if let Some(tex) = pbr.base_color_texture()
                 {
-                    tex.texture().name().map(|n| tex_output.set_name(n));
+                    let tex_index = tex.texture().source().index();
+                    let tex_data = &images[tex_index];
 
-                    let (pixel_format, need_conv) = match tex_data.format
-                    {
-                        Format::R8 => (TextureFilePixelFormat::R8, false),
-                        Format::R8G8 => (TextureFilePixelFormat::Rg8, false),
-                        Format::R8G8B8 => (TextureFilePixelFormat::Rgba8, true),
-                        Format::R8G8B8A8 => (TextureFilePixelFormat::Rgba8, false),
-                        Format::R16 => todo!("R16 textures"),
-                        Format::R16G16 => todo!("R16G16 textures"),
-                        Format::R16G16B16 => todo!("R16G16B16 textures"),
-                        Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
-                        Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
-                        Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
-                    };
+                    let tex_asset = outputs.add_output(AssetTypeId::Texture, |mut tex_output|
+                        {
+                            tex.texture().name().map(|n| tex_output.set_name(n));
 
-                    tex_output.serialize(&TextureFile
+                            let (pixel_format, need_conv) = match tex_data.format
+                            {
+                                Format::R8 => (TextureFilePixelFormat::R8, false),
+                                Format::R8G8 => (TextureFilePixelFormat::Rg8, false),
+                                Format::R8G8B8 => (TextureFilePixelFormat::Rgba8, true),
+                                Format::R8G8B8A8 => (TextureFilePixelFormat::Rgba8, false),
+                                Format::R16 => todo!("R16 textures"),
+                                Format::R16G16 => todo!("R16G16 textures"),
+                                Format::R16G16B16 => todo!("R16G16B16 textures"),
+                                Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
+                                Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
+                                Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
+                            };
+
+                            tex_output.serialize(&TextureFile
+                            {
+                                width: tex_data.width,
+                                height: tex_data.height,
+                                depth: 1,
+                                mip_count: 1,
+                                mip_offsets: Default::default(),
+                                pixel_format,
+                            })?;
+
+                            // TODO: texture compression
+                            if need_conv
+                            {
+                                match tex_data.format
+                                {
+                                    Format::R8G8B8 =>
+                                        {
+                                            // todo: check length
+                                            for i in 0..(tex_data.width * tex_data.height) as usize
+                                            {
+                                                tex_output.write_all(&tex_data.pixels[(i * 3)..((i + 1) * 3)])?;
+                                                tex_output.write_all(&[u8::MAX])?;
+                                            }
+                                        }
+                                    _ => todo!("Other texture format conversions"),
+                                }
+                            } else {
+                                tex_output.write_all(&tex_data.pixels)?;
+                            }
+
+                            Ok(())
+                        })?;
+
+                    textures.try_push(tex_asset)?;
+                }
+
+                // TODO: read material info from gltf
+                let material_class = MaterialClass::PbrOpaque; // TODO
+                outputs.add_output(AssetTypeId::Material, |mtl_output|
+                {
+                    // call into MaterialBuilder?
+                    mtl_output.set_name(format!("{:?}", material_class));
+                    mtl_output.depends_on_multiple(textures.clone());
+
+                    mtl_output.serialize(&MaterialFile
                     {
-                        width: tex_data.width,
-                        height: tex_data.height,
-                        depth: 1,
-                        mip_count: 1,
-                        mip_offsets: Default::default(),
-                        pixel_format,
+                        class: material_class,
+                        textures,
+                        props: alloc_u8_slice(PbrProps
+                        {
+                            albedo_color: pbr.base_color_factor().into(),
+                            metallicity: pbr.metallic_factor(),
+                            roughness: pbr.roughness_factor(),
+                        }),
                     })?;
 
-                    // TODO: texture compression
-                    if need_conv
-                    {
-                        match tex_data.format
-                        {
-                            Format::R8G8B8 =>
-                            {
-                                // todo: check length
-                                for i in 0..(tex_data.width * tex_data.height) as usize
-                                {
-                                    tex_output.write_all(&tex_data.pixels[(i * 3)..((i + 1) * 3)])?;
-                                    tex_output.write_all(&[u8::MAX])?;
-                                }
-                            }
-                            _ => todo!("Other texture format conversions"),
-                        }
-                    } else {
-                        tex_output.write_all(&tex_data.pixels)?;
-                    }
+                    // TODO: add shader dependencies
 
                     Ok(())
-                })?;
-
-                textures.try_push(tex_asset)?;
-            }
-
-            // TODO: read material info from gltf
-            let material_class = MaterialClass::PbrOpaque; // TODO
-            let material = outputs.add_output(AssetTypeId::Material, |mtl_output|
-            {
-                // call into MaterialBuilder?
-                mtl_output.set_name(format!("{:?}", material_class));
-                mtl_output.depends_on_multiple(textures.clone());
-
-                mtl_output.serialize(&MaterialFile
-                {
-                    class: material_class,
-                    textures,
-                    props: alloc_u8_slice(PbrProps
-                    {
-                        albedo_color: pbr.base_color_factor().into(),
-                        metallicity: pbr.metallic_factor(),
-                        roughness: pbr.roughness_factor(),
-                    }),
-                })?;
-
-                // TODO: add shader dependencies
-
-                Ok(())
-            })?;
+                })?
+            };
             materials.push(material);
 
             let mesh_bounds_aabb = AABB::new(bb.min.into(), bb.max.into());
