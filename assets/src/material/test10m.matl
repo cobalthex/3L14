@@ -1,7 +1,6 @@
-textures = [
-	"texture/10m.png"
-]
-[pbr_props]
-albedo_color = { r = 255, g = 255, b = 255, a = 255 }
+class="PbrOpaque"
+albedo_tex='00600000e0c7c3f3'
+[props]
+albedo_color = { red = 255, green = 255, blue = 255, alpha = 255 }
 metallicity = 0.5
 roughness = 0.5

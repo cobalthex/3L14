@@ -156,7 +156,7 @@ impl Assets
     #[inline]
     pub fn asset_key_to_file_path(&self, asset_key: AssetKey, fty: AssetFileType) -> PathBuf
     {
-        self.assets_root.as_path().join(asset_key.as_file_name(fty))
+        self.assets_root.join(asset_key.as_file_name(fty))
     }
 
     #[inline]

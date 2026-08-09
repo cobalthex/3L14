@@ -136,6 +136,7 @@ fn main() -> ExitReason
         let model_key = AssetKey::from(0x00a00000e3fb55e4);
         let base_anim_key = AssetKey::from(0x00c00000e3fb55e4);
         let overlay_anim_key = AssetKey::from(0x00c00010e3fb55e4);
+        let map_key = AssetKey::from();
 
         let plane_model_key = AssetKey::from(0x00a000005cc338e8);
 

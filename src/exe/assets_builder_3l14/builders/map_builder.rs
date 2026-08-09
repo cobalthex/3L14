@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::Read;
 use serde::{Deserialize, Serialize};
 use nab_3l14::utils::osstr::OsStrUtils;
+use source_defs_3l14::{MapDef, MapLayer};
 use world_3l14::assets::map::MapFile;
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
 

@@ -1,19 +1,12 @@
 use std::error::Error;
 use std::io::Read;
+use arrayvec::ArrayVec;
 use serde::{Deserialize, Serialize};
-use asset_3l14::AssetTypeId;
+use asset_3l14::{AssetKey, AssetTypeId};
 use graphics_3l14::assets::{Material, MaterialFile};
-use graphics_3l14::material_classes::PbrProps;
+use graphics_3l14::material_classes::{MaterialClass, MaterialDef, PbrProps};
+use nab_3l14::utils::alloc_slice::alloc_u8_slice;
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
-
-#[derive(Serialize, Deserialize)]
-pub enum MaterialDef
-{
-    PbrOpaque
-    {
-        pbr: PbrProps,
-    }
-}
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct MaterialBuilderConfig
@@ -44,22 +37,40 @@ impl AssetBuilder for MaterialBuilder
     {
         let mut toml_str = String::new();
         input.read_to_string(&mut toml_str)?;
-        let mtl_def: MaterialDef = toml::from_str(&toml_str)?;
+        let material_def: MaterialDef = toml::from_str(&toml_str)?;
 
         // todo: shader dependencies
         // todo: texture dependencies
 
-        match mtl_def
+        let material_file = match material_def
         {
-            MaterialDef::PbrOpaque { pbr} =>
+            MaterialDef::DebugLines =>
             {
-                
+                MaterialFile
+                {
+                    class: MaterialClass::DebugLines,
+                    textures: ArrayVec::default(),
+                    props: Box::new([]),
+                }
             }
-        }
+            MaterialDef::PbrOpaque { albedo_tex, props } =>
+            {
+                outputs.add_dependency(albedo_tex)?;
+                let mut textures = ArrayVec::new();
+                textures.push(albedo_tex);
+
+                MaterialFile
+                {
+                    class: MaterialClass::DebugLines,
+                    textures,
+                    props: alloc_u8_slice(props),
+                }
+            }
+        };
         
         outputs.add_output(AssetTypeId::Material, |output|
         {
-           output.serialize(&mtl_def)?;
+           output.serialize(&material_file)?;
             Ok(())
         })?;
 

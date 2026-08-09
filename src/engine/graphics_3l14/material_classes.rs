@@ -1,5 +1,6 @@
 use bitcode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use wgpu::BindingType;
 use asset_3l14::AssetKey;
 use crate::Rgba;
 
@@ -11,9 +12,6 @@ pub enum MaterialClass
     PbrOpaque, // todo: split up?
     // PbrTransparent,
 }
-impl MaterialClass
-{
-}
 
 #[repr(C)]
 #[derive(Serialize, Deserialize)]
@@ -23,9 +21,16 @@ pub struct PbrProps
     pub metallicity: f32,
     pub roughness: f32,
 }
+
 #[repr(C)]
-pub struct PbrOpaque
+#[derive(Serialize, Deserialize)]
+#[serde(tag="class")]
+pub enum MaterialDef
 {
-    pub albedo_tex: AssetKey,
-    pub pbr: PbrProps,
+    DebugLines,
+    PbrOpaque
+    {
+        albedo_tex: AssetKey,
+        props: PbrProps,
+    }
 }

@@ -1,4 +1,5 @@
-use std::fmt::{Debug, Formatter, LowerHex};
+use std::fmt;
+use std::fmt::{format, Debug, Formatter, LowerHex};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use bitcode::{Decode, Encode};
@@ -142,7 +143,10 @@ impl AssetKey
     const SYNTH_FLAG_SHIFT:  u8 = Self::DERIVED_KEY_SHIFT + Self::DERIVED_ID_BITS;
     const ASSET_TYPE_SHIFT:  u8 = Self::SYNTH_FLAG_SHIFT + Self::SYNTH_FLAG_BITS;
 
-    #[must_use]
+    #[inline] #[must_use]
+    pub const fn invalid() -> Self { Self(0) }
+
+    #[inline] #[must_use]
     pub const fn unique(asset_type: AssetTypeId, derived_id: AssetKeyDerivedId, source_id: AssetKeySourceId) -> Self
     {
         const_assert!((AssetKey::TOTAL_BITS / 8) as usize == size_of::<AssetKey>());
@@ -162,7 +166,7 @@ impl AssetKey
         Self(u)
     }
 
-    #[inline]
+    #[inline] #[must_use]
     pub const fn synthetic(asset_type: AssetTypeId, synth_hash: AssetKeySynthHash) -> Self
     {
         const_assert!(
@@ -213,12 +217,13 @@ impl AssetKey
     }
 
     #[inline] #[must_use]
-    pub fn as_file_name(&self, fty: AssetFileType) -> PathBuf
+    pub fn as_file_name(&self, fty: AssetFileType) -> String
     {
-        PathBuf::from(format!("{:0key_width$x}.{}",
+        format!(
+            "{:0key_width$x}.{}",
             self.0,
             fty.file_extension(),
-            key_width = format_width_hex_bytes(AssetKey::TOTAL_BITS)))
+            key_width = format_width_hex_bytes(AssetKey::TOTAL_BITS))
     }
 }
 // custom serialize/deserialize b/c TOML doesn't support u64

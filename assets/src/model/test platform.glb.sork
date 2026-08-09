@@ -2,4 +2,4 @@ source_id = "055a81277"
 version_hash = "E-oTT6HmSuw"
 
 [build_config.material_mappings]
-"surface" = 0x008000007aed67a7
+"surface" = '008000007aed67a7'

@@ -107,6 +107,6 @@ pub fn alloc_u8_slice<T>(t: T) -> Box<[u8]>
         let alloc = alloc_slice_internal::<T>(1);
         let t_ptr: *mut T = alloc.0.cast();
         ptr::write(t_ptr, t);
-        Box::from_raw(std::slice::from_raw_parts_mut(alloc.0, alloc.1))
+        Box::from_raw(std::ptr::slice_from_raw_parts_mut(alloc.0, alloc.1))
     }
 }
