@@ -5,7 +5,7 @@ use enumflags2::bitflags;
 use image::{ColorType, DynamicImage, GenericImageView, ImageReader, ImageResult};
 use serde::{Deserialize, Serialize};
 use asset_3l14::AssetTypeId;
-use graphics_3l14::assets::{TextureFile, TextureFilePixelFormat};
+use graphics_3l14::assets::{Texture, TextureFile, TextureFilePixelFormat};
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
 
 // TODO: go back to intel_tex_2? (ISPC is deprecated)
@@ -86,9 +86,8 @@ impl AssetBuilder for TextureBuilder
             _ => return Err(Box::new(TextureBuilderError::UnsupportedPixelFormat)),
         };
 
-        outputs.add_output(AssetTypeId::Texture, |output|
-        {
-            output.serialize(&TextureFile
+        outputs.add_output::<Texture>()
+            .write_structured(&TextureFile
             {
                 width: image.width(),
                 height: image.height(),
@@ -96,12 +95,11 @@ impl AssetBuilder for TextureBuilder
                 mip_count: 1,
                 mip_offsets: [0; _],
                 pixel_format: TextureFilePixelFormat::Rgba8,
-            })?;
-
-            output.write_all(image.as_bytes())?;
-
-            Ok(())
-        })?;
+            })?
+            .write_opaque(image.as_bytes())?
+            .finish_opaque()
+            .skip_debug()
+            .finish(None)?;
 
         Ok(())
     }

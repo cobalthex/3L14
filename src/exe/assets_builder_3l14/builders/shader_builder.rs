@@ -3,7 +3,7 @@ use std::error::Error;
 use std::io::{Read};
 use std::path::{Path, PathBuf};
 use enumflags2::{bitflags, BitFlag, BitFlags};
-use graphics_3l14::assets::{shader_key, EngineRenderPass, ShaderFile, ShaderStage};
+use graphics_3l14::assets::{shader_key, EngineRenderPass, ShaderFile, ShaderStage, Shader};
 use hassle_rs::{Dxc, DxcCompiler, DxcIncludeHandler, DxcLibrary, DxcValidator, Dxil, HassleError};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -247,7 +247,7 @@ impl AssetBuilder for ShaderBuilder
             ShaderStageConfig::Pixel { class } => shader_key::pixel(class, config.pass),
         };
 
-        outputs.add_synthetic(AssetTypeId::Shader, hash, |output|
+        let out = outputs.add_synthetic::<Shader>(hash);
         {
             let mut defines: Vec<(String, Option<String>)> = Vec::new(); // todo: use Cow?
 
@@ -266,18 +266,20 @@ impl AssetBuilder for ShaderBuilder
             };
 
             let module_bytes = self.compile_hlsl(compilation)?;
-            output.serialize(&ShaderFile
-            {
-                stage: match config.stage
-                {
-                    ShaderStageConfig::Vertex { .. } => ShaderStage::Vertex,
-                    ShaderStageConfig::Pixel { .. } => ShaderStage::Pixel,
-                },
-                module_bytes,
-            })?;
 
-            Ok(())
-        })?;
+            out.write_structured(&ShaderFile
+                {
+                    stage: match config.stage
+                    {
+                        ShaderStageConfig::Vertex { .. } => ShaderStage::Vertex,
+                        ShaderStageConfig::Pixel { .. } => ShaderStage::Pixel,
+                    }
+                })?
+                .write_opaque(&module_bytes)?
+                .finish_opaque()
+                .skip_debug()
+                .finish(Some("TEST".to_string()))?;
+        };
 
         Ok(())
     }

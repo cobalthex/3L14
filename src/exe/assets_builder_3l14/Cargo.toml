@@ -14,6 +14,7 @@ path = "main.rs"
 [dependencies]
 nab_3l14 = { workspace = true, features = [] }
 asset_3l14 = { workspace = true, features = ["asset_names"] }
+containers_3l14 = { workspace = true, features = [] }
 debug_3l14 = { workspace = true, features = [] }
 graphics_3l14 = { workspace = true, features = ["debug_gpu_labels"] }
 interop_3l14 = { workspace = true, features = [] }

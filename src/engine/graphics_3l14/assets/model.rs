@@ -22,6 +22,7 @@ pub struct Model
 }
 impl Asset for Model
 {
+    type StructuredData = ModelFile;
     type DebugData = ();
     fn asset_type() -> AssetTypeId { AssetTypeId::Model }
     fn all_dependencies_loaded(&self) -> bool
@@ -37,10 +38,9 @@ impl AssetLifecycler for ModelLifecycler
 {
     type Asset = Model;
 
-    fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
+    fn load(&self, request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>
     {
-        let model_file: ModelFile = request.deserialize()?;
-
+        let model_file = &request.structured_data;
         Ok(Model
         {
             mesh_count: model_file.materials.len() as u32, // store explicitly in file?

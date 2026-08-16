@@ -1,5 +1,4 @@
 use proc_macro::TokenStream;
-use syn::token::Token;
 use derives::{fancy_enum, type_layout_hash};
 use attribs::asset;
 use crate::derives::{circuit_block, enum_from_str};
@@ -11,7 +10,7 @@ mod case_conv;
 mod ident_hash;
 
 // FancyEnum adds .variant_ident()
-// for each #[enum_prop(k=v)] a method k() returning v 
+// for each #[enum_prop(k=v)] a method k() returning v
 #[proc_macro_derive(FancyEnum, attributes(enum_prop))]
 pub fn derive_fancy_enum(input: TokenStream) -> TokenStream
 {

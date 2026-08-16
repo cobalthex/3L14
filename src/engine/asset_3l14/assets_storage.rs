@@ -7,7 +7,7 @@ use nab_3l14::utils::array::init_array;
 use parking_lot::Mutex;
 use std::any::TypeId;
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::thread::{Builder, JoinHandle};
@@ -239,8 +239,8 @@ impl Assets
                                     Ok(read) => lifecycler.load_untyped(
                                         &this,
                                         untyped_handle,
-                                        Cursor::new(read.as_ref()),
-                                        #[cfg(feature = "asset_debug_data")] debug_asset_data.as_ref().map(|b| Cursor::new(b.as_ref()))
+                                        read.as_ref(),
+                                        #[cfg(feature = "asset_debug_data")] debug_asset_data.as_ref().map(|b| b.as_ref())
                                     ),
                                     Err(err) =>
                                     {
@@ -261,7 +261,7 @@ impl Assets
                                 lifecycler.load_untyped(
                                     &this,
                                     untyped_handle,
-                                    Cursor::new(&reader),
+                                    &reader,
                                     #[cfg(feature = "asset_debug_data")] None);
                             },
                             AssetLifecycleRequest::Drop(untyped_handle) =>
@@ -478,7 +478,7 @@ impl Assets
         lifecycler.lifecycler.load_untyped(
             self,
             unsafe { handle.1.clone().into_inner() },
-            Cursor::new(input_data),
+            input_data,
             #[cfg(feature = "asset_debug_data")] None);
         handle.1
     }
@@ -533,10 +533,15 @@ impl DebugGui for Assets
                 }
             });
 
-        if let Some(lifecycler) = inspected_lifecycler
+        if let Some(lifecycler) = inspected_lifecycler &&
+            let Some(gui_fn) = lifecycler.debug_gui_fn
         {
             // TODO
-            // ui.group(|gui| { lifecycler.lifecycler.debug_gui(gui) });
+            // ui.group(|gui|
+            // unsafe {
+            //     let gui_fn: fn(&dyn UntypedAssetLifecycler, &mut Ui) = std::mem::transmute(gui_fn);
+            //     gui_fn(&lifecycler, gui);
+            // });
         }
 
         #[cfg(feature = "hot_reloading")]
@@ -630,6 +635,7 @@ mod tests
     }
     impl Asset for NestedAsset
     {
+        type StructuredData = usize;
         type DebugData = ();
         fn asset_type() -> AssetTypeId { AssetTypeId::Test2 }
     }
@@ -650,14 +656,15 @@ mod tests
     }
     impl Asset for TestAsset
     {
+        type StructuredData = u32;
         type DebugData = ();
         fn asset_type() -> AssetTypeId { AssetTypeId::Test1 }
     }
 
-    struct Passthru<T: Asset>
+    struct Passthru<A: Asset>
     {
         call_count: usize,
-        passthru_fn: fn(AssetLoadRequest) -> Result<T, Box<dyn Error>>,
+        passthru_fn: fn(AssetLoadRequest<A>) -> Result<A, Box<dyn Error>>,
     }
 
     trait TestLifecycler: AssetLifecycler
@@ -675,7 +682,7 @@ mod tests
     impl AssetLifecycler for TestAssetLifecycler
     {
         type Asset = TestAsset;
-        fn load(&self, request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
+        fn load(&self, request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>
         {
             match &mut *self.passthru.lock()
             {
@@ -710,7 +717,7 @@ mod tests
     impl AssetLifecycler for NestedAssetLifecycler
     {
         type Asset = NestedAsset;
-        fn load(&self, request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
+        fn load(&self, request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>
         {
             match &mut *self.passthru.lock()
             {
@@ -736,7 +743,7 @@ mod tests
         }
     }
 
-    fn set_passthru<A: Asset, L: TestLifecycler<Asset = A> + 'static>(assets: &Assets, passthru_fn: Option<fn(AssetLoadRequest) -> Result<A, Box<dyn Error>>>)
+    fn set_passthru<A: Asset, L: TestLifecycler<Asset = A> + 'static>(assets: &Assets, passthru_fn: Option<fn(_) -> Result<A, Box<dyn Error>>>)
     {
         let tal = assets.get_lifecycler::<L>().unwrap();
         tal.set_passthru(passthru_fn.map(|pfn| Passthru
@@ -781,7 +788,7 @@ mod tests
                 .add_lifecycler(TestAssetLifecycler::default());
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
-            let req: Ash<TestAsset> = assets.load::<TestAsset>(TEST_ASSET_1);
+            let req: Ash<TestAsset> = assets.load(TEST_ASSET_1);
             match await_asset(&req)
             {
                 AssetSnapshot::Unavailable(AssetLoadError::Fetch) => {},
@@ -796,7 +803,7 @@ mod tests
                 .add_lifecycler(TestAssetLifecycler::default());
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
-            set_passthru::<_, TestAssetLifecycler>(&assets, Some(|_req: AssetLoadRequest|
+            set_passthru::<_, TestAssetLifecycler>(&assets, Some(|_req|
             {
                 Err(Box::new(TestError))
             }));
@@ -831,7 +838,7 @@ mod tests
 
             const READY_WAITER: Mutex<()> = Mutex::new(()); // gross
 
-            set_passthru::<_, TestAssetLifecycler>(&assets, Some(|_req: AssetLoadRequest|
+            set_passthru::<_, TestAssetLifecycler>(&assets, Some(|_req|
             {
                 let _ = READY_WAITER.lock();
                 Ok(TestAsset { value: 134, nested: None })
@@ -862,11 +869,11 @@ mod tests
                 .add_lifecycler(NestedAssetLifecycler::default());
             let assets = Assets::new(lifecyclers, AssetsConfig::test());
 
-            set_passthru::<_, TestAssetLifecycler>(&assets, Some(|_req: AssetLoadRequest|
+            set_passthru::<_, TestAssetLifecycler>(&assets, Some(|_req|
             {
                 Ok(TestAsset { value: 987, nested: None })
             }));
-            set_passthru::<_, NestedAssetLifecycler>(&assets, Some(|_req: AssetLoadRequest|
+            set_passthru::<_, NestedAssetLifecycler>(&assets, Some(|_req|
             {
                 Ok(NestedAsset { id: 123 })
             }));
@@ -893,11 +900,9 @@ mod tests
 
             let test_value = 357u32;
             let loaded_asset_payload = Box::new(test_value.to_le_bytes());
-            set_passthru::<_, TestAssetLifecycler>(&assets, Some(|mut req: AssetLoadRequest|
+            set_passthru::<_, TestAssetLifecycler>(&assets, Some(|mut req|
             {
-                let mut val = [0u8; 4];
-                req.input.read_exact(&mut val)?;
-                Ok(TestAsset { value: u32::from_le_bytes(val), nested: None })
+                Ok(TestAsset { value: req.structured_data, nested: None })
             }));
 
 
@@ -919,11 +924,9 @@ mod tests
             let first_val = 1u32;
             let second_val = 2u32;
 
-            set_passthru::<_, TestAssetLifecycler>(&assets, Some(|mut req: AssetLoadRequest|
+            set_passthru::<_, TestAssetLifecycler>(&assets, Some(|mut req|
             {
-                let mut val = [0u8; 4];
-                req.input.read_exact(&mut val)?;
-                Ok(TestAsset { value: u32::from_le_bytes(val), nested: None })
+                Ok(TestAsset { value: req.structured_data, nested: None })
             }));
 
             let mut input_bytes = Box::new(first_val.to_le_bytes());

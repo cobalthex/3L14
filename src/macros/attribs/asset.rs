@@ -68,6 +68,7 @@ pub fn asset_attrib(attrib_input: TokenStream, input: TokenStream) -> TokenStrea
 {
     let attrib_args = parse_macro_input!(attrib_input as AssetAttribArgs);
 
+    let mut maybe_structured_type = None;
     let mut maybe_debug_type = None;
 
     for attrib in attrib_args.0.iter()
@@ -75,7 +76,12 @@ pub fn asset_attrib(attrib_input: TokenStream, input: TokenStream) -> TokenStrea
         let Meta::NameValue(name_value) = attrib
             else { panic!("#[asset] Expected a name=value attribute, got {:?}", attrib.to_token_stream()) };
 
-        if name_value.path.is_ident("debug_type")
+        if name_value.path.is_ident("structured_type")
+        {
+            if maybe_structured_type.is_some() { panic!("#[asset] structured_type specified multiple times"); }
+            maybe_structured_type = Some(name_value.value.clone());
+        }
+        else if name_value.path.is_ident("debug_type")
         {
             if maybe_debug_type.is_some() { panic!("#[asset] debug_type specified multiple times"); }
             maybe_debug_type = Some(name_value.value.clone());
@@ -110,6 +116,7 @@ pub fn asset_attrib(attrib_input: TokenStream, input: TokenStream) -> TokenStrea
         Fields::Unit => { }
     }
 
+    let structured_type = maybe_structured_type.unwrap_or_else(|| syn::parse_quote!(#struct_name));
     let debug_type = maybe_debug_type.unwrap_or_else(|| syn::parse_str("()").unwrap());
 
     let mut handle_refs = quote!{ #(self.#asset_handles.all_dependencies_loaded())&&* };
@@ -120,6 +127,7 @@ pub fn asset_attrib(attrib_input: TokenStream, input: TokenStream) -> TokenStrea
         #strukt
         impl ::asset_3l14::Asset for #struct_name
         {
+            type StructuredData = #structured_type;
             type DebugData = #debug_type;
             fn asset_type() -> ::asset_3l14::AssetTypeId { ::asset_3l14::AssetTypeId::#struct_name }
             fn all_dependencies_loaded(&self) -> bool

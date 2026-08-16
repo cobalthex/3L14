@@ -27,6 +27,7 @@ pub enum AssetLoadError
     MismatchedAssetType, // asset key does not match handle type
     LifecyclerNotRegistered,
     Fetch,
+    PayloadTooSmall,
     Parse,
 }
 impl Display for AssetLoadError

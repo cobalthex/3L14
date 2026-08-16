@@ -3,9 +3,10 @@ use std::io::Read;
 use arrayvec::ArrayVec;
 use serde::{Deserialize, Serialize};
 use asset_3l14::{AssetKey, AssetTypeId};
-use graphics_3l14::assets::{Material, MaterialFile};
+use graphics_3l14::assets::{shader_key, Material, MaterialFile, EngineRenderPass};
 use graphics_3l14::material_classes::{MaterialClass, MaterialDef, PbrProps};
 use nab_3l14::utils::alloc_slice::alloc_u8_slice;
+use nab_3l14::utils::{val_as_u8_slice, AsU8Slice};
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
 
 #[derive(Default, Serialize, Deserialize)]
@@ -39,9 +40,6 @@ impl AssetBuilder for MaterialBuilder
         input.read_to_string(&mut toml_str)?;
         let material_def: MaterialDef = toml::from_str(&toml_str)?;
 
-        // todo: shader dependencies
-        // todo: texture dependencies
-
         let material_file = match material_def
         {
             MaterialDef::DebugLines =>
@@ -50,29 +48,47 @@ impl AssetBuilder for MaterialBuilder
                 {
                     class: MaterialClass::DebugLines,
                     textures: ArrayVec::default(),
-                    props: Box::new([]),
                 }
             }
-            MaterialDef::PbrOpaque { albedo_tex, props } =>
+            MaterialDef::PbrOpaque { albedo_tex, .. } =>
             {
-                outputs.add_dependency(albedo_tex)?;
                 let mut textures = ArrayVec::new();
                 textures.push(albedo_tex);
 
                 MaterialFile
                 {
-                    class: MaterialClass::DebugLines,
+                    class: MaterialClass::PbrOpaque,
                     textures,
-                    props: alloc_u8_slice(props),
                 }
             }
         };
-        
-        outputs.add_output(AssetTypeId::Material, |output|
+
+        // todo: shader dependencies
+
+        let mut out = outputs.add_output::<Material>();
+        for tex in material_file.textures.iter()
         {
-           output.serialize(&material_file)?;
-            Ok(())
-        })?;
+            out.add_dependency(*tex)?;
+        }
+
+        let shader_akey = AssetKey::synthetic(
+            AssetTypeId::Shader,
+            shader_key::pixel(material_file.class, EngineRenderPass::Opaque));
+        out.add_dependency(shader_akey)?;
+
+        let mut out = out.write_structured(&material_file)?;
+        let out = match material_def
+        {
+            MaterialDef::DebugLines => out.finish_opaque(),
+            MaterialDef::PbrOpaque { props, .. } =>
+            {
+                out.write_opaque(unsafe { val_as_u8_slice(&props) })?;
+                out.finish_opaque()
+            }
+        };
+
+        out.skip_debug()
+            .finish(None)?; // TODO: name
 
         Ok(())
     }

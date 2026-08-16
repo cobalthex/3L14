@@ -296,6 +296,7 @@ dependencies = [
  "build_3l14",
  "chrono",
  "clap",
+ "containers_3l14",
  "dashmap",
  "debug_3l14",
  "enumflags2",
@@ -3178,6 +3179,7 @@ version = "0.0.0"
 dependencies = [
  "asset_3l14",
  "glam",
+ "math_3l14",
  "nab_3l14",
  "proc_macros_3l14",
  "serde",

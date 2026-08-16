@@ -1,2 +1,2 @@
-mod map;
-pub use map::*;
+mod map_def;
+pub use map_def::*;

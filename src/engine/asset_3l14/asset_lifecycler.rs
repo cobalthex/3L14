@@ -1,66 +1,24 @@
 use super::*;
-use bitcode::DecodeOwned;
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::error::Error;
-use std::io::{Cursor, Seek, SeekFrom};
-use enumflags2::{bitflags, BitFlags};
 use debug_3l14::debug_gui::DebugGui;
 use nab_3l14::utils::{varint, ShortTypeName};
 
-pub struct AssetLoadRequest<'r>
+pub struct AssetLoadRequest<'r, A: Asset>
 {
-    pub asset_key: AssetKey,
-    pub input: AssetPayload<'r>,
-
     assets: &'r Assets,
+
+    pub asset_key: AssetKey,
+    pub structured_data: A::StructuredData,
+    pub opaque_data: &'r [u8],
 
     // timer?
     // is_reloading?
     // dependencies
 }
-impl AssetLoadRequest<'_>
+impl<A: Asset> AssetLoadRequest<'_, A>
 {
-    // TODO: unify implementations between this and asset builder
-    fn deserialize_data<T: DecodeOwned>(input: &mut AssetPayload) -> Result<T, Box<dyn Error>>
-    {
-        let size = varint::decode_from(input)?;
-        let start = input.position();
-        let end = start + size;
-        input.seek(SeekFrom::Start(end))?; // seek first to ensure large enough
-        let bytes = &input.get_ref()[start as usize..end as usize];
-        Ok(bitcode::decode::<T>(&bytes)?)
-    }
-
-    // deserialize a pre-sized type from the stream
-    pub fn deserialize<T: DecodeOwned>(&mut self) -> Result<T, Box<dyn Error>>
-    {
-        Self::deserialize_data(&mut self.input)
-    }
-
-    // read a size-prefixed span of bytes, all or nothing
-    pub fn read_sized(&mut self) -> Result<&[u8], Box<dyn Error>>
-    {
-        let size = varint::decode_from(&mut self.input)?;
-        self.read_n_bytes(size as usize)
-    }
-
-    pub fn read_n_bytes(&mut self, n: usize) -> Result<&[u8], Box<dyn Error>>
-    {
-        let pos = self.input.position() as usize;
-        self.input.seek(SeekFrom::Current(n as i64))?;
-        let buf = self.input.get_ref();
-        Ok(&buf[pos..(pos + n)])
-    }
-
-    pub fn read_to_end(&mut self) -> Result<&[u8], Box<dyn Error>>
-    {
-        let pos = self.input.position() as usize;
-        self.input.seek(SeekFrom::End(0))?;
-        let buf = self.input.get_ref();
-        Ok(&buf[pos..self.input.position() as usize])
-    }
-
     //
     // // Load another asset, but don't reload this asset if the requested asset is reloaded
     // #[must_use]
@@ -72,7 +30,7 @@ impl AssetLoadRequest<'_>
 
     // Load another asset and queue this asset for reloading if the requested asset is reloaded
     #[must_use]
-    pub fn load_dependency<A: Asset>(&self, asset_key: AssetKey) -> Ash<A>
+    pub fn load_dependency<D: Asset>(&self, asset_key: AssetKey) -> Ash<D>
     {
         // pattern matches Assets::load()
         self.assets.load(asset_key)
@@ -97,17 +55,18 @@ pub trait AssetLifecycler: Sync + Send
     type Asset: Asset;
 
     /// Get or create an asset payload for the requested asset
-    fn load(&self, request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>;
+    fn load(&self, request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>;
     // reload ?
 }
 
-pub trait TrivialAssetLifecycler: Sync + Send { type Asset: Asset + DecodeOwned; }
-impl<L: TrivialAssetLifecycler> AssetLifecycler for L
+pub trait TrivialAssetLifecycler: Sync + Send { type Asset: Asset; }
+impl<TL: TrivialAssetLifecycler> AssetLifecycler for TL
+    where TL::Asset: Asset<StructuredData=TL::Asset>
 {
-    type Asset = L::Asset;
-    fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
+    type Asset = TL::Asset;
+    fn load(&self, request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>
     {
-        request.deserialize::<Self::Asset>()
+        Ok(request.structured_data)
     }
 }
 
@@ -118,8 +77,8 @@ pub(super) trait UntypedAssetLifecycler: Sync + Send
         &self,
         assets: &Assets,
         untyped_handle: ErasedAsh,
-        input: AssetPayload,
-        #[cfg(feature = "asset_debug_data")] maybe_debug_input: Option<AssetPayload>);
+        input: &[u8],
+        #[cfg(feature = "asset_debug_data")] maybe_debug_input: Option<&[u8]>);
 
     fn error_untyped(
         &self,
@@ -134,8 +93,8 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
         &self,
         assets: &Assets,
         untyped_handle: ErasedAsh,
-        input: AssetPayload,
-        #[cfg(feature = "asset_debug_data")] mut maybe_debug_input: Option<AssetPayload>)
+        mut input: &[u8],
+        #[cfg(feature = "asset_debug_data")] mut maybe_debug_input: Option<&[u8]>)
     {
         // TODO: asset storage should prevent this from running on multiple threads for the same asset concurrently
 
@@ -144,7 +103,35 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
         #[cfg(feature = "asset_debug_data")]
         retyped.inner().store_debug_data(None);
 
-        match self.load(AssetLoadRequest { asset_key: retyped.key(), input, assets })
+        let Ok(structured_data_size) = varint::decode_from(&mut input) else
+        {
+            retyped.inner().store_data(Some(AssetData::Unavailable(AssetLoadError::PayloadTooSmall)));
+            return;
+        };
+
+        let structured_data =
+        {
+            let bytes = &input[..structured_data_size as usize];
+            match bitcode::decode::<A::StructuredData>(bytes)
+            {
+                Ok(data) => data,
+                Err(err) =>
+                {
+                    log::debug!("Failed to parse structured data for {:?}: {}", retyped.key(), err);
+                    retyped.inner().store_data(Some(AssetData::Unavailable(AssetLoadError::Parse)));
+                    return;
+                }
+            }
+        };
+        let opaque_data = &input[structured_data_size as usize..];
+
+        match self.load(AssetLoadRequest
+        {
+            asset_key: retyped.key(),
+            structured_data,
+            opaque_data,
+            assets,
+        })
         {
             Ok(asset) =>
             {
@@ -160,16 +147,14 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
         #[cfg(feature = "asset_debug_data")]
         if let Some(debug_input) = &mut maybe_debug_input
         {
-            let hydrated: A::DebugData = match AssetLoadRequest::deserialize_data(debug_input)
+            match bitcode::decode(&debug_input)
             {
-                Ok(data) => data,
+                Ok(hydrated) => retyped.inner().store_debug_data(Some(hydrated)),
                 Err(err) =>
                 {
-                    log::error!("Failed to load debug data for {retyped:?}: {err:?}");
-                    return;
-                },
-            };
-            retyped.inner().store_debug_data(Some(hydrated));
+                    log::debug!("Failed to parse debug data for {:?}: {}", retyped.key(), err);
+                }
+            }
         }
     }
 
@@ -191,21 +176,12 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
     }
 }
 
-#[bitflags]
-#[derive(Copy, Clone)]
-#[repr(u8)]
-pub(super) enum AssetLifecyclerFeature
-{
-    HasDebugGui = 0b0000_0001,
-}
-
 pub(super) struct RegisteredAssetLifecycler
 {
     pub lifecycler: Box<dyn UntypedAssetLifecycler>,
     #[cfg(debug_assertions)]
     pub type_id: TypeId,
-    pub features: BitFlags<AssetLifecyclerFeature>,
-    pub debug_gui_fn: Option<usize>, // TODO: use *mut () instead of usize
+    pub debug_gui_fn: Option<usize>,
 }
 
 pub(super) struct RegisteredAssetType
@@ -234,7 +210,6 @@ impl AssetLifecyclers
             lifecycler: Box::new(lifecycler),
             #[cfg(debug_assertions)]
             type_id: TypeId::of::<L>(),
-            features: BitFlags::empty(),
             debug_gui_fn: None,
         });
         self.registered_asset_types.insert(A::asset_type(), RegisteredAssetType
@@ -252,7 +227,10 @@ impl AssetLifecyclers
     {
         // todo: dedupe
 
-        let debug_gui_fn = L::debug_gui as usize;
+        fn debug_gui_fn<L: DebugGui>(lifecycler: &dyn UntypedAssetLifecycler, ui: &mut egui::Ui)
+        {
+            unsafe { &*(lifecycler as *const _ as *const L) }.debug_gui(ui);
+        }
 
         // warn/fail on duplicates?
         self.lifecyclers.insert(A::asset_type(), RegisteredAssetLifecycler
@@ -260,8 +238,7 @@ impl AssetLifecyclers
             lifecycler: Box::new(lifecycler),
             #[cfg(debug_assertions)]
             type_id: TypeId::of::<L>(),
-            features: AssetLifecyclerFeature::HasDebugGui.into(),
-            debug_gui_fn: Some(debug_gui_fn),
+            debug_gui_fn: Some(debug_gui_fn::<L> as usize),
         });
         self.registered_asset_types.insert(A::asset_type(), RegisteredAssetType
         {
@@ -274,7 +251,6 @@ impl AssetLifecyclers
     }
 }
 
-pub type AssetPayload<'r> = Cursor<&'r [u8]>;
 pub(super) enum AssetLifecycleRequest
 {
     StopWorkers,

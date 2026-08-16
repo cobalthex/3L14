@@ -40,7 +40,7 @@ pub struct TextureFile
     // all mips are stored contiguously w/out gaps
 }
 
-#[proc_macros_3l14::asset]
+#[proc_macros_3l14::asset(structured_type=TextureFile)]
 pub struct Texture
 {
     pub gpu_tex: wgpu::Texture,
@@ -86,30 +86,27 @@ impl AssetLifecycler for TextureLifecycler
 {
     type Asset = Texture;
 
-    fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
+    fn load(&self, AssetLoadRequest { structured_data, opaque_data, asset_key, .. }: AssetLoadRequest<Self::Asset>)
+        -> Result<Self::Asset, Box<dyn Error>>
     {
-        let tex_file: TextureFile = request.deserialize()?;
-
-        let asskey = request.asset_key;
-        let texel_bytes = request.read_to_end()?;
         let gpu_tex = self.renderer.device().create_texture_with_data(
             self.renderer.queue(),
             &TextureDescriptor
             {
-                label: debug_label!(&format!("{:?}", asskey)),
+                label: debug_label!(&format!("{:?}", asset_key)),
                 size: Extent3d
                 {
-                    width: tex_file.width,
-                    height: tex_file.height,
-                    depth_or_array_layers: tex_file.depth,
+                    width: structured_data.width,
+                    height: structured_data.height,
+                    depth_or_array_layers: structured_data.depth,
                 },
-                mip_level_count: tex_file.mip_count as u32,
+                mip_level_count: structured_data.mip_count as u32,
                 sample_count: 1,
                 dimension:
-                if tex_file.depth > 1 { TextureDimension::D3 }
-                else if tex_file.height > 1 { TextureDimension::D2 }
+                if structured_data.depth > 1 { TextureDimension::D3 }
+                else if structured_data.height > 1 { TextureDimension::D2 }
                 else { TextureDimension::D1 },
-                format: match tex_file.pixel_format
+                format: match structured_data.pixel_format
                 {
                     TextureFilePixelFormat::R8 => TextureFormat::R8Unorm,
                     TextureFilePixelFormat::Rg8 => TextureFormat::Rg8Unorm,
@@ -120,7 +117,7 @@ impl AssetLifecycler for TextureLifecycler
                 view_formats: &[],
             },
             TextureDataOrder::LayerMajor,
-            texel_bytes);
+            opaque_data.as_ref());
 
         let view = gpu_tex.create_view(&TextureViewDescriptor
         {

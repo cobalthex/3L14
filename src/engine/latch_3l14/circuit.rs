@@ -6,12 +6,14 @@ use crate::vars::ScopeChanges;
 use crate::{BlockId, ImpulseActions, ImpulseBlock, InstRunId, LatchActions, LatchBlock, LocalScope, Runtime, Scope, SharedScope};
 use nab_3l14::Signal;
 use std::fmt::Debug;
+use std::io::{Cursor, Read};
 use bitcode::{Decode, Encode};
+use smallvec::SmallVec;
 use triomphe::Arc;
 use asset_3l14::{AssetLifecycler, AssetLoadError, AssetLoadRequest};
 use proc_macros_3l14::LayoutHash;
 
-#[proc_macros_3l14::asset]
+#[proc_macros_3l14::asset(structured_type=CircuitFile)]
 #[derive(Debug)]
 pub struct Circuit
 {
@@ -74,17 +76,19 @@ impl AssetLifecycler for CircuitLifecycler
 {
     type Asset = Circuit;
 
-    fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
+    fn load(&self, mut request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>
     {
-        let file: CircuitFile = request.deserialize()?;
-
+        let file = request.structured_data;
+        let mut opaque = Cursor::new(request.opaque_data);
+        let mut decode_buf = SmallVec::<[u8; 1024]>::new(); // validate?
         let circuit = Circuit
         {
             auto_entries: file.auto_entries,
             signaled_entries: file.signaled_entries,
             impulses: file.impulses.iter().map(|def|
             {
-                let buf = request.read_n_bytes(def.packed_size as usize)?;
+                let buf = &mut decode_buf[0..def.packed_size as usize];
+                opaque.read_exact(buf)?;
                 let Some(blk_meta) = self.known_impulses.get(&def.type_name_hash) else
                 {
                     // this may be due to a block being inaccessible during runtime but accessible during build
@@ -96,7 +100,8 @@ impl AssetLifecycler for CircuitLifecycler
             }).collect::<Result<_, Box<dyn Error>>>()?,
             latches: file.latches.iter().map(|def|
             {
-                let buf = request.read_n_bytes(def.packed_size as usize)?;
+                let buf = &mut decode_buf[0..def.packed_size as usize];
+                opaque.read_exact(buf)?;
                 let Some(blk_meta) = self.known_latches.get(&def.type_name_hash) else
                 {
                     // this may be due to a block being inaccessible during runtime but accessible during build

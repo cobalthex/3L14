@@ -23,7 +23,7 @@ impl<'a, T> AsU8Slice<'a> for [T]
         unsafe { std::slice::from_raw_parts(self.as_ptr() as *const u8, size_of_val(self)) }
     }
 }
-pub const unsafe fn as_u8_array<T>(t: &T) -> &[u8]
+pub const unsafe fn val_as_u8_slice<T>(t: &T) -> &[u8]
 {
     unsafe { std::slice::from_raw_parts(t as *const T as *const u8, size_of::<T>()) }
 }

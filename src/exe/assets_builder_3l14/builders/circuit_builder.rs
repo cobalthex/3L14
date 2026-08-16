@@ -2,7 +2,7 @@ use crate::core::{AssetBuilder, BuildOutputs, SourceInput, SymbolsDict, VersionB
 use asset_3l14::AssetTypeId;
 use indexmap::IndexMap;
 use latch_3l14::block_meta::{BlockBuildMeta, HydrateBlock};
-use latch_3l14::{BlockDebugData, BlockId, BlockKind, CircuitDebugData, CircuitFile, CircuitFileBlock, EntryPoints, Inlet, LatchingOutlet, Plug, PulsedOutlet};
+use latch_3l14::{BlockDebugData, BlockId, BlockKind, Circuit, CircuitDebugData, CircuitFile, CircuitFileBlock, EntryPoints, Inlet, LatchingOutlet, Plug, PulsedOutlet};
 use logos::{Lexer, Logos};
 use nab_3l14::{Signal, Symbol};
 use serde::{Deserialize, Serialize};
@@ -329,18 +329,15 @@ impl AssetBuilder for CircuitBuilder
     {
         // TODO: split out debug data
 
-        outputs.add_output(AssetTypeId::Circuit, |output|
-            {
-                let mut str = String::new();
-                input.read_to_string(&mut str)?;
-                let lexed = lex_circuit_dsl(&str)?;
-                let circuit = self.parse(lexed, &self.symbols_dict)?;
-                output.serialize(&circuit.circuit)?;
-                output.write_all(&circuit.block_mem)?;
-
-                // TODO: debug data
-                Ok(())
-            })?;
+        let out  = outputs.add_output::<Circuit>();
+        let mut str = String::new();
+        input.read_to_string(&mut str)?;
+        let lexed = lex_circuit_dsl(&str)?;
+        let circuit = self.parse(lexed, &self.symbols_dict)?;
+        out.write_structured(&circuit.circuit)?
+            .write_opaque(&circuit.block_mem)?;
+        
+        // TODO: debug data
         Ok(())
     }
 }

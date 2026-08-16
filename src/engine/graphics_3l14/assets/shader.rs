@@ -98,10 +98,9 @@ pub mod shader_source
 pub struct ShaderFile
 {
     pub stage: ShaderStage,
-    pub module_bytes: Box<[u8]>, // can this be a ref?
 }
 
-#[asset(debug_type = ShaderDebugData)]
+#[asset(structured_type=ShaderFile, debug_type=ShaderDebugData)]
 pub struct Shader
 {
     pub stage: ShaderStage,
@@ -129,21 +128,21 @@ impl AssetLifecycler for ShaderLifecycler
 {
     type Asset = Shader;
 
-    fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn Error>>
+    fn load(&self, request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>
     {
-        let shader_file: ShaderFile = request.deserialize()?;
-
+        let shader_file = &request.structured_data;
+        let module_bytes = request.opaque_data;
         let module = match
             cfg!(feature = "load_shaders_directly") &&
             self.renderer.supports_feature(wgpu::Features::PASSTHROUGH_SHADERS)
         {
             true => unsafe
             {
-                assert!(shader_file.module_bytes.len().is_multiple_of(size_of::<u32>()));
+                assert!(module_bytes.len().is_multiple_of(size_of::<u32>()));
                 self.renderer.device().create_shader_module_passthrough(ShaderModuleDescriptorPassthrough
                 {
                     label: debug_label!(&format!("{:?} ({:?})", request.asset_key, shader_file.stage)),
-                    spirv: Some(Cow::Borrowed(std::mem::transmute(shader_file.module_bytes.as_ref()))),
+                    spirv: Some(Cow::Borrowed(std::mem::transmute(module_bytes))),
                     .. Default::default()
                 })
             },
@@ -152,7 +151,7 @@ impl AssetLifecycler for ShaderLifecycler
                 self.renderer.device().create_shader_module(ShaderModuleDescriptor
                 {
                     label: debug_label!(&format!("{:?} ({:?})", request.asset_key, shader_file.stage)),
-                    source: make_spirv(&shader_file.module_bytes),
+                    source: make_spirv(module_bytes),
                 })
             }
         };

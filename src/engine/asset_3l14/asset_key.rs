@@ -1,7 +1,5 @@
-use std::fmt;
-use std::fmt::{format, Debug, Formatter, LowerHex};
+use std::fmt::{Debug, Formatter, LowerHex};
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
 use bitcode::{Decode, Encode};
 use metrohash::MetroHash64;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

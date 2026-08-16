@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Neg, Rem};
 
 use bitcode::{Decode, Encode};
@@ -6,7 +6,7 @@ use glam::FloatExt;
 use serde::{Deserialize, Serialize};
 
 // Angle, stored as radians internally
-#[derive(Debug, Default, Copy, Clone, PartialEq, PartialOrd, Encode, Decode, Serialize, Deserialize)]
+#[derive(Default, Copy, Clone, PartialEq, PartialOrd, Encode, Decode, Serialize, Deserialize)]
 pub struct Angle(f32);
 impl Angle
 {
@@ -45,7 +45,7 @@ impl Angle
     }
 }
 // Display the angle, by default as radians, alternatively as degrees
-impl Display for Angle
+impl Debug for Angle
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
@@ -59,6 +59,7 @@ impl Display for Angle
         }
     }
 }
+impl Display for Angle { fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result { Debug::fmt(self, f) } }
 impl Neg for Angle
 {
     type Output = Self;

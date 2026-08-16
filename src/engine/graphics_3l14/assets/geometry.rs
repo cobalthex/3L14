@@ -54,7 +54,7 @@ pub struct GeometryMesh
     pub index_range: (u32, u32), // start, end
 }
 
-#[asset]
+#[asset(structured_type=GeometryFile)]
 pub struct Geometry
 {
     pub bounds_aabb: AABB, // note; these are untransformed
@@ -82,36 +82,36 @@ impl AssetLifecycler for GeometryLifecycler
 {
     type Asset = Geometry;
 
-    fn load(&self, mut request: AssetLoadRequest) -> Result<Self::Asset, Box<dyn std::error::Error>>
+    fn load(&self, AssetLoadRequest { structured_data, asset_key, .. }: AssetLoadRequest<Self::Asset>)
+        -> Result<Self::Asset, Box<dyn std::error::Error>>
     {
-        let gf = request.deserialize::<GeometryFile>()?;
-
+        // todo: should these read from opaque_data?
         let vertices = self.renderer.device().create_buffer_init(&BufferInitDescriptor
         {
-            label: debug_label!(format!("{:#?} ({}) vertices", request.asset_key, gf.vertex_layout).as_str()),
-            contents: gf.vertices.as_ref(),
+            label: debug_label!(format!("{:#?} ({}) vertices", asset_key, structured_data.vertex_layout).as_str()),
+            contents: structured_data.vertices.as_ref(),
             usage: BufferUsages::VERTEX,
         });
         let indices = self.renderer.device().create_buffer_init(&BufferInitDescriptor
         {
-            label: debug_label!(format!("{:#?} indices", request.asset_key).as_str()),
-            contents: gf.indices.as_ref(),
+            label: debug_label!(format!("{:#?} indices", asset_key).as_str()),
+            contents: structured_data.indices.as_ref(),
             usage: BufferUsages::INDEX,
         });
 
         Ok(Geometry
         {
-            bounds_aabb: gf.bounds_aabb,
-            bounds_sphere: gf.bounds_sphere,
-            vertex_layout: unsafe { BitFlags::from_bits_unchecked(gf.vertex_layout) },
-            index_format: match gf.index_format
+            bounds_aabb: structured_data.bounds_aabb,
+            bounds_sphere: structured_data.bounds_sphere,
+            vertex_layout: unsafe { BitFlags::from_bits_unchecked(structured_data.vertex_layout) },
+            index_format: match structured_data.index_format
             {
                 IndexFormat::U16 => wgpu::IndexFormat::Uint16,
                 IndexFormat::U32 => wgpu::IndexFormat::Uint32,
             },
             vertices,
             indices,
-            meshes: gf.meshes,
+            meshes: structured_data.meshes,
         })
     }
 }

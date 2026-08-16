@@ -11,7 +11,7 @@ use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexCaps, Ver
 use math_3l14::{DualQuat, Ratio, Sphere, AABB};
 use metrohash::MetroHash64;
 use nab_3l14::utils::alloc_slice::{alloc_slice_default, alloc_u8_slice};
-use nab_3l14::utils::as_u8_array;
+use nab_3l14::utils::val_as_u8_slice;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
@@ -188,7 +188,7 @@ impl ModelBuilder
                     tex_coord: tex_coords.as_mut().and_then(|mut r| r.next()).unwrap_or([0.0, 0.0]),
                     //color: colors.as_mut().and_then(|mut r| r.next()).unwrap_or([u8::MAX, u8::MAX, u8::MAX, u8::MAX]),
                 };
-                vertex_data.write_all(unsafe { as_u8_array(&static_vertex) })?;
+                vertex_data.write_all(unsafe { val_as_u8_slice(&static_vertex) })?;
                 mesh_vertex_count += 1;
 
                 // todo: cleanup
@@ -202,7 +202,7 @@ impl ModelBuilder
                         indices: maybe_joints.as_mut().and_then(|j| j.next()/*.map(iremap)*/).unwrap_or([0, 0, 0, 0]),
                         weights: maybe_weights.as_mut().and_then(|w| w.next()).unwrap_or([0.0, 0.0, 0.0, 0.0]),
                     };
-                    vertex_data.write_all(unsafe { as_u8_array(&skinned_vertex) })?;
+                    vertex_data.write_all(unsafe { val_as_u8_slice(&skinned_vertex) })?;
                 }
             }
 
