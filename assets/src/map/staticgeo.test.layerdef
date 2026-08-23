@@ -1,7 +1,7 @@
 [[models]]
-model = '00a0000055a81277'
+object = '00a0000055a81277'
 position = [0, 0, 0]
 
 [[models]]
-model = '00a0000055a81277'
+object = '00a0000055a81277'
 position = [0, 10, 0]

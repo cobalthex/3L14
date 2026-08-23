@@ -1,6 +1,7 @@
 // based on EBML (Matroska)'s varint impl
 
 use std::io;
+use std::io::Read;
 
 pub const fn encode(n: u64) -> (u8, [u8;8])
 {
@@ -43,9 +44,14 @@ pub const fn more_length(prefix: u8) -> u8
     prefix.leading_zeros() as u8
 }
 
-pub const fn decode(bytes: &[u8]) -> u64
+// Decodes an integer, returning (parsed value, this varint length)
+// varint length will be zero if `bytes` is too short
+#[must_use]
+pub const fn decode(bytes: &[u8]) -> (u64, usize)
 {
+    if bytes.is_empty() { return (0, 0); }
     let more = more_length(bytes[0]);
+    if bytes.len() <= more as usize { return (0, 0); }
 
     let mut be_bytes = [0u8; 8];
     let mut i = 0;
@@ -58,7 +64,7 @@ pub const fn decode(bytes: &[u8]) -> u64
     be_bytes[0] &= !(1 << (7 - more));
 
     let n = u64::from_be_bytes(be_bytes);
-    n >> (8 * (7 - more))
+    (n >> (8 * (7 - more)), more as usize + 1)
 }
 
 pub fn decode_from<R: io::Read + ?Sized>(reader: &mut R) -> io::Result<u64>
@@ -84,11 +90,10 @@ mod tests
     fn test(val: u64, expected_len: u8)
     {
         let encoded = encode(val);
-        let decode_len = more_length(encoded.1[0]) + 1;
-        let decoded = decode(&encoded.1[0..(encoded.0 as usize)]);
+        let (decoded, decode_len ) = decode(&encoded.1[0..(encoded.0 as usize)]);
 
         assert_eq!(val, decoded);
-        assert_eq!(decode_len, expected_len);
+        assert_eq!(decode_len, expected_len as usize);
     }
 
     #[test]

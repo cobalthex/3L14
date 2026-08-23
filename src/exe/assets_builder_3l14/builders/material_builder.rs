@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::io::Read;
+use std::io::{Read, Write};
 use arrayvec::ArrayVec;
 use serde::{Deserialize, Serialize};
 use asset_3l14::{AssetKey, AssetTypeId};
@@ -65,25 +65,21 @@ impl AssetBuilder for MaterialBuilder
 
         // todo: shader dependencies
 
-        let mut out = outputs.add_output::<Material>();
-        for tex in material_file.textures.iter()
-        {
-            out.add_dependency(*tex)?;
-        }
+        let mut out = outputs.add_output::<Material>()?;
+        out.add_dependencies(&material_file.textures)?;
 
         let shader_akey = AssetKey::synthetic(
             AssetTypeId::Shader,
             shader_key::pixel(material_file.class, EngineRenderPass::Opaque));
-        out.add_dependency(shader_akey)?;
+        out.add_dependencies(&[shader_akey])?;
 
         let mut out = out.write_structured(&material_file)?;
         let out = match material_def
         {
-            MaterialDef::DebugLines => out.finish_opaque(),
+            MaterialDef::DebugLines => out.skip_opaque(),
             MaterialDef::PbrOpaque { props, .. } =>
             {
-                out.write_opaque(unsafe { val_as_u8_slice(&props) })?;
-                out.finish_opaque()
+                out.write_opaque_bytes(unsafe { val_as_u8_slice(&props) })?
             }
         };
 

@@ -1,10 +1,10 @@
 use super::*;
-use asset_3l14::{Asset, AssetFileType, AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetMetadata, AssetTypeId, VersionHash, SourceMetadata, TomlRead, TomlWrite, SourceMetadataStub, MetaFileError};
+use asset_3l14::{Asset, AssetFileType, AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetMetadata, AssetTypeId, VersionHash, SourceMetadata, TomlRead, TomlWrite, SourceMetadataStub, MetaFileError, AssetLoadError};
 use bitcode::Encode;
 use clap::ValueEnum;
 use metrohash::MetroHash64;
 use nab_3l14::utils::inline_hash::InlineWriteHash;
-use nab_3l14::utils::{varint, ShortTypeName};
+use nab_3l14::utils::{varint, ShortTypeName, val_as_u8_slice};
 use std::cell::UnsafeCell;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -412,7 +412,7 @@ impl AssetsBuilder
             assets_builder: &self,
             build_rule,
             source_id: source_meta.source_id,
-            timestamp: build_time,
+            timestamp: build_time.clone(),
             rel_source_path: rel_path,
             abs_output_dir: self.config.assets_root.as_path(),
             version_hash: builder.version_hash,
@@ -420,7 +420,8 @@ impl AssetsBuilder
             results: HashSet::new(),
         };
 
-        match builder.builder.build_assets(source_meta.build_config, &mut input, &mut outputs)
+        let build = builder.builder.build_assets(source_meta.build_config, &mut input, &mut outputs);
+        match build
         {
             Ok(_) =>
             {
@@ -432,7 +433,7 @@ impl AssetsBuilder
                 {
                     Ok(fin) =>
                     {
-                        if let Err(_) = fin.set_modified(outputs.timestamp.into())
+                        if let Err(_) = fin.set_modified(build_time.into())
                         {
                             log::error!("Failed to update {source_meta_file_path:?} write-time");
                         };
@@ -485,6 +486,8 @@ pub enum BuildError
     SourceMetaError { source_meta_path: PathBuf, error: MetaFileError },
     AssetMetaError { asset_meta_path: PathBuf, error: MetaFileError },
     UnknownDependency { dependent_asset_key: AssetKey },
+    DependencyReadError { dependent_asset_key: AssetKey, error: io::Error },
+    DependencyParseError { dependent_asset_key: AssetKey, error: bitcode::Error },
     SourceIOError{ source_path: PathBuf, error: io::Error },
     TooManyDerivedIDs,
     BuilderError(Box<dyn Error>),
@@ -543,9 +546,9 @@ impl<T, F: FnOnce() -> T> DerefMut for Lazy<T, F>
     }
 }
 
-struct BuildOutputInner<'builder>
+struct BuildOutputInner<'output>
 {
-    outputs: &'builder BuildOutputs<'builder>,
+    outputs: &'output BuildOutputs<'output>,
     asset_key: AssetKey,
     dependencies: Vec<AssetKey>,
     writer: File,
@@ -554,24 +557,94 @@ struct BuildOutputInner<'builder>
     name: Option<String>,
 }
 
-pub struct PrimaryOutput<'builder, A: Asset>(BuildOutputInner<'builder>, PhantomData<A>);
-impl<'builder, A: Asset> PrimaryOutput<'builder, A>
+#[must_use]
+pub struct PrimaryOutput<'output, A: Asset>(BuildOutputInner<'output>, PhantomData<A>);
+impl<'output, A: Asset> PrimaryOutput<'output, A>
 {
-    pub fn add_dependency(&mut self, dependency: AssetKey) -> Result<(), BuildError>
+    // TODO: it would be great to automate collecting this (macro magic?)
+    pub fn add_dependencies(&mut self, dependencies: &[AssetKey]) -> Result<&mut Self, BuildError>
     {
-        // todo: validate dependencies
+        let builder = self.0.outputs.assets_builder;
+        for dependency in dependencies
+        {
+            match builder.query_asset(*dependency)
+            {
+                Ok(asset_meta) =>
+                {
+                    builder.build_source(&asset_meta.source_path, self.0.outputs.build_rule)?;
+                }
+                Err(e) =>
+                {
+                    log::warn!("Failed to query asset dependency {dependency:?} when building {:?}: {e:?}", self.0.asset_key);
+                    return Err(BuildError::UnknownDependency
+                    {
+                        dependent_asset_key: *dependency,
+                    });
+                }
+            };
+        }
 
-        todo!()
+        self.0.dependencies.extend_from_slice(dependencies);
+
+        Ok(self)
     }
 
     pub fn add_and_read_dependency<D: Asset>(&mut self, dependency: AssetKey) -> Result<D::StructuredData, BuildError>
     {
         assert_eq!(dependency.asset_type(), D::asset_type());
 
-        todo!()
+        let builder = self.0.outputs.assets_builder;
+        let asset_meta = match builder.query_asset(dependency)
+        {
+            Ok(asset_meta) => asset_meta,
+            Err(e) =>
+            {
+                log::warn!("Failed to query asset dependency {dependency:?} when building {:?}: {e:?}", self.0.asset_key);
+                return Err(BuildError::UnknownDependency
+                {
+                    dependent_asset_key: dependency,
+                });
+            }
+        };
+
+        // assert key exists in build results?
+        builder.build_source(&asset_meta.source_path, self.0.outputs.build_rule)?;
+
+        let asset_path = builder.config.assets_root.join(&format!("{dependency:x}.{}", AssetFileType::Asset.file_extension()));
+        let mut asset_payload = Vec::new();
+        let fin = File::open(asset_path).map_err(|e| BuildError::DependencyReadError
+            {
+                dependent_asset_key: dependency,
+                error: e,
+            })?
+            .read_to_end(&mut asset_payload).map_err(|e| BuildError::DependencyReadError
+            {
+                dependent_asset_key: dependency,
+                error: e,
+            })?;
+
+
+        let (structured_data_size, structured_data_start) = varint::decode(&mut asset_payload);
+        let structured_data_end = structured_data_start + structured_data_size as usize;
+        if structured_data_start == 0 ||
+            asset_payload.len() < structured_data_end
+        {
+            return Err(BuildError::DependencyReadError
+            {
+                dependent_asset_key: dependency,
+                error: io::Error::from(io::ErrorKind::UnexpectedEof),
+            })
+        }
+
+        let bytes = &asset_payload[structured_data_start..structured_data_end];
+        bitcode::decode::<D::StructuredData>(bytes).map_err(|e| BuildError::DependencyParseError
+        {
+            dependent_asset_key: dependency,
+            error: e,
+        })
     }
 
-    pub fn write_structured(mut self, value: &A::StructuredData) -> io::Result<OpaqueOutput<'builder, A>>
+    pub fn write_structured(mut self, value: &A::StructuredData) -> io::Result<OpaqueOutput<'output, A>>
     {
         let val = bitcode::encode(value);
         varint::encode_into(val.len() as u64, &mut self.0.writer)?;
@@ -580,22 +653,41 @@ impl<'builder, A: Asset> PrimaryOutput<'builder, A>
         Ok(OpaqueOutput(self.0, PhantomData))
     }
 }
-pub struct OpaqueOutput<'builder, A: Asset>(BuildOutputInner<'builder>, PhantomData<A>);
-impl<'builder, A: Asset> OpaqueOutput<'builder, A>
+#[must_use]
+pub struct OpaqueOutput<'output, A: Asset>(BuildOutputInner<'output>, PhantomData<A>);
+impl<'output, A: Asset> OpaqueOutput<'output, A>
 {
-    pub fn write_opaque(&mut self, opaque_bytes: &[u8]) -> io::Result<&mut Self>
+    pub fn skip_opaque(mut self) -> DebugOutput<'output, A>
+    {
+        DebugOutput(self.0, PhantomData)
+    }
+
+    // todo: better design for streaming writes?
+    pub fn write_opaque_into(mut self, writer_fn: impl FnOnce(&mut File) -> io::Result<()>) -> io::Result<DebugOutput<'output, A>>
+    {
+        writer_fn(&mut self.0.writer)?;
+        self.0.writer.flush()?;
+        Ok(DebugOutput(self.0, PhantomData))
+    }
+
+    pub fn write_opaque<T>(mut self, opaque: T) -> io::Result<DebugOutput<'output, A>>
+    {
+        self.write_opaque_bytes(unsafe { val_as_u8_slice(&opaque) })
+    }
+
+    pub fn write_opaque_bytes(mut self, opaque_bytes: &[u8]) -> io::Result<DebugOutput<'output, A>>
     {
         self.0.writer.write_all(opaque_bytes)?;
         self.0.writer.flush()?;
-        Ok(self)
+        Ok(DebugOutput(self.0, PhantomData))
     }
-    pub fn finish_opaque(self) -> DebugOutput<'builder, A> { DebugOutput(self.0, PhantomData) }
 }
-pub struct DebugOutput<'builder, A: Asset>(BuildOutputInner<'builder>, PhantomData<A>);
-impl<'builder, A: Asset> DebugOutput<'builder, A>
+#[must_use]
+pub struct DebugOutput<'output, A: Asset>(BuildOutputInner<'output>, PhantomData<A>);
+impl<'output, A: Asset> DebugOutput<'output, A>
 {
-    pub fn skip_debug(self) -> FinalizedOutput<'builder> { FinalizedOutput(self.0) }
-    pub fn write_debug(mut self, value: A::DebugData) -> io::Result<FinalizedOutput<'builder>>
+    pub fn skip_debug(self) -> FinalizedOutput<'output> { FinalizedOutput(self.0) }
+    pub fn write_debug(mut self, value: &A::DebugData) -> io::Result<FinalizedOutput<'output>>
     {
         let mut debug_writer = File::create(&self.0.debug_data_file_path)?;
         let val = bitcode::encode(value);
@@ -604,13 +696,13 @@ impl<'builder, A: Asset> DebugOutput<'builder, A>
         Ok(FinalizedOutput(self.0))
     }
 }
-
-pub struct FinalizedOutput<'builder>(BuildOutputInner<'builder>);
-impl<'builder> FinalizedOutput<'builder>
+#[must_use]
+pub struct FinalizedOutput<'output>(BuildOutputInner<'output>);
+impl<'output> FinalizedOutput<'output>
 {
-    pub fn finish(mut self, name: Option<String>) -> Result<(), BuildError>
+    pub fn finish(mut self, name: Option<String>) -> Result<AssetKey, BuildError>
     {
-        self.0.name = Some(name.into());
+        self.0.name = name;
         self.0.writer.flush().map_err(|e| BuildError::OutputError
         {
             output_path: self.0.asset_key.as_file_name(AssetFileType::Asset).into(), // todo: full path?
@@ -639,26 +731,26 @@ impl<'builder> FinalizedOutput<'builder>
             error: e,
         })?;
 
-        Ok(())
+        Ok(self.0.asset_key)
     }
 }
 
-pub struct BuildOutputs<'builder>
+pub struct BuildOutputs<'build>
 {
-    assets_builder: &'builder AssetsBuilder,
+    assets_builder: &'build AssetsBuilder,
     build_rule: BuildRule,
     source_id: AssetKeySourceId,
     timestamp: chrono::DateTime<chrono::Utc>,
 
-    rel_source_path: &'builder Path,
-    abs_output_dir: &'builder Path,
+    rel_source_path: &'build Path,
+    abs_output_dir: &'build Path,
 
     version_hash: VersionHash,
     derived_ids: HashMap<AssetTypeId, AssetKeyDerivedId>,
 
     results: BuildResults,
 }
-impl<'builder> BuildOutputs<'builder>
+impl<'build> BuildOutputs<'build>
 {
     // TODO: outputs should be atomic (all or none)
 
@@ -667,8 +759,8 @@ impl<'builder> BuildOutputs<'builder>
 
     // Produce an output from this build. Assets of the same type have sequential derived IDs
     #[inline]
-    pub fn add_output<A: Asset>(
-        &mut self) -> PrimaryOutput<'builder, A>
+    pub fn add_output<A: Asset>(&mut self)
+        -> Result<PrimaryOutput<'_, A>, BuildError>
     {
         let derived_id: AssetKeyDerivedId =
         {
@@ -684,10 +776,8 @@ impl<'builder> BuildOutputs<'builder>
 
     // Produce an output from ths build that is referenced by a calculable hash. By default, will only return an output if the hash doesn't already exist
     #[inline]
-    pub fn add_synthetic<A: Asset>(
-        &mut self,
-        asset_hash: AssetKeySynthHash)
-        -> PrimaryOutput<'builder, A>
+    pub fn add_synthetic<A: Asset>(&mut self, asset_hash: AssetKeySynthHash)
+                                   -> Result<PrimaryOutput<'_, A>, BuildError>
     {
         let asset_key = AssetKey::synthetic(A::asset_type(), asset_hash);
         self.add_asset(asset_key, self.build_rule)
@@ -695,11 +785,8 @@ impl<'builder> BuildOutputs<'builder>
 
     // TODO: this should probably just care about source changing and not outputs
     // build an asset (if rules allow) and add an output to the asset build
-    fn add_asset<A: Asset>(
-        &mut self,
-        asset_key: AssetKey,
-        _build_rule: BuildRule)
-        -> PrimaryOutput<'builder, A>
+    fn add_asset<A: Asset>(&mut self, asset_key: AssetKey, _build_rule: BuildRule)
+                           -> Result<PrimaryOutput<'_, A>, BuildError>
     {
         let output_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::Asset));
         let output_meta_path = self.abs_output_dir.join(asset_key.as_file_name(AssetFileType::MetaData));
@@ -766,7 +853,9 @@ impl<'builder> BuildOutputs<'builder>
 
             log::debug!("Building {:#?}", asset_key);
 
-            PrimaryOutput(BuildOutputInner
+            self.results.insert(asset_key);
+
+            Ok(PrimaryOutput(BuildOutputInner
             {
                 outputs: self,
                 asset_key,
@@ -775,7 +864,7 @@ impl<'builder> BuildOutputs<'builder>
                 meta_writer: output_meta_writer,
                 debug_data_file_path: output_debug_path,
                 name: None,
-            }, PhantomData)
+            }, PhantomData))
         }
     }
 }

@@ -6,7 +6,7 @@ use glam::{Mat4, Quat, Vec3};
 use gltf::animation::util::ReadOutputs;
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
-use graphics_3l14::assets::{AnimFrameNumber, BoneId, GeometryFile, GeometryMesh, IndexFormat, MaterialFile, ModelFile, Shader, ShaderDebugData, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, TextureFile, TextureFilePixelFormat};
+use graphics_3l14::assets::{AnimFrameNumber, BoneId, Geometry, GeometryFile, GeometryMesh, IndexFormat, Material, MaterialFile, Model, ModelFile, Shader, ShaderDebugData, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, Texture, TextureFile, TextureFilePixelFormat};
 use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexCaps, VertexLayoutBuilder};
 use math_3l14::{DualQuat, Ratio, Sphere, AABB};
 use metrohash::MetroHash64;
@@ -38,6 +38,8 @@ pub enum ModelImportError
     TooManyBones,
     UnnamedBones, // bone names are required
     AnimationTimesOutOfOrder,
+    TooManyVertices,
+    TooManyIndices,
 }
 impl Display for ModelImportError
 {
@@ -243,8 +245,6 @@ impl ModelBuilder
             let material = if let Some(mtl_name) = in_prim.material().name() &&
                 let Some(mtl_mapping) = config.material_mappings.get(mtl_name)
             {
-                // add built dependency?
-                outputs.add_dependency(*mtl_mapping)?;
                 *mtl_mapping
             }
             else
@@ -257,84 +257,80 @@ impl ModelBuilder
                     let tex_index = tex.texture().source().index();
                     let tex_data = &images[tex_index];
 
-                    let tex_asset = outputs.add_output(AssetTypeId::Texture, |mut tex_output|
+                    let (pixel_format, need_conv) = match tex_data.format
+                    {
+                        Format::R8 => (TextureFilePixelFormat::R8, false),
+                        Format::R8G8 => (TextureFilePixelFormat::Rg8, false),
+                        Format::R8G8B8 => (TextureFilePixelFormat::Rgba8, true),
+                        Format::R8G8B8A8 => (TextureFilePixelFormat::Rgba8, false),
+                        Format::R16 => todo!("R16 textures"),
+                        Format::R16G16 => todo!("R16G16 textures"),
+                        Format::R16G16B16 => todo!("R16G16B16 textures"),
+                        Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
+                        Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
+                        Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
+                    };
+
+                    let tex_asset = outputs.add_output::<Texture>()?
+                        .write_structured(&TextureFile
                         {
-                            tex.texture().name().map(|n| tex_output.set_name(n));
-
-                            let (pixel_format, need_conv) = match tex_data.format
-                            {
-                                Format::R8 => (TextureFilePixelFormat::R8, false),
-                                Format::R8G8 => (TextureFilePixelFormat::Rg8, false),
-                                Format::R8G8B8 => (TextureFilePixelFormat::Rgba8, true),
-                                Format::R8G8B8A8 => (TextureFilePixelFormat::Rgba8, false),
-                                Format::R16 => todo!("R16 textures"),
-                                Format::R16G16 => todo!("R16G16 textures"),
-                                Format::R16G16B16 => todo!("R16G16B16 textures"),
-                                Format::R16G16B16A16 => todo!("R16G16B16A16 textures"),
-                                Format::R32G32B32FLOAT => todo!("R32G32B32FLOAT textures"),
-                                Format::R32G32B32A32FLOAT => todo!("R32G32B32A32FLOAT textures"),
-                            };
-
-                            tex_output.serialize(&TextureFile
-                            {
-                                width: tex_data.width,
-                                height: tex_data.height,
-                                depth: 1,
-                                mip_count: 1,
-                                mip_offsets: Default::default(),
-                                pixel_format,
-                            })?;
-
-                            // TODO: texture compression
-                            if need_conv
-                            {
-                                match tex_data.format
-                                {
-                                    Format::R8G8B8 =>
-                                        {
-                                            // todo: check length
-                                            for i in 0..(tex_data.width * tex_data.height) as usize
-                                            {
-                                                tex_output.write_all(&tex_data.pixels[(i * 3)..((i + 1) * 3)])?;
-                                                tex_output.write_all(&[u8::MAX])?;
-                                            }
-                                        }
-                                    _ => todo!("Other texture format conversions"),
-                                }
-                            } else {
-                                tex_output.write_all(&tex_data.pixels)?;
-                            }
-
-                            Ok(())
+                            width: tex_data.width,
+                            height: tex_data.height,
+                            depth: 1,
+                            mip_count: 1,
+                            mip_offsets: Default::default(),
+                            pixel_format,
                         })?;
+
+                    // TODO: texture compression
+                    let tex_asset = if need_conv
+                        {
+                            match tex_data.format
+                            {
+                                Format::R8G8B8 =>
+                                {
+                                    tex_asset.write_opaque_into(|writer|
+                                    {
+                                        // todo: check length
+                                        for i in 0..(tex_data.width * tex_data.height) as usize
+                                        {
+                                            writer.write_all(&tex_data.pixels[(i * 3)..((i + 1) * 3)])?;
+                                            writer.write_all(&[u8::MAX])?;
+                                        }
+                                        Ok(())
+                                    })?
+                                }
+                                _ => todo!("Other texture format conversions"),
+                            }
+                        } else {
+                            tex_asset.write_opaque_bytes(&tex_data.pixels)?
+                        }
+                        .skip_debug()
+                        .finish(tex.texture().name().map(|n| n.to_string()))?;
 
                     textures.try_push(tex_asset)?;
                 }
 
+                // TODO: call into material builder?
                 // TODO: read material info from gltf
                 let material_class = MaterialClass::PbrOpaque; // TODO
-                outputs.add_output(AssetTypeId::Material, |mtl_output|
-                {
-                    // call into MaterialBuilder?
-                    mtl_output.set_name(format!("{:?}", material_class));
-                    mtl_output.depends_on_multiple(textures.clone());
-
-                    mtl_output.serialize(&MaterialFile
+                let mut material = outputs.add_output::<Material>()?;
+                material.add_dependencies(&textures)?;
+                let material = material.write_structured(&MaterialFile
                     {
                         class: material_class,
                         textures,
-                        props: alloc_u8_slice(PbrProps
-                        {
-                            albedo_color: pbr.base_color_factor().into(),
-                            metallicity: pbr.metallic_factor(),
-                            roughness: pbr.roughness_factor(),
-                        }),
-                    })?;
+                    })?
+                    .write_opaque(PbrProps
+                    {
+                        albedo_color: pbr.base_color_factor().into(),
+                        metallicity: pbr.metallic_factor(),
+                        roughness: pbr.roughness_factor(),
+                    })?
+                    .skip_debug()
+                    .finish(in_prim.material().name().map(|n| n.to_string()))?;
 
-                    // TODO: add shader dependencies
-
-                    Ok(())
-                })?
+                material
             };
             materials.push(material);
 
@@ -356,41 +352,42 @@ impl ModelBuilder
 
             total_vertex_count += mesh_vertex_count;
             total_index_count += mesh_index_count;
-
         }
-        let geometry = outputs.add_output(AssetTypeId::Geometry, |geom_output|
+
+        if vertex_data.len() > u32::MAX as usize { return Err(Box::new(ModelImportError::TooManyVertices)); }
+        if index_data.len() > u32::MAX as usize { return Err(Box::new(ModelImportError::TooManyIndices)); }
+
+        let geometry = outputs.add_output::<Geometry>()?
+            .write_structured(&GeometryFile
+            {
+                vertex_layout: vertex_layout.bits(),
+                index_format: IndexFormat::U16,
+                vertices_buf_size: vertex_data.len() as u32,
+                indices_buf_size: index_data.len() as u32,
+                meshes: meshes.into_boxed_slice(),
+            })?
+            .skip_opaque()
+            .skip_debug()
+            .finish(in_mesh.name().map(|n| n.to_string()))?;
+
+        let mut model = outputs.add_output::<Model>()?;
+        model.add_dependencies(&materials)?;
+        model.add_dependencies(&[geometry])?;
+        if let Some(skel) = &maybe_skel_info
         {
-            in_mesh.name().map(|n| geom_output.set_name(n));
-            geom_output.serialize(&GeometryFile
+            model.add_dependencies(&[skel.asset])?;
+        }
+        let _model = model.write_structured(&ModelFile
             {
                 bounds_aabb: model_bounds_aabb,
                 bounds_sphere: model_bounds_sphere,
-                vertex_layout: vertex_layout.bits(),
-                index_format: IndexFormat::U16,
-                vertices: vertex_data.into_boxed_slice(),
-                indices: index_data.into_boxed_slice(),
-                meshes: meshes.into_boxed_slice(),
-            })?;
-
-            Ok(())
-        })?;
-
-        outputs.add_output(AssetTypeId::Model, |mut model_output|
-        {
-            in_node.name().map(|n| model_output.set_name(n)); // different name from mesh?
-            model_output.depends_on(geometry);
-            if let Some(skel_info) = maybe_skel_info { model_output.depends_on(skel_info.asset); };
-            model_output.depends_on_multiple(materials.iter().map(|s| *s));
-
-            model_output.serialize(&ModelFile
-            {
                 geometry,
                 skeleton: maybe_skel_info.map(|s| s.asset),
                 materials: materials.into_boxed_slice(),
-            })?;
-
-            Ok(())
-        })?;
+            })?
+            .skip_opaque()
+            .skip_debug()
+            .finish(in_node.name().map(|n| n.to_string()))?;
 
         Ok(())
     }
@@ -454,19 +451,17 @@ impl ModelBuilder
 
         // TODO: this probably is not sufficient to determine uniqueness
         let skel_key = AssetKeySynthHash::generate(&bone_relations);
-        let skeleton = outputs.add_synthetic(AssetTypeId::Skeleton, skel_key, |skel_output|
-        {
-            skel_output.serialize(&Skeleton
+        let skeleton = outputs.add_synthetic::<Skeleton>(skel_key)?
+            .write_structured(&Skeleton
             {
                 bone_ids: bone_relations.as_ref().iter().map(|b| b.id).collect(),
                 parent_indices: bone_relations.as_ref().iter().map(|b| b.parent_index).collect(),
                 bind_poses: skel_bind_poses,
                 inverse_bind_poses: skel_inv_bind_pose,
-            })?;
-            skel_output.serialize_debug::<Skeleton>(&SkeletonDebugData { bone_names, })?;
-
-            Ok(())
-        })?;
+            })?
+            .skip_opaque()
+            .write_debug(&SkeletonDebugData { bone_names })?
+            .finish(None)?;
 
         Ok(SkelInfo
         {
@@ -603,19 +598,17 @@ impl ModelBuilder
             }
         }
 
-        outputs.add_output(AssetTypeId::SkeletalAnimation, |anim_output|
-        {
-            in_anim.name().map(|n| anim_output.set_name(n));
-            anim_output.serialize(&SkeletalAnimation
+        outputs.add_output::<SkeletalAnimation>()?
+            .write_structured(&SkeletalAnimation
             {
                 sample_rate,
                 frame_count: AnimFrameNumber(frame_count as u32),
                 bones: bone_ids,
                 poses,
-            })?;
-
-            Ok(())
-        })?;
+            })?
+            .skip_opaque()
+            .skip_debug()
+            .finish(in_anim.name().map(|n| n.to_string()))?;
 
         // todo: output sorted based on hash of bone name
 

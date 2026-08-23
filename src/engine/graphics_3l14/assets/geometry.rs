@@ -35,13 +35,11 @@ impl From<IndexFormat> for wgpu::IndexFormat
 #[derive(Encode, Decode)]
 pub struct GeometryFile
 {
-    // TODO: convert all boxes to offsets in the src payload
-    pub bounds_aabb: AABB,
-    pub bounds_sphere: Sphere,
+    // TODO: convert all boxes to offsets in the src payload?
     pub vertex_layout: <VertexCaps as RawBitFlags>::Numeric, // must store as underlying type due to limitation of bitcode
     pub index_format: IndexFormat,
-    pub vertices: Box<[u8]>, // Contains composite vertices of type vertex_layout
-    pub indices: Box<[u8]>, // contains indices of type index_format
+    pub vertices_buf_size: u32,
+    pub indices_buf_size: u32,
     pub meshes: Box<[GeometryMesh]>, // TODO: make variable sized tail (then put boxes above after in payload)
 }
 
@@ -57,8 +55,6 @@ pub struct GeometryMesh
 #[asset(structured_type=GeometryFile)]
 pub struct Geometry
 {
-    pub bounds_aabb: AABB, // note; these are untransformed
-    pub bounds_sphere: Sphere,
     pub vertex_layout: BitFlags<VertexCaps>,
     pub index_format: wgpu::IndexFormat,
     // all meshes in this model are slices of this buffer
@@ -82,27 +78,30 @@ impl AssetLifecycler for GeometryLifecycler
 {
     type Asset = Geometry;
 
-    fn load(&self, AssetLoadRequest { structured_data, asset_key, .. }: AssetLoadRequest<Self::Asset>)
+    fn load(&self, AssetLoadRequest { structured_data, asset_key, opaque_data, .. }: AssetLoadRequest<Self::Asset>)
         -> Result<Self::Asset, Box<dyn std::error::Error>>
     {
+        let vbufsize = structured_data.vertices_buf_size as usize;
+        let ibufsize = structured_data.indices_buf_size as usize;
+        let vertices = &opaque_data[0..vbufsize];
+        let indices = &opaque_data[vbufsize..(vbufsize + ibufsize)];
+        
         // todo: should these read from opaque_data?
         let vertices = self.renderer.device().create_buffer_init(&BufferInitDescriptor
         {
             label: debug_label!(format!("{:#?} ({}) vertices", asset_key, structured_data.vertex_layout).as_str()),
-            contents: structured_data.vertices.as_ref(),
+            contents: vertices,
             usage: BufferUsages::VERTEX,
         });
         let indices = self.renderer.device().create_buffer_init(&BufferInitDescriptor
         {
             label: debug_label!(format!("{:#?} indices", asset_key).as_str()),
-            contents: structured_data.indices.as_ref(),
+            contents: indices,
             usage: BufferUsages::INDEX,
         });
 
         Ok(Geometry
         {
-            bounds_aabb: structured_data.bounds_aabb,
-            bounds_sphere: structured_data.bounds_sphere,
             vertex_layout: unsafe { BitFlags::from_bits_unchecked(structured_data.vertex_layout) },
             index_format: match structured_data.index_format
             {

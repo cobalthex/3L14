@@ -7,7 +7,7 @@ use std::time::Duration;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, Extent3d, QueueWriteBufferView, RenderPass, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView};
 use wgpu::util::{DeviceExt, TextureDataOrder};
 use asset_3l14::{Asset, AssetView};
-use math_3l14::{CanSee, DualQuat, Sphere, StaticGeoUniform};
+use math_3l14::{CanSee, DualQuat, Sphere, StaticGeoUniform, AABB};
 use nab_3l14::utils::array::init_array;
 use crate::assets::{Geometry, Model, EngineRenderPass};
 use crate::camera::{Camera, CameraProjection, CameraUniform};
@@ -298,10 +298,10 @@ impl<'f> View<'f>
         self.used_uniforms_pools.push(camera);
     }
 
-    fn can_see(&self, geo: &Geometry, object_transform: Mat4) -> bool
+    fn can_see(&self, sphere: Sphere, object_transform: Mat4) -> bool
     {
-        let geo_transform = geo.bounds_sphere.transform(&(object_transform));
-        self.camera_clip.can_see(geo_transform)
+        let transformed = sphere.transform(&(object_transform));
+        self.camera_clip.can_see(transformed)
     }
 
     fn draw_model_common(&mut self, model: AssetView<Model>, world_transform: Mat4, poses_uniforms: Option<u32>) -> bool
@@ -313,7 +313,7 @@ impl<'f> View<'f>
         }
 
         let geo = model.geometry.data().unwrap();
-        if !self.can_see(geo.as_ref(), world_transform) { return false; }
+        if !self.can_see(model.bounds_sphere, world_transform) { return false; }
 
         // TODO: these should be per-mesh
         let rad = world_transform.x_axis.x.max(world_transform.y_axis.y.max(world_transform.z_axis.z));

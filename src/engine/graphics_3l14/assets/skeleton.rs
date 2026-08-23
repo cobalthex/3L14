@@ -50,7 +50,6 @@ impl SkeletonLifecycler
 {
     pub fn display_bones(&self) -> bool { self.display_bones.load(Ordering::Relaxed) }
 }
-impl TrivialAssetLifecycler for SkeletonLifecycler { type Asset = Skeleton; }
 impl DebugGui for SkeletonLifecycler
 {
     fn display_name(&self) -> &str { "Skeletons" }

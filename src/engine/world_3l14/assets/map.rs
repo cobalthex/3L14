@@ -29,27 +29,27 @@ pub enum StaticClassification
 }
 
 #[derive(Encode, Decode)]
-struct Placement<T>
+pub struct StaticPlacement<T>
 {
     pub object: T,
     pub position: Vec3,
     pub orientation: Quat,
-    // scale?
+    pub scale: Vec3,
 }
 
 pub struct Statics
 {
     pub hierarchy: AabbTree,
-    pub geo: Box<[Placement<Ash<Model>>]>,
-    pub lights: Box<[Placement<Light>]>,
+    pub geo: Box<[StaticPlacement<Ash<Model>>]>,
+    pub lights: Box<[StaticPlacement<Light>]>,
 }
 
 #[derive(Encode, Decode)]
 pub struct StaticsFile
 {
     pub hierarchy: AabbTree,
-    pub geo: Box<[Placement<u32>]>,
-    pub lights: Box<[Placement<Light>]>,
+    pub geo: Box<[StaticPlacement<u32>]>,
+    pub lights: Box<[StaticPlacement<Light>]>,
 }
 
 pub struct MapLifecycler;
@@ -63,11 +63,12 @@ impl AssetLifecycler for MapLifecycler
             .map(|placement|
                 {
                     let dep = request.load_dependency(request.structured_data.model_palette[placement.object as usize]);
-                    Placement
+                    StaticPlacement
                     {
                         object: dep,
                         position: placement.position,
                         orientation: placement.orientation,
+                        scale: placement.scale,
                     }
                 })
             .collect();

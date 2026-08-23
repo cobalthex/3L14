@@ -3,11 +3,14 @@ use asset_3l14::{Asset, Ash, AssetKey, AssetLifecycler, AssetLoadRequest, AssetT
 use bitcode::{Decode, Encode};
 use debug_3l14::debug_gui::DebugGui;
 use std::error::Error;
+use math_3l14::{Sphere, AABB};
 use proc_macros_3l14::LayoutHash;
 
 #[derive(LayoutHash, Encode, Decode)]
 pub struct ModelFile
 {
+    pub bounds_aabb: AABB,
+    pub bounds_sphere: Sphere,
     pub geometry: AssetKey,
     pub skeleton: Option<AssetKey>,
     pub materials: Box<[AssetKey]>,
@@ -15,6 +18,8 @@ pub struct ModelFile
 
 pub struct Model
 {
+    pub bounds_aabb: AABB,
+    pub bounds_sphere: Sphere,
     pub mesh_count: u32,
     pub geometry: Ash<Geometry>,
     pub skeleton: Option<Ash<Skeleton>>,
@@ -43,6 +48,8 @@ impl AssetLifecycler for ModelLifecycler
         let model_file = &request.structured_data;
         Ok(Model
         {
+            bounds_aabb: model_file.bounds_aabb,
+            bounds_sphere: model_file.bounds_sphere,
             mesh_count: model_file.materials.len() as u32, // store explicitly in file?
             geometry: request.load_dependency(model_file.geometry),
             skeleton: model_file.skeleton.map(|s| request.load_dependency(s)),

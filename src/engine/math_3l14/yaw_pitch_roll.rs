@@ -1,11 +1,27 @@
 use std::fmt::{Debug, Formatter};
 use bitcode::Encode;
-use glam::Vec3;
+use glam::{EulerRot, Quat, Vec3};
 use serde::{Deserialize, Serialize};
 use crate::Angle;
 
-#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct YawPitchRoll(Vec3);
+impl From<Quat> for YawPitchRoll
+{
+    fn from(value: Quat) -> Self
+    {
+        let (yaw, pitch, roll) = value.to_euler(EulerRot::YXZ);
+        Self(Vec3::new(yaw, pitch, roll))
+    }
+}
+impl From<YawPitchRoll> for Quat
+{
+    fn from(value: YawPitchRoll) -> Self
+    {
+        Self::from_euler(EulerRot::YXZ, value.yaw().to_radians(), value.pitch().to_radians(), value.roll().to_radians())
+    }
+}
+
 impl YawPitchRoll
 {
     #[inline] #[must_use]

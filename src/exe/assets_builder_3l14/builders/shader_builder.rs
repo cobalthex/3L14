@@ -247,39 +247,36 @@ impl AssetBuilder for ShaderBuilder
             ShaderStageConfig::Pixel { class } => shader_key::pixel(class, config.pass),
         };
 
-        let out = outputs.add_synthetic::<Shader>(hash);
-        {
-            let mut defines: Vec<(String, Option<String>)> = Vec::new(); // todo: use Cow?
+        let mut defines: Vec<(String, Option<String>)> = Vec::new(); // todo: use Cow?
 
-            let defines_ref = Vec::from_iter(defines.iter().map(|(k, v)| (k.as_str(), v.as_deref())));
-            let compilation = ShaderCompilation
+        let defines_ref = Vec::from_iter(defines.iter().map(|(k, v)| (k.as_str(), v.as_deref())));
+        let compilation = ShaderCompilation
+        {
+            source_text: &source_text,
+            filename: input.source_path(), // just the filename?
+            stage: match config.stage
             {
-                source_text: &source_text,
-                filename: input.source_path(), // just the filename?
+                ShaderStageConfig::Vertex { .. } => ShaderStage::Vertex,
+                ShaderStageConfig::Pixel { .. } => ShaderStage::Pixel,
+            },
+            flags: config.compile_flags, // TODO: global flags?
+            defines: defines_ref,
+        };
+
+        let module_bytes = self.compile_hlsl(compilation)?;
+
+        outputs.add_synthetic::<Shader>(hash)?
+            .write_structured(&ShaderFile
+            {
                 stage: match config.stage
                 {
                     ShaderStageConfig::Vertex { .. } => ShaderStage::Vertex,
                     ShaderStageConfig::Pixel { .. } => ShaderStage::Pixel,
-                },
-                flags: config.compile_flags, // TODO: global flags?
-                defines: defines_ref,
-            };
-
-            let module_bytes = self.compile_hlsl(compilation)?;
-
-            out.write_structured(&ShaderFile
-                {
-                    stage: match config.stage
-                    {
-                        ShaderStageConfig::Vertex { .. } => ShaderStage::Vertex,
-                        ShaderStageConfig::Pixel { .. } => ShaderStage::Pixel,
-                    }
-                })?
-                .write_opaque(&module_bytes)?
-                .finish_opaque()
-                .skip_debug()
-                .finish(Some("TEST".to_string()))?;
-        };
+                }
+            })?
+            .write_opaque_bytes(&module_bytes)?
+            .skip_debug()
+            .finish(Some("TEST".to_string()))?;
 
         Ok(())
     }

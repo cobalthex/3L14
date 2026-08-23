@@ -37,10 +37,10 @@ impl Display for ParseError
 }
 impl Error for ParseError { }
 
-struct CircuitParse<'p>
+struct CircuitParse
 {
     circuit: CircuitFile,
-    debug: CircuitDebugData<'p>,
+    debug: CircuitDebugData,
     block_mem: Vec<u8>,
 }
 
@@ -65,7 +65,7 @@ impl CircuitBuilder
         Self { known_impulses, known_latches, symbols_dict }
     }
 
-    fn parse<'p>(&self, mut lexed: CircuitLex<'p>, symbols: &'p SymbolsDict) -> Result<CircuitParse<'p>, ParseError>
+    fn parse<'p>(&self, mut lexed: CircuitLex<'p>, symbols: &'p SymbolsDict) -> Result<CircuitParse, ParseError>
     {
         let mut depths = HashMap::new();
         let mut stack = Vec::new();
@@ -329,15 +329,16 @@ impl AssetBuilder for CircuitBuilder
     {
         // TODO: split out debug data
 
-        let out  = outputs.add_output::<Circuit>();
+        let out  = outputs.add_output::<Circuit>()?;
         let mut str = String::new();
         input.read_to_string(&mut str)?;
         let lexed = lex_circuit_dsl(&str)?;
         let circuit = self.parse(lexed, &self.symbols_dict)?;
         out.write_structured(&circuit.circuit)?
-            .write_opaque(&circuit.block_mem)?;
-        
-        // TODO: debug data
+            .write_opaque_bytes(&circuit.block_mem)?
+            .write_debug(&circuit.debug)?
+            .finish(None)?; // TOOD: name
+
         Ok(())
     }
 }

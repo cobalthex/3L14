@@ -86,7 +86,7 @@ impl AssetBuilder for TextureBuilder
             _ => return Err(Box::new(TextureBuilderError::UnsupportedPixelFormat)),
         };
 
-        outputs.add_output::<Texture>()
+        outputs.add_output::<Texture>()?
             .write_structured(&TextureFile
             {
                 width: image.width(),
@@ -96,8 +96,7 @@ impl AssetBuilder for TextureBuilder
                 mip_offsets: [0; _],
                 pixel_format: TextureFilePixelFormat::Rgba8,
             })?
-            .write_opaque(image.as_bytes())?
-            .finish_opaque()
+            .write_opaque_bytes(image.as_bytes())?
             .skip_debug()
             .finish(None)?;
 

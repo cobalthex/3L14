@@ -103,15 +103,21 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
         #[cfg(feature = "asset_debug_data")]
         retyped.inner().store_debug_data(None);
 
-        let Ok(structured_data_size) = varint::decode_from(&mut input) else
+        // TODO: store this centrally so asset builder can share
+
+        let (structured_data_size, structured_data_start) = varint::decode(&mut input);
+        let opaque_data_start = structured_data_start + structured_data_size as usize;
+        if structured_data_start == 0 ||
+            input.len() < opaque_data_start
         {
+            log::debug!("Input data for {:?} is not long enough to parse", retyped.key());
             retyped.inner().store_data(Some(AssetData::Unavailable(AssetLoadError::PayloadTooSmall)));
             return;
-        };
+        }
 
         let structured_data =
         {
-            let bytes = &input[..structured_data_size as usize];
+            let bytes = &input[structured_data_start..opaque_data_start];
             match bitcode::decode::<A::StructuredData>(bytes)
             {
                 Ok(data) => data,
@@ -123,7 +129,7 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
                 }
             }
         };
-        let opaque_data = &input[structured_data_size as usize..];
+        let opaque_data = &input[opaque_data_start..];
 
         match self.load(AssetLoadRequest
         {

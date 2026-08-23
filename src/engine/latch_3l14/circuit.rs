@@ -13,7 +13,7 @@ use triomphe::Arc;
 use asset_3l14::{AssetLifecycler, AssetLoadError, AssetLoadRequest};
 use proc_macros_3l14::LayoutHash;
 
-#[proc_macros_3l14::asset(structured_type=CircuitFile)]
+#[proc_macros_3l14::asset(structured_type=CircuitFile, debug_type=CircuitDebugData)]
 #[derive(Debug)]
 pub struct Circuit
 {
@@ -42,16 +42,16 @@ pub struct CircuitFile
 }
 
 #[derive(Encode, Decode)]
-pub struct BlockDebugData<'b>
+pub struct BlockDebugData
 {
-    pub name: &'b str,
+    pub name: String,
 }
 
 #[derive(Encode, Decode)]
-pub struct CircuitDebugData<'d>
+pub struct CircuitDebugData
 {
-    pub impulse_blocks: Box<[BlockDebugData<'d>]>,
-    pub latch_blocks: Box<[BlockDebugData<'d>]>,
+    pub impulse_blocks: Box<[BlockDebugData]>,
+    pub latch_blocks: Box<[BlockDebugData]>,
 }
 
 pub type EntryPoints = Box<[BlockId]>;
