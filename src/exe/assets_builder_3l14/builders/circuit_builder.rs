@@ -1,16 +1,15 @@
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, SymbolsDict, VersionBuilder};
-use asset_3l14::AssetTypeId;
 use indexmap::IndexMap;
 use latch_3l14::block_meta::{BlockBuildMeta, HydrateBlock};
-use latch_3l14::{BlockDebugData, BlockId, BlockKind, Circuit, CircuitDebugData, CircuitFile, CircuitFileBlock, EntryPoints, Inlet, LatchingOutlet, Plug, PulsedOutlet};
+use latch_3l14::{BlockId, BlockKind, Circuit, CircuitDebugData, CircuitFile, CircuitFileBlock, EntryPoints, Inlet, LatchingOutlet, Plug, PulsedOutlet};
 use logos::{Lexer, Logos};
-use nab_3l14::{Signal, Symbol};
+use nab_3l14::Signal;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
-use std::io::{Read, Write};
+use std::io::Read;
 use triomphe::Arc;
 use unicase::UniCase;
 
@@ -221,7 +220,7 @@ impl CircuitBuilder
         let mut impulse_blocks = Vec::with_capacity(impulses.len());
         for (block_name, _) in impulses.iter()
         {
-            let mut block = lexed.blocks.get_mut(block_name).unwrap();
+            let block = lexed.blocks.get_mut(block_name).unwrap();
             let mut hydrate = HydrateBlock
             {
                 pulsed_outlets: block.pulsed_outlets.iter().map(|(k,v)|
@@ -247,7 +246,7 @@ impl CircuitBuilder
         let mut latch_blocks = Vec::with_capacity(latches.len());
         for (block_name, _) in latches.iter()
         {
-            let mut block = lexed.blocks.get_mut(block_name).unwrap();
+            let block = lexed.blocks.get_mut(block_name).unwrap();
             let mut hydrate = HydrateBlock
             {
                 pulsed_outlets: block.pulsed_outlets.iter().map(|(k,v)|
@@ -326,7 +325,7 @@ impl AssetBuilder for CircuitBuilder
         vb.push_prehashed(CircuitFile::TYPE_LAYOUT_HASH);
     }
 
-    fn build_assets(&self, config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, _config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         // TODO: split out debug data
 
@@ -394,7 +393,7 @@ fn lex_toml<'p>(lex: &mut Lexer<'p, Token<'p>>) -> Result<Box<dyn erased_serde::
         // todo: escaping
         Some('"') => '"',
         Some('\'') => '\'',
-        Some(other) =>
+        Some(_) =>
         {
             let s = sub.split_whitespace().next().unwrap();
             // todo: dedupe
@@ -658,7 +657,6 @@ fn lex_circuit_dsl<'p>(input: &'p str) -> Result<CircuitLex<'p>, LexerError>
 
     'lexer: loop
     {
-        let line_start = lexer.span();
         match lexer.next()
         {
             None => {},
@@ -672,8 +670,9 @@ fn lex_circuit_dsl<'p>(input: &'p str) -> Result<CircuitLex<'p>, LexerError>
                     {
                         auto_entries.push(UniCase::unicode(id));
                     }
-                    LexerState::SignalEntry(signal, entries) =>
+                    LexerState::SignalEntry(_signal, entries) =>
                     {
+                        // TODO
                         entries.push(UniCase::unicode(id));
                     }
 

@@ -1,5 +1,5 @@
 use std::time::Instant;
-use egui::{Modifiers, TouchPhase};
+use egui::TouchPhase;
 use glam::IVec2;
 use sdl2::event::Event;
 use sdl2::keyboard::Mod;
@@ -158,11 +158,7 @@ impl Input
             // Event::JoyButtonUp { .. } => {}
             // Event::JoyDeviceAdded { .. } => {}
             // Event::JoyDeviceRemoved { .. } => {}
-            //
-            Event::ControllerAxisMotion { which, axis, value, .. } =>
-            {
-
-            }
+            // Event::ControllerAxisMotion { .. } => {]
             // Event::ControllerButtonDown { .. } => {}
             // Event::ControllerButtonUp { .. } => {}
             // Event::ControllerDeviceAdded { .. } => {}

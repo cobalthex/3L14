@@ -1,7 +1,6 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::Debug;
 use glam::Vec2;
-use nab_3l14::utils::NoOpFmtDebug;
-use crate::{ButtonState, InputReader};
+use crate::InputReader;
 
 #[derive(Debug, Default)]
 pub struct ControllerState

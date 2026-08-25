@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 use crate::Affine3;
-use approx::{assert_abs_diff_eq, assert_relative_eq, AbsDiffEq, RelativeEq};
+use approx::{AbsDiffEq, RelativeEq};
 use bitcode::{Decode, Encode};
 use glam::{Mat4, Quat, Vec3};
 use std::ops::{Add, Div, Mul, Neg};

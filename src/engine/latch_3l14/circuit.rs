@@ -6,9 +6,7 @@ use crate::vars::ScopeChanges;
 use crate::{BlockId, ImpulseActions, ImpulseBlock, InstRunId, LatchActions, LatchBlock, LocalScope, Runtime, Scope, SharedScope};
 use nab_3l14::Signal;
 use std::fmt::Debug;
-use std::io::{Cursor, Read};
 use bitcode::{Decode, Encode};
-use smallvec::SmallVec;
 use triomphe::Arc;
 use asset_3l14::{AssetLifecycler, AssetLoadError, AssetLoadRequest};
 use proc_macros_3l14::LayoutHash;
@@ -76,7 +74,7 @@ impl AssetLifecycler for CircuitLifecycler
 {
     type Asset = Circuit;
 
-    fn load(&self, mut request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>
+    fn load(&self, request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>
     {
         let file = request.structured_data;
         let mut opaque_off = 0usize;

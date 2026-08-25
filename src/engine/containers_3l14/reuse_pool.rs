@@ -110,7 +110,7 @@ impl<T> ReusePool<T>
         self.free.push(token.entry);
     }
 
-    pub fn take(&self, create_entry_fn: impl Fn(usize) -> T) -> ObjectPoolEntryGuard<T>
+    pub fn take(&self, create_entry_fn: impl Fn(usize) -> T) -> ObjectPoolEntryGuard<'_, T>
     {
         let index = match self.free.pop()
         {

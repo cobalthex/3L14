@@ -2,7 +2,6 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Neg, Rem};
 
 use bitcode::{Decode, Encode};
-use glam::FloatExt;
 use serde::{Deserialize, Serialize};
 
 // Angle, stored as radians internally

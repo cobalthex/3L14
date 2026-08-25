@@ -535,7 +535,6 @@ impl DebugDraw
     {
         const WING_ANGLE: Angle = Angle::from_degrees(30.0);
 
-        let wing_length = (tail - nose).length();
         let wing_tangent = (tail - nose) / 3.0;
 
         // todo: can prob just use (a+b)/2 to make diagonals

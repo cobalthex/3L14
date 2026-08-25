@@ -1,16 +1,16 @@
-use crate::core::{AssetBuilder, BuildError, BuildOutputs, SourceInput, VersionBuilder};
+use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
 use arrayvec::ArrayVec;
-use asset_3l14::{AssetKey, AssetKeySynthHash, AssetTypeId};
+use asset_3l14::{AssetKey, AssetKeySynthHash};
 use enumflags2::BitFlags;
 use glam::{Mat4, Quat, Vec3};
 use gltf::animation::util::ReadOutputs;
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
-use graphics_3l14::assets::{AnimFrameNumber, BoneId, Geometry, GeometryFile, GeometryMesh, IndexFormat, Material, MaterialFile, Model, ModelFile, Shader, ShaderDebugData, ShaderFile, ShaderStage, SkeletalAnimation, Skeleton, SkeletonDebugData, Texture, TextureFile, TextureFilePixelFormat};
+use graphics_3l14::assets::{AnimFrameNumber, BoneId, Geometry, GeometryFile, GeometryMesh, IndexFormat, Material, MaterialFile, Model, ModelFile, SkeletalAnimation, Skeleton, SkeletonDebugData, Texture, TextureFile, TextureFilePixelFormat};
 use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexCaps, VertexLayoutBuilder};
 use math_3l14::{DualQuat, Ratio, Sphere, AABB};
 use metrohash::MetroHash64;
-use nab_3l14::utils::alloc_slice::{alloc_slice_default, alloc_u8_slice};
+use nab_3l14::utils::alloc_slice::alloc_slice_default;
 use nab_3l14::utils::val_as_u8_slice;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -18,7 +18,6 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
-use std::path::{Path, PathBuf};
 use unicase::UniCase;
 use graphics_3l14::material_classes::{MaterialClass, PbrProps};
 
@@ -143,7 +142,7 @@ impl ModelBuilder
         } else { None };
 
         // acts as versioning for the vertex formats
-        let vertex_layout_hash =
+        let _vertex_layout_hash =
         {
             let mut hasher = MetroHash64::new();
             VertexLayoutBuilder::from(vertex_layout).hash(&mut hasher);
@@ -186,15 +185,15 @@ impl ModelBuilder
                 let static_vertex = StaticVertex
                 {
                     position: pos,
-                    normal: normals.as_mut().and_then(|mut r| r.next()).unwrap_or([0.0, 0.0, 1.0]),
-                    tex_coord: tex_coords.as_mut().and_then(|mut r| r.next()).unwrap_or([0.0, 0.0]),
+                    normal: normals.as_mut().and_then(|r| r.next()).unwrap_or([0.0, 0.0, 1.0]),
+                    tex_coord: tex_coords.as_mut().and_then(|r| r.next()).unwrap_or([0.0, 0.0]),
                     //color: colors.as_mut().and_then(|mut r| r.next()).unwrap_or([u8::MAX, u8::MAX, u8::MAX, u8::MAX]),
                 };
                 vertex_data.write_all(unsafe { val_as_u8_slice(&static_vertex) })?;
                 mesh_vertex_count += 1;
 
                 // todo: cleanup
-                if let Some(skel_info) = &maybe_skel_info
+                if let Some(_skel_info) = &maybe_skel_info
                 {
                     // let iremap = |ind: [u16;4]| ind.map(|i| skel_info.remapped_bone_indices[i as usize]);
 
@@ -483,14 +482,6 @@ impl ModelBuilder
     {
         log::debug!("Parsing gLTF animation {} '{}'", in_anim.index(), in_anim.name().unwrap_or(""));
 
-        let mut anim_name_buf = String::new();
-        let anim_name = in_anim.name().unwrap_or_else(||
-        {
-            anim_name_buf.clear();
-            std::fmt::Write::write_fmt(&mut anim_name_buf, format_args!("animation_{}", in_anim.index())).unwrap();
-            &anim_name_buf
-        });
-
         let sample_rate = DEFAULT_ANIM_SAMPLE_RATE;
         let sample_rate_f = sample_rate.to_f32();
 
@@ -578,7 +569,7 @@ impl ModelBuilder
                     rotations.push(Quat::from_array(cur.1));
                     frame_count = frame_count.max(rotations.len());
                 },
-                ReadOutputs::Scales(s) => { } // unsupported (currently)
+                ReadOutputs::Scales(_s) => { } // unsupported (currently)
                 ReadOutputs::MorphTargetWeights(_) => {} // unsupported
             }
         }
@@ -587,7 +578,7 @@ impl ModelBuilder
         let mut bone_ids = alloc_slice_default(bone_keyframes.len());
         let mut poses = alloc_slice_default(bone_ids.len() * frame_count);
 
-        for (bone, (gltf_index, bone_data)) in bone_keyframes.iter().enumerate()
+        for (bone, (_gltf_index, bone_data)) in bone_keyframes.iter().enumerate()
         {
             let id = BoneId::from_name(bone_data.name.ok_or(ModelImportError::UnnamedBones)?);
             bone_ids[bone] = id;

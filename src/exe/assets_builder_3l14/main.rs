@@ -2,17 +2,15 @@ mod core;
 mod builders;
 mod helpers;
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::fs::File;
-use crate::core::{validate_symbols, AssetsBuilder, AssetsBuilderConfig, BuildRule, SymbolsDict, ScanError};
+use crate::core::{validate_symbols, AssetsBuilder, AssetsBuilderConfig, BuildRule, SymbolsDict};
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use clap::{Parser, Subcommand};
 use triomphe::Arc;
-use unicase::UniCase;
-use asset_3l14::{AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetTypeId, SourceMetadataStub, TomlRead};
+use asset_3l14::{AssetKey, AssetKeyDerivedId, AssetTypeId, SourceMetadataStub, TomlRead};
 use latch_3l14::block_meta::BlockBuildMeta;
-use nab_3l14::app::{set_panic_hook, AppRun, ExitReason};
+use nab_3l14::app::{set_panic_hook, AppRun};
 
 #[derive(Debug, Subcommand)]
 pub enum CliCommands

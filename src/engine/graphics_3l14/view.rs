@@ -7,11 +7,10 @@ use std::time::Duration;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, Extent3d, QueueWriteBufferView, RenderPass, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView};
 use wgpu::util::{DeviceExt, TextureDataOrder};
 use asset_3l14::{Asset, AssetView};
-use math_3l14::{CanSee, DualQuat, Sphere, StaticGeoUniform, AABB};
+use math_3l14::{CanSee, DualQuat, Sphere, StaticGeoUniform};
 use nab_3l14::utils::array::init_array;
-use crate::assets::{Geometry, Model, EngineRenderPass};
+use crate::assets::{Model, EngineRenderPass};
 use crate::camera::{Camera, CameraProjection, CameraUniform};
-use crate::material_classes::MaterialClass;
 use crate::pipeline_cache::{DebugMode, PipelineCache};
 use crate::uniforms_pool::{UniformsPoolEntryGuard, WgpuBufferWriter, BufferWrite};
 
@@ -44,7 +43,7 @@ impl CameraClip
         let (half_fov, aspect_ratio) = match camera.projection()
         {
             CameraProjection::Perspective { fov, aspect_ratio } => (fov.to_radians() / 2.0, *aspect_ratio),
-            CameraProjection::Orthographic { left, top, right, bottom } =>
+            CameraProjection::Orthographic { left: _, top: _, right: _, bottom: _ } =>
             {
                 // perspective: W = depth * tan(fov_x /2), H = depth * tan(fov_y / 2)
                 // ortho: W = (right - left) / 2, H = (bottom - top) / 2
@@ -403,7 +402,7 @@ impl<'f> View<'f>
         // TODO: this needs to pass vis-checks first
 
         // todo: cleanup/standardize this logic
-        let mut poses_uniforms = self.pipeline_cache.uniforms.take_poses();
+        let poses_uniforms = self.pipeline_cache.uniforms.take_poses();
         {
             let mut poses_uniforms_writer = poses_uniforms.record(self.renderer.queue());
             poses_uniforms_writer.write_slice(0, poses);

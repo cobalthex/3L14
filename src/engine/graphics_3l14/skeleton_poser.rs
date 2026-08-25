@@ -88,7 +88,7 @@ impl<'s> SkeletonPoser<'s>
 
         for (i, (fp, tp)) in from.zip(to).enumerate()
         {
-            let bone_id = animation.bones[i];
+            let _bone_id = animation.bones[i];
             // TODO: animation should store bone indices
             let Some(bone_idx) = self.skeleton.bone_ids.iter().position(|b| *b == animation.bones[i])
                 else { panic!("Did not find matching bone for {:?} (#{i})", animation.bones[i]); }; // skip; TODO this is likely happening when skin.skeleton node is animated

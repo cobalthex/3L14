@@ -1,12 +1,11 @@
 use std::error::Error;
-use std::io::{Read, Write};
+use std::io::Read;
 use arrayvec::ArrayVec;
 use serde::{Deserialize, Serialize};
 use asset_3l14::{AssetKey, AssetTypeId};
 use graphics_3l14::assets::{shader_key, Material, MaterialFile, EngineRenderPass};
-use graphics_3l14::material_classes::{MaterialClass, MaterialDef, PbrProps};
-use nab_3l14::utils::alloc_slice::alloc_u8_slice;
-use nab_3l14::utils::{val_as_u8_slice, AsU8Slice};
+use graphics_3l14::material_classes::{MaterialClass, MaterialDef};
+use nab_3l14::utils::val_as_u8_slice;
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
 
 #[derive(Default, Serialize, Deserialize)]
@@ -34,7 +33,7 @@ impl AssetBuilder for MaterialBuilder
         vb.push_prehashed(Material::TYPE_LAYOUT_HASH);
     }
 
-    fn build_assets(&self, config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, _config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         let mut toml_str = String::new();
         input.read_to_string(&mut toml_str)?;
@@ -73,7 +72,7 @@ impl AssetBuilder for MaterialBuilder
             shader_key::pixel(material_file.class, EngineRenderPass::Opaque));
         out.add_dependencies(&[shader_akey])?;
 
-        let mut out = out.write_structured(&material_file)?;
+        let out = out.write_structured(&material_file)?;
         let out = match material_def
         {
             MaterialDef::DebugLines => out.skip_opaque(),

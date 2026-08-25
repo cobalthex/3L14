@@ -1,6 +1,5 @@
 use bitcode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use wgpu::BindingType;
 use asset_3l14::AssetKey;
 use crate::Rgba;
 

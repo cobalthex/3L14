@@ -1,8 +1,7 @@
-use std::collections::HashMap;
 use asset_3l14::AssetKey;
-use glam::{Vec3, Quat};
+use glam::Vec3;
 use nab_3l14::Ident;
-use serde::{Serialize, Deserialize, Serializer};
+use serde::{Serialize, Deserialize};
 use math_3l14::YawPitchRoll;
 use world_3l14::Light;
 

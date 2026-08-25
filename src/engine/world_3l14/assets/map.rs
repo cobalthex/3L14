@@ -60,20 +60,20 @@ impl AssetLifecycler for MapLifecycler
 {
     type Asset = Map;
 
-    fn load(&self, mut request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>
+    fn load(&self, request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>
     {
         let geo = request.structured_data.statics.geo.iter()
             .map(|placement|
+            {
+                let dep = request.load_dependency(request.structured_data.model_palette[placement.object as usize]);
+                StaticPlacement
                 {
-                    let dep = request.load_dependency(request.structured_data.model_palette[placement.object as usize]);
-                    StaticPlacement
-                    {
-                        object: dep,
-                        position: placement.position,
-                        orientation: placement.orientation,
-                        scale: placement.scale,
-                    }
-                })
+                    object: dep,
+                    position: placement.position,
+                    orientation: placement.orientation,
+                    scale: placement.scale,
+                }
+            })
             .collect();
         let statics = request.structured_data.statics;
         let map = Map

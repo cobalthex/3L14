@@ -23,7 +23,7 @@ impl Morton
         (x, y, z)
     }
 
-    const fn spread_bits(mut v: u32) -> u64
+    const fn spread_bits(v: u32) -> u64
     {
         let mut v = v as u64 & Self::PRECISION_MASK;
         v = (v | (v << 32)) & 0x001F00000000FFFF; // split high/low

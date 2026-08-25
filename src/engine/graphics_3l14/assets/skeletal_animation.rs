@@ -37,7 +37,7 @@ impl DebugGui for SkeletalAnimationLifecycler
 {
     fn display_name(&self) -> &str { "Skeletal animation" }
 
-    fn debug_gui(&self, ui: &mut Ui)
+    fn debug_gui(&self, _ui: &mut Ui)
     {
         // TODO
     }

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use bitcode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
 use triomphe::Arc;
 use smallvec::SmallVec;
 use crate::{Runtime, Scope, VarChange};

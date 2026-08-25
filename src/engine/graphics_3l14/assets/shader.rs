@@ -78,7 +78,7 @@ pub mod shader_source
     use std::io::Write;
 
     #[must_use]
-    pub fn vertex(output: &mut impl Write, layout: BitFlags<VertexCaps>, pass: EngineRenderPass)
+    pub fn vertex(output: &mut impl Write, layout: BitFlags<VertexCaps>, _pass: EngineRenderPass)
     {
         for cap in layout
         {
@@ -88,7 +88,7 @@ pub mod shader_source
     }
 
     #[must_use]
-    pub fn pixel(output: &mut impl Write, class: MaterialClass, pass: EngineRenderPass) -> String
+    pub fn pixel(_output: &mut impl Write, _class: MaterialClass, _pass: EngineRenderPass) -> String
     {
         todo!()
     }

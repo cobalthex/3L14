@@ -1,6 +1,5 @@
 use super::*;
-use asset_3l14::{Asset, AssetFileType, AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetMetadata, AssetTypeId, VersionHash, SourceMetadata, TomlRead, TomlWrite, SourceMetadataStub, MetaFileError, AssetLoadError};
-use bitcode::Encode;
+use asset_3l14::{Asset, AssetFileType, AssetKey, AssetKeyDerivedId, AssetKeySourceId, AssetKeySynthHash, AssetMetadata, AssetTypeId, VersionHash, SourceMetadata, TomlRead, TomlWrite, MetaFileError};
 use clap::ValueEnum;
 use metrohash::MetroHash64;
 use nab_3l14::utils::inline_hash::InlineWriteHash;
@@ -12,7 +11,7 @@ use std::ffi::OsStr;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
 use std::io;
-use std::io::{Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
+use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
@@ -21,7 +20,6 @@ use std::time::SystemTime;
 use dashmap::DashMap;
 use unicase::UniCase;
 use walkdir::WalkDir;
-use nab_3l14::Symbol;
 // TODO: split this file out some?
 
 struct AssetBuilderEntry
@@ -262,7 +260,7 @@ impl AssetsBuilder
         let canonical_path = self.canonicalize_source_path(source_path)
             .map_err(|e| BuildError::SourceIOError { source_path: source_path.to_path_buf(), error: e })?;
         let rel_path = canonical_path.strip_prefix(&self.config.sources_root)
-            .map_err(|e| BuildError::InvalidSourcePath { source_path: canonical_path.clone() })?;
+            .map_err(|_| BuildError::InvalidSourcePath { source_path: canonical_path.clone() })?;
 
         let file_ext = rel_path.extension().unwrap_or(OsStr::new("")).to_string_lossy();
 
@@ -324,7 +322,7 @@ impl AssetsBuilder
                             error: MetaFileError::FileWriteError(err)
                         })?;
                     new_meta.save(true, &mut meta_writer)
-                        .map_err(|e| BuildError::SourceMetaError
+                        .map_err(|_| BuildError::SourceMetaError
                         {
                             source_meta_path: source_meta_file_path.clone(),
                             error: MetaFileError::NotAFile,
@@ -460,17 +458,8 @@ impl AssetsBuilder
         Ok(())
     }
 
-    pub fn build_type(&self, asset_type: AssetTypeId, build_rule: BuildRule) -> Result<(), ()> // TODO
-    {
-        for source in self.scan_sources()
-        {
-            let Ok((source, _)) = source else { continue };
-            let result = self.build_source(&source, build_rule); // TODO
-            println!("{source:?} => {:#?}", result);
-        }
-
-        Ok(())
-    }
+    // build by folder?
+    // build by source type?
     // rebuild_asset(ext, base_id, file_bytes() ?
 }
 
@@ -612,7 +601,7 @@ impl<'output, A: Asset> PrimaryOutput<'output, A>
 
         let asset_path = builder.config.assets_root.join(&format!("{dependency:x}.{}", AssetFileType::Asset.file_extension()));
         let mut asset_payload = Vec::new();
-        let fin = File::open(asset_path).map_err(|e| BuildError::DependencyReadError
+        File::open(asset_path).map_err(|e| BuildError::DependencyReadError
             {
                 dependent_asset_key: dependency,
                 error: e,
@@ -657,7 +646,7 @@ impl<'output, A: Asset> PrimaryOutput<'output, A>
 pub struct OpaqueOutput<'output, A: Asset>(BuildOutputInner<'output>, PhantomData<A>);
 impl<'output, A: Asset> OpaqueOutput<'output, A>
 {
-    pub fn skip_opaque(mut self) -> DebugOutput<'output, A>
+    pub fn skip_opaque(self) -> DebugOutput<'output, A>
     {
         DebugOutput(self.0, PhantomData)
     }
@@ -670,7 +659,7 @@ impl<'output, A: Asset> OpaqueOutput<'output, A>
         Ok(DebugOutput(self.0, PhantomData))
     }
 
-    pub fn write_opaque<T>(mut self, opaque: T) -> io::Result<DebugOutput<'output, A>>
+    pub fn write_opaque<T>(self, opaque: T) -> io::Result<DebugOutput<'output, A>>
     {
         self.write_opaque_bytes(unsafe { val_as_u8_slice(&opaque) })
     }
@@ -687,7 +676,7 @@ pub struct DebugOutput<'output, A: Asset>(BuildOutputInner<'output>, PhantomData
 impl<'output, A: Asset> DebugOutput<'output, A>
 {
     pub fn skip_debug(self) -> FinalizedOutput<'output> { FinalizedOutput(self.0) }
-    pub fn write_debug(mut self, value: &A::DebugData) -> io::Result<FinalizedOutput<'output>>
+    pub fn write_debug(self, value: &A::DebugData) -> io::Result<FinalizedOutput<'output>>
     {
         let mut debug_writer = File::create(&self.0.debug_data_file_path)?;
         let val = bitcode::encode(value);

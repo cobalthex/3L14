@@ -244,7 +244,7 @@ impl AssetLifecyclers
             lifecycler: Box::new(lifecycler),
             #[cfg(debug_assertions)]
             type_id: TypeId::of::<L>(),
-            debug_gui_fn: Some(debug_gui_fn::<L> as usize),
+            debug_gui_fn: Some(debug_gui_fn::<L> as *const () as usize),
         });
         self.registered_asset_types.insert(A::asset_type(), RegisteredAssetType
         {

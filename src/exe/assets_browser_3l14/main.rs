@@ -1,9 +1,5 @@
-use std::any::Any;
-use std::convert::Infallible;
-use std::error::Error;
-use std::fmt::Write;
-use std::path::{Path, PathBuf};
-use asset_3l14::{AssetFileType, AssetKey, AssetMetadata, AssetTypeId, SourceMetadata, TomlRead};
+use std::path::PathBuf;
+use asset_3l14::{AssetFileType, AssetKey, AssetMetadata, AssetTypeId, TomlRead};
 use clap::Parser;
 use graphics_3l14::windows::Windows;
 use graphics_3l14::Renderer;
@@ -126,7 +122,7 @@ fn main() -> ExitReason
                     Ok(key) => key,
                     Err(err) =>
                     {
-                        log::error!("Failed to parse asset key from {:?} to test against type filter", entry.file_name());
+                        log::error!("Failed to parse asset key from {:?} to test against type filter: {err}", entry.file_name());
                         return None;
                     }
                 };
@@ -232,7 +228,7 @@ fn main() -> ExitReason
                     .show(ui, |ui|
                     {
                         ui.heading("Assets");
-                        if let Some(filter_by_type) = app_run.args.only_type
+                        if let Some(_filter_by_type) = app_run.args.only_type
                         {
                             // same line?
                             ui.label(format!("Filtered by type: {:?}", app_run.args.only_type));
@@ -240,7 +236,7 @@ fn main() -> ExitReason
                         ui.separator();
 
                         let row_height = ui.text_style_height(&egui::TextStyle::Body);
-                        let z = egui::ScrollArea::vertical().show_rows(ui, row_height, assets_list.len(), |sui, vis|
+                        egui::ScrollArea::vertical().show_rows(ui, row_height, assets_list.len(), |sui, vis|
                             {
                                 for (i, asset) in assets_list[vis.clone()].iter().enumerate()
                                 {

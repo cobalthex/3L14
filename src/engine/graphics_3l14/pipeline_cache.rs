@@ -1,4 +1,4 @@
-use crate::assets::{Geometry, Material, EngineRenderPass, Shader, ShaderStage, shader_key};
+use crate::assets::{EngineRenderPass, Shader, ShaderStage, shader_key};
 use crate::uniforms_pool::UniformsPool;
 use crate::{debug_label, Renderer, material_classes};
 use debug_3l14::debug_gui::DebugGui;
@@ -11,9 +11,8 @@ use dashmap::DashMap;
 use dashmap::mapref::one::Ref;
 use triomphe::Arc;
 use enumflags2::BitFlags;
-use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MipmapFilterMode, MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
+use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MipmapFilterMode, MultisampleState, PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
 use asset_3l14::{Ash, AssetKey, AssetTypeId, Assets, AssetSnapshot, AssetView};
-use crate::assets::shader_key::pixel;
 use crate::material_classes::MaterialClass;
 use crate::vertex_layouts::{VertexCaps, VertexLayoutBuilder};
 
@@ -72,7 +71,7 @@ impl PipelineCache
         }
     }
 
-    pub fn get_or_create_bind_layout(&self, material_class: MaterialClass) -> Ref<MaterialClass, BindGroupLayout>
+    pub fn get_or_create_bind_layout(&self, material_class: MaterialClass) -> Ref<'_, MaterialClass, BindGroupLayout>
     {
         return self.bind_layouts.entry(material_class).or_insert_with(||
         {

@@ -534,7 +534,7 @@ impl DebugGui for Assets
             });
 
         if let Some(lifecycler) = inspected_lifecycler &&
-            let Some(gui_fn) = lifecycler.debug_gui_fn
+            let Some(_gui_fn) = lifecycler.debug_gui_fn
         {
             // TODO
             // ui.group(|gui|

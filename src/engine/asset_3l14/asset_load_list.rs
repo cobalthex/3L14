@@ -1,4 +1,4 @@
-use crate::{Ash, Asset, AssetSnapshot};
+use crate::{Ash, Asset};
 use crate::asset_handle::{AshInnerHeader, ErasedAsh};
 
 #[must_use]
@@ -18,8 +18,11 @@ impl AssetLoadList
     #[must_use]
     unsafe fn check_pending<A: Asset>(erased: ErasedAsh) -> Option<ErasedAsh>
     {
-        let ash = Ash::<A>::attach_from(erased);
-        if ash.is_pending() { Some(ash.into_inner()) } else { None }
+        unsafe
+        {
+            let ash = Ash::<A>::attach_from(erased);
+            if ash.is_pending() { Some(ash.into_inner()) } else { None }
+        }
     }
 
     // Push a single asset into the list. This does not check dependencies

@@ -1,6 +1,6 @@
-use asset_3l14::{Asset, AssetKey, AssetLifecyclers, Assets, AssetsConfig, AssetSnapshot};
+use asset_3l14::{AssetKey, AssetLifecyclers, Assets, AssetsConfig, AssetSnapshot};
 use clap::Parser;
-use debug_3l14::{debug_breakpoint, debug_gui};
+use debug_3l14::debug_gui;
 use debug_3l14::debug_menu::{DebugMenu, DebugMenuMemory};
 use debug_3l14::sparkline::Sparkline;
 use egui::Widget;
@@ -22,7 +22,6 @@ use nab_3l14::{app, TickCount};
 use nab_3l14::{CompletionState, RenderFrameNumber, ToggleState};
 use sdl2::event::{Event as SdlEvent, WindowEvent as SdlWindowEvent};
 use sdl2::messagebox::MessageBoxFlag;
-use std::io::IsTerminal;
 use std::ops::Deref;
 use std::time::Duration;
 use wgpu::CommandEncoderDescriptor;
@@ -142,13 +141,13 @@ fn main() -> ExitReason
 
         let latch_key = AssetKey::from(0x00d000009de1ba60);
         let test_circuit = assets.load::<Circuit>(latch_key);
-        let mut latch_rt = Runtime::new();
+        let latch_rt = Runtime::new();
 
         let test_model = assets.load::<Model>(model_key);
         let test_base_anim = assets.load::<SkeletalAnimation>(base_anim_key);
         let test_overlay_anim = assets.load::<SkeletalAnimation>(overlay_anim_key);
 
-        let map = assets.load::<Map>(map_key);
+        let _map = assets.load::<Map>(map_key);
 
         let mut camera = Camera::default();
         camera.update_projection(CameraProjection::Perspective
@@ -167,7 +166,7 @@ fn main() -> ExitReason
         let pipeline_cache = PipelineCache::new(renderer.clone(), assets.clone());
         // ꙮ
 
-        let mut obj_rot = Quat::IDENTITY;
+        let obj_rot = Quat::IDENTITY;
 
         let mut views: [_; renderer::MAX_CONSECUTIVE_FRAMES] = init_array(|_| View::new(renderer.clone(), &pipeline_cache));
 
@@ -243,9 +242,8 @@ fn main() -> ExitReason
                 // TODO: scale by FOV
                 const MOUSE_SCALE: f32 = 0.005;
                 let md = input.mouse().position_delta;
-                let mdl = (md.length_squared() as f32).sqrt();
-                let yaw = (md.x as f32 * MOUSE_SCALE); // left to right
-                let pitch = (md.y as f32 * MOUSE_SCALE); // down to up
+                let yaw = md.x as f32 * MOUSE_SCALE ; // left to right
+                let pitch = md.y as f32 * MOUSE_SCALE ; // down to up
                 let roll = 0.0;
                 cam_transform.rotate(yaw, pitch, roll);
             }
@@ -341,7 +339,6 @@ fn main() -> ExitReason
                     let mut light = 0.0;
                     for plane in Frustum::from_matrix(&cam.matrix()).planes
                     {
-                        let z = cam.matrix().transform_point3(plane.origin());
                         debug_draw.draw_polyline(&plane.into_quad(4.0, 4.0), true, Rgba::from_hsla(30.0, 0.7, light, 1.0));
                         debug_draw.draw_arrow(plane.origin(), plane.origin() + plane.normal() * 2.0, Vec3::Y, colors::MAGENTA);
                         light += 1.0 / 6.0;
@@ -430,17 +427,17 @@ fn main() -> ExitReason
                                             debug_draw.draw_cross3(obj_world * Mat4::from(posed_skel[i]), colors::CHARTREUSE);
                                             // TODO: SkeletonLifecycler.display_bone_names()
                                             // TODO
-                                            // match &maybe_names
-                                            // {
-                                            //     None =>
-                                            //     {
-                                            //         debug_draw.draw_text(&format!("{i}:{:?}", skel.bone_ids[i]), obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
-                                            //     }
-                                            //     Some(names) =>
-                                            //     {
-                                            //         debug_draw.draw_text(&names.bone_names[i], obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
-                                            //     }
-                                            // }
+                                            match &maybe_names
+                                            {
+                                                None =>
+                                                {
+                                                    debug_draw.draw_text(&format!("{i}:{:?}", skel.bone_ids[i]), obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
+                                                }
+                                                Some(names) =>
+                                                {
+                                                    debug_draw.draw_text(&names.bone_names[i], obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
+                                                }
+                                            }
                                         }
                                     }
                                 }

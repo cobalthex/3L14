@@ -1,11 +1,10 @@
 use std::cmp::Ordering;
 use std::collections::hash_map::Drain;
 use std::collections::HashMap;
-use triomphe::Arc;
 use arrayvec::ArrayVec;
 use glam::Mat4;
 use asset_3l14::AssetView;
-use crate::assets::{Geometry, Material, Shader, Texture, MAX_MATERIAL_TEXTURE_BINDINGS};
+use crate::assets::{Geometry, Material, Texture, MAX_MATERIAL_TEXTURE_BINDINGS};
 use crate::pipeline_cache::PipelineKey;
 
 pub struct Draw
@@ -47,7 +46,7 @@ impl PipelineSorter
 
     // process all the entries in this sorter, if returned iter is fully consumed, the sorter should be empty after
     #[inline] #[must_use]
-    pub fn sort(&mut self) -> SorterIter
+    pub fn sort(&mut self) -> SorterIter<'_>
     {
         SorterIter
         {

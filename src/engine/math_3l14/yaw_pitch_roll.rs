@@ -1,5 +1,4 @@
 use std::fmt::{Debug, Formatter};
-use bitcode::Encode;
 use glam::{EulerRot, Quat, Vec3};
 use serde::{Deserialize, Serialize};
 use crate::Angle;

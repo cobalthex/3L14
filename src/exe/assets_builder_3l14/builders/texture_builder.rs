@@ -1,10 +1,9 @@
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
-use std::io::{BufReader, Write};
+use std::io::BufReader;
 use enumflags2::bitflags;
-use image::{ColorType, DynamicImage, GenericImageView, ImageReader, ImageResult};
+use image::{ColorType, GenericImageView, ImageReader};
 use serde::{Deserialize, Serialize};
-use asset_3l14::AssetTypeId;
 use graphics_3l14::assets::{Texture, TextureFile, TextureFilePixelFormat};
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
 
@@ -73,13 +72,13 @@ impl AssetBuilder for TextureBuilder
         vb.push_prehashed(1);
     }
 
-    fn build_assets(&self, config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, _config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         let reader = ImageReader::new(BufReader::new(input))
         .with_guessed_format()?;
         let image = reader.decode()?;
 
-        let format = match image.color()
+        let _format = match image.color()
         {
             ColorType::Rgba8 => TextureFilePixelFormat::Rgba8,
             // TODO: do as_image_rgba8?

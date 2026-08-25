@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::Debug;
 use std::time::Instant;
 use glam::IVec2;
 use nab_3l14::ToggleState;

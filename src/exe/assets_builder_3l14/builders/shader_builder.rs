@@ -7,7 +7,6 @@ use graphics_3l14::assets::{shader_key, EngineRenderPass, ShaderFile, ShaderStag
 use hassle_rs::{Dxc, DxcCompiler, DxcIncludeHandler, DxcLibrary, DxcValidator, Dxil, HassleError};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use asset_3l14::AssetTypeId;
 use graphics_3l14::material_classes::MaterialClass;
 use graphics_3l14::vertex_layouts::VertexCaps;
 use nab_3l14::utils::enumflags2_seq;
@@ -195,10 +194,11 @@ impl ShaderBuilder
             }
         }.map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
 
-        let blob_encoding = self.dxc_library.create_blob_with_encoding(&spirv)
-            .map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
 
         // TODO: currently broken
+        // let blob_encoding = self.dxc_library.create_blob_with_encoding(&spirv)
+        //     .map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
+        // 
         // let module = match self.dxc_validator.validate(blob_encoding.into())
         // {
         //     Ok(blob) => Ok(blob.to_vec()), // todo: This could be no-copy
@@ -247,7 +247,7 @@ impl AssetBuilder for ShaderBuilder
             ShaderStageConfig::Pixel { class } => shader_key::pixel(class, config.pass),
         };
 
-        let mut defines: Vec<(String, Option<String>)> = Vec::new(); // todo: use Cow?
+        let defines: Vec<(String, Option<String>)> = Vec::new(); // todo: use Cow?
 
         let defines_ref = Vec::from_iter(defines.iter().map(|(k, v)| (k.as_str(), v.as_deref())));
         let compilation = ShaderCompilation

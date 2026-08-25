@@ -1,7 +1,6 @@
-use crate::{BlockVisitor, ImpulseActions, ImpulseBlock, LatchBlock, LatchingOutlet, PulsedOutlet, Scope};
+use crate::{ImpulseBlock, LatchBlock, LatchingOutlet, PulsedOutlet};
 use nab_3l14::utils::ShortTypeName;
 use std::collections::HashMap;
-use std::io::Write;
 use unicase::UniCase;
 
 trait WhichBlock

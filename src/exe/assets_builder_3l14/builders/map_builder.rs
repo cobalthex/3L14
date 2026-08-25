@@ -7,7 +7,6 @@ use std::io::Read;
 use serde::{Deserialize, Serialize};
 use containers_3l14::AabbTree;
 use graphics_3l14::assets::Model;
-use math_3l14::AABB;
 use nab_3l14::utils::osstr::OsStrUtils;
 use source_defs_3l14::{MapDef, MapLayer};
 use world_3l14::assets::map::{Map, MapFile, StaticPlacement, StaticsFile};
@@ -60,7 +59,7 @@ impl AssetBuilder for MapBuilder
         vb.push_prehashed(MapFile::TYPE_LAYOUT_HASH);
     }
 
-    fn build_assets(&self, config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
+    fn build_assets(&self, _config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
     {
         let mut toml_str = String::new();
         let map_def: MapDef =
@@ -134,7 +133,7 @@ impl AssetBuilder for MapBuilder
         let mut statics_geo = Vec::new();
         let mut statics_aabb = AabbTree::new();
 
-        for (layer_name, layer) in &layers
+        for (_layer_name, layer) in &layers
         {
             for model in layer.models.iter()
             {

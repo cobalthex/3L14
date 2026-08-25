@@ -104,7 +104,7 @@ pub struct KeyboardState
 }
 impl KeyboardState
 {
-    pub fn iter_pressed_keys(&self) -> Iter<KeyState>
+    pub fn iter_pressed_keys(&self) -> Iter<'_, KeyState>
     {
         self.pressed_keys.iter()
     }

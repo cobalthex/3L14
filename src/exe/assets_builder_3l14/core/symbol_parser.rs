@@ -1,17 +1,11 @@
 use std::collections::HashMap;
-use std::fs::File;
-use std::hash::{DefaultHasher, Hasher};
-use std::io::{BufRead, Error, Lines, Read};
+use std::hash::Hasher;
 use std::path::{Path, PathBuf};
-use std::ptr::hash;
 use dashmap::DashMap;
 use indexmap::IndexMap;
-use log::error;
 use metrohash::MetroHash64;
-use serde::Deserialize;
 use walkdir::WalkDir;
 use nab_3l14::utils::hash_bstrings;
-use regex::{Regex, RegexBuilder};
 use nab_3l14::Symbol;
 
 // Look up symbols by name and map them to their ID
@@ -70,7 +64,7 @@ pub fn validate_symbols(root_dir: impl AsRef<Path>) -> bool
         b"Moved to using iterators"
     ]);
 
-    let mut walker = WalkDir::new(root_dir.as_ref());
+    let walker = WalkDir::new(root_dir.as_ref());
     let mut success = true;
     for maybe_dir in walker
     {

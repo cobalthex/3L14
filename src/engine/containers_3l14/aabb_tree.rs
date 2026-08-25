@@ -2,7 +2,6 @@ use bitcode::{Decode, Encode};
 use math_3l14::AABB;
 use nab_3l14::debug_panic;
 use std::fmt::{Debug, Formatter};
-use std::assert_matches;
 use smallvec::{smallvec, SmallVec};
 use crate::NodeIndex;
 
@@ -504,7 +503,7 @@ impl AabbTree
     }
 
     #[must_use]
-    pub fn iter_overlapping(&self, aabb: AABB) -> AabbTreeIterOverlapping
+    pub fn iter_overlapping(&self, aabb: AABB) -> AabbTreeIterOverlapping<'_>
     {
         AabbTreeIterOverlapping
         {

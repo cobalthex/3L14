@@ -1,6 +1,6 @@
 use bitcode::{Decode, Encode};
 use glam::Vec3;
-use crate::{Intersection, Intersects, Ray, Sphere};
+use crate::{Intersection, Intersects, Sphere};
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Encode, Decode)]
 pub struct AABB
@@ -85,17 +85,17 @@ impl AABB
 }
 impl Intersects<AABB> for AABB
 {
-    fn get_intersection(&self, other: AABB) -> Intersection
+    fn get_intersection(&self, _other: AABB) -> Intersection
     {
         todo!()
     }
 }
 impl Intersects<Sphere> for AABB
 {
-    fn get_intersection(&self, other: Sphere) -> Intersection
+    fn get_intersection(&self, _other: Sphere) -> Intersection
     {
-        let mut min_t = f32::INFINITY;
-        let mut max_t = f32::NEG_INFINITY;
+        //let min_t = f32::INFINITY;
+        //let max_t = f32::NEG_INFINITY;
         todo!()
     }
 }

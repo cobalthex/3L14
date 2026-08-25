@@ -1,6 +1,5 @@
-use std::error::Error;
 use debug_3l14::debug_gui::DebugGui;
-use egui::epaint::{Shadow, TextOptions};
+use egui::epaint::Shadow;
 use egui::{CornerRadius, Pos2, Rect, Stroke, Ui, Visuals};
 use parking_lot::{Mutex, RwLock};
 use sdl2::video::Window;
@@ -85,8 +84,6 @@ impl Renderer
             cfg!(feature = "load_shaders_directly"));
 
         let allow_msaa = true; // should be in some settings somewhere
-
-        let bin_dir = std::env::current_exe().ok().map(|mut p| { p.pop(); p });
 
         let instance = Instance::new(InstanceDescriptor
         {
@@ -444,7 +441,7 @@ impl Renderer
             &desc);
 
         {
-            let mut render_pass = command_encoder.begin_render_pass(&RenderPassDescriptor
+            let render_pass = command_encoder.begin_render_pass(&RenderPassDescriptor
             {
                 label: debug_label!("egui render pass"),
                 color_attachments: &[Some(

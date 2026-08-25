@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 use std::time::Duration;
 use bitcode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use triomphe::Arc;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -81,7 +81,6 @@ fn defer<TFn: Fn() + Send + 'static>(duration: Duration, f: TFn)
         fn set_timeout(closure: &Closure<dyn Fn()>, time: u32) -> i32;
     }
 
-    let id = Box::new(0);
     let closure = Closure::new(f);
     set_timeout(&closure, duration.as_millis() as u32);
     closure.forget();

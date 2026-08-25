@@ -1,8 +1,7 @@
 use std::hash::{Hash, Hasher};
-use bitcode::{Decode, Encode};
 use enumflags2::{bitflags, BitFlags};
 use serde::{Deserialize, Serialize};
-use wgpu::{vertex_attr_array, BufferAddress, VertexAttribute, VertexBufferLayout, VertexFormat, VertexStepMode};
+use wgpu::{vertex_attr_array, BufferAddress, VertexAttribute, VertexBufferLayout, VertexStepMode};
 
 // TODO: generate HLSL structs automatically?
 
@@ -55,7 +54,7 @@ impl VertexLayoutBuilder
     }
 
     #[inline]
-    pub fn as_vertex_buffer_layout(&self) -> VertexBufferLayout
+    pub fn as_vertex_buffer_layout(&self) -> VertexBufferLayout<'_>
     {
         VertexBufferLayout
         {

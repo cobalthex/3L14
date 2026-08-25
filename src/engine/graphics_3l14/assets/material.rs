@@ -10,7 +10,7 @@ use asset_3l14::{Ash, Asset, AssetKey, AssetLifecycler, AssetLoadRequest, AssetT
 use debug_3l14::debug_gui::DebugGui;
 use proc_macros_3l14::LayoutHash;
 use crate::assets::Texture;
-use crate::material_classes::{MaterialClass, MaterialDef};
+use crate::material_classes::MaterialClass;
 
 pub const MAX_MATERIAL_TEXTURE_BINDINGS: usize = 16;
 
@@ -54,7 +54,7 @@ impl AssetLifecycler for MaterialLifecycler
 {
     type Asset = Material;
 
-    fn load(&self, mut request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>
+    fn load(&self, request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>
     {
         let mtl_file = &request.structured_data;
         let textures: ArrayVec<Ash<Texture>, MAX_MATERIAL_TEXTURE_BINDINGS> = mtl_file.textures.iter().map(|t|
