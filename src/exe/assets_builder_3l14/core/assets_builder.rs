@@ -230,7 +230,7 @@ impl AssetsBuilder
             },
             Err(err) =>
             {
-                log::warn!("Failed to open source asset meta-file for reading: {err}");
+                log::error!("Failed to open source asset meta-file for reading: {err}");
                 return Err(BuildError::SourceMetaError
                 {
                     source_meta_path: source_meta_file_path.clone(),
@@ -339,7 +339,7 @@ impl AssetsBuilder
             },
             Err(err) =>
             {
-                log::warn!("Failed to open source asset meta-file for reading: {err}");
+                log::error!("Failed to open source asset meta-file for reading: {err}");
                 return Err(BuildError::SourceMetaError
                 {
                     source_meta_path: source_meta_file_path.clone(),
@@ -575,7 +575,7 @@ impl<'output, A: Asset> PrimaryOutput<'output, A>
                 }
                 Err(e) =>
                 {
-                    log::warn!("Failed to query asset dependency {dependency:?} when building {:?}: {e:?}", self.0.asset_key);
+                    log::error!("Failed to query asset dependency {dependency:?} when building {:?}: {e:?}", self.0.asset_key);
                     return Err(BuildError::UnknownDependency
                     {
                         dependent_asset_key: *dependency,
@@ -599,7 +599,7 @@ impl<'output, A: Asset> PrimaryOutput<'output, A>
             Ok(asset_meta) => asset_meta,
             Err(e) =>
             {
-                log::warn!("Failed to query asset dependency {dependency:?} when building {:?}: {e:?}", self.0.asset_key);
+                log::error!("Failed to query asset dependency {dependency:?} when building {:?}: {e:?}", self.0.asset_key);
                 return Err(BuildError::UnknownDependency
                 {
                     dependent_asset_key: dependency,
@@ -663,7 +663,7 @@ impl<'output, A: Asset> OpaqueOutput<'output, A>
     }
 
     // todo: better design for streaming writes?
-    pub fn write_opaque_into(mut self, writer_fn: impl FnOnce(&mut File) -> io::Result<()>) -> io::Result<DebugOutput<'output, A>>
+    pub fn write_into_opaque(mut self, writer_fn: impl FnOnce(&mut File) -> io::Result<()>) -> io::Result<DebugOutput<'output, A>>
     {
         writer_fn(&mut self.0.writer)?;
         self.0.writer.flush()?;
@@ -691,7 +691,6 @@ impl<'output, A: Asset> DebugOutput<'output, A>
     {
         let mut debug_writer = File::create(&self.0.debug_data_file_path)?;
         let val = bitcode::encode(value);
-        varint::encode_into(val.len() as u64, &mut debug_writer)?;
         debug_writer.write_all(val.as_slice())?;
         Ok(FinalizedOutput(self.0))
     }

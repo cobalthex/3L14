@@ -1,6 +1,6 @@
-use asset_3l14::{Asset, AssetKey, AssetLifecyclers, AssetData, Assets, AssetsConfig, AssetSnapshot};
+use asset_3l14::{Asset, AssetKey, AssetLifecyclers, Assets, AssetsConfig, AssetSnapshot};
 use clap::Parser;
-use debug_3l14::debug_gui;
+use debug_3l14::{debug_breakpoint, debug_gui};
 use debug_3l14::debug_menu::{DebugMenu, DebugMenuMemory};
 use debug_3l14::sparkline::Sparkline;
 use egui::Widget;
@@ -27,6 +27,7 @@ use std::ops::Deref;
 use std::time::Duration;
 use wgpu::CommandEncoderDescriptor;
 use latch_3l14::{Circuit, CircuitLifecycler, Runtime};
+use world_3l14::assets::map::{Map, MapLifecycler};
 
 #[derive(Debug, Parser)]
 struct CliArgs
@@ -118,6 +119,7 @@ fn main() -> ExitReason
             .add_lifecycler(SkeletonLifecycler::default())
             .add_lifecycler(SkeletalAnimationLifecycler)
             .add_lifecycler(CircuitLifecycler::default())
+            .add_lifecycler(MapLifecycler::default())
         , assets_config);
 
     {
@@ -136,9 +138,7 @@ fn main() -> ExitReason
         let model_key = AssetKey::from(0x00a00000e3fb55e4);
         let base_anim_key = AssetKey::from(0x00c00000e3fb55e4);
         let overlay_anim_key = AssetKey::from(0x00c00010e3fb55e4);
-        let map_key = AssetKey::from();
-
-        let plane_model_key = AssetKey::from(0x00a000005cc338e8);
+        let map_key = AssetKey::from(0x00e00000aba05bb8);
 
         let latch_key = AssetKey::from(0x00d000009de1ba60);
         let test_circuit = assets.load::<Circuit>(latch_key);
@@ -148,7 +148,7 @@ fn main() -> ExitReason
         let test_base_anim = assets.load::<SkeletalAnimation>(base_anim_key);
         let test_overlay_anim = assets.load::<SkeletalAnimation>(overlay_anim_key);
 
-        let plane_model = assets.load::<Model>(plane_model_key);
+        let map = assets.load::<Map>(map_key);
 
         let mut camera = Camera::default();
         camera.update_projection(CameraProjection::Perspective
@@ -377,17 +377,11 @@ fn main() -> ExitReason
                         debug_draw.draw_wire_cube(obj_world, colors::WHITE);
                         obj_world *= Mat4::from_scale(Vec3::splat(0.1));
 
-                        if let AssetSnapshot::Available(model) = plane_model.data()
-                        {
-                            view.draw_model_static(model, Mat4::from_rotation_x(-std::f32::consts::FRAC_PI_2));
-                        }
-
                         if let AssetSnapshot::Available(model) = test_model.data()
                         {
                             puffin::profile_scope!("Draw dude");
 
-                            let geo = model.geometry.data().unwrap();
-                            let sp_txfm = obj_world * Mat4::from_scale(Vec3::splat(geo.bounds_sphere.radius()));
+                            let sp_txfm = obj_world * Mat4::from_scale(Vec3::splat(model.bounds_sphere.radius()));
                             debug_draw.draw_wire_sphere(sp_txfm, colors::TOMATO);
 
                             if let Some(skel_handle) = &model.skeleton

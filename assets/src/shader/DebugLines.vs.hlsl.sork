@@ -1,8 +1,9 @@
-source_id = "019d78ed6"
+source_id = "0ac942334"
 version_hash = "p5kMKPDmCl8"
 
 [build_config]
 compile_flags = []
 pass = "Opaque"
+
 [build_config.stage.Vertex]
-layout = ["Static"]
+layout = []

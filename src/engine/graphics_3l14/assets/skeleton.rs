@@ -46,6 +46,7 @@ pub struct SkeletonLifecycler
 {
     display_bones: AtomicBool,
 }
+impl TrivialAssetLifecycler for SkeletonLifecycler { type Asset = Skeleton; }
 impl SkeletonLifecycler
 {
     pub fn display_bones(&self) -> bool { self.display_bones.load(Ordering::Relaxed) }

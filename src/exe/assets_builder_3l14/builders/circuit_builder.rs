@@ -238,9 +238,10 @@ impl CircuitBuilder
             let mut encoded = (meta.hydrate_and_encode_fn)(&mut hydrate)
                 .map_err(|e| ParseError::BlockDeserializeError { block_name: block_name.to_string(), error: e })?;
             let size = encoded.len();
+            
             block_mem.append(&mut encoded);
 
-            impulse_blocks.push(CircuitFileBlock { type_name_hash: meta.type_name_hash, packed_size: size as u64 });
+            impulse_blocks.push(CircuitFileBlock { type_name_hash: meta.type_name_hash, packed_size: size as u32 });
         }
 
         let mut latch_blocks = Vec::with_capacity(latches.len());
@@ -268,7 +269,7 @@ impl CircuitBuilder
             let size = encoded.len();
             block_mem.append(&mut encoded);
 
-            latch_blocks.push(CircuitFileBlock { type_name_hash: meta.type_name_hash, packed_size: size as u64 });
+            latch_blocks.push(CircuitFileBlock { type_name_hash: meta.type_name_hash, packed_size: size as u32 });
         }
 
         Ok(CircuitParse
@@ -312,7 +313,7 @@ impl AssetBuilder for CircuitBuilder
 
     fn supported_input_file_extensions(&self, ) -> &'static [&'static str]
     {
-        &["latch"]
+        &["circuit"]
     }
 
     fn builder_version(&self, vb: &mut VersionBuilder)

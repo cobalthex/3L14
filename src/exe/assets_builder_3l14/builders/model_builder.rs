@@ -289,7 +289,7 @@ impl ModelBuilder
                             {
                                 Format::R8G8B8 =>
                                 {
-                                    tex_asset.write_opaque_into(|writer|
+                                    tex_asset.write_into_opaque(|writer|
                                     {
                                         // todo: check length
                                         for i in 0..(tex_data.width * tex_data.height) as usize
@@ -337,8 +337,7 @@ impl ModelBuilder
             let mesh_bounds_aabb = AABB::new(bb.min.into(), bb.max.into());
             model_bounds_aabb.union_with(mesh_bounds_aabb);
 
-            // TODO
-            let mesh_bounds_sphere = Sphere::new(Vec3::ZERO, 1.0);//Sphere::from_points(&mesh_points);
+            let mesh_bounds_sphere = Sphere::EMPTY;  // TODO broken (Stack overflow): Sphere::from_points(&mesh_points);
             mesh_points.clear();
             model_bounds_sphere += mesh_bounds_sphere;
 
@@ -366,7 +365,12 @@ impl ModelBuilder
                 indices_buf_size: index_data.len() as u32,
                 meshes: meshes.into_boxed_slice(),
             })?
-            .skip_opaque()
+            .write_into_opaque(|w|
+            {
+                w.write_all(&vertex_data)?;
+                w.write_all(&index_data)?;
+                Ok(())
+            })?
             .skip_debug()
             .finish(in_mesh.name().map(|n| n.to_string()))?;
 

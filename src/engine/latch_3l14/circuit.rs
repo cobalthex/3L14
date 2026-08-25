@@ -28,7 +28,7 @@ pub struct Circuit
 pub struct CircuitFileBlock
 {
     pub type_name_hash: u64,
-    pub packed_size: u64, // 32 bit?
+    pub packed_size: u32,
 }
 
 #[derive(LayoutHash, Encode, Decode)]
@@ -79,16 +79,16 @@ impl AssetLifecycler for CircuitLifecycler
     fn load(&self, mut request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>
     {
         let file = request.structured_data;
-        let mut opaque = Cursor::new(request.opaque_data);
-        let mut decode_buf = SmallVec::<[u8; 1024]>::new(); // validate?
+        let mut opaque_off = 0usize;
         let circuit = Circuit
         {
             auto_entries: file.auto_entries,
             signaled_entries: file.signaled_entries,
             impulses: file.impulses.iter().map(|def|
             {
-                let buf = &mut decode_buf[0..def.packed_size as usize];
-                opaque.read_exact(buf)?;
+                let packed_size = def.packed_size as usize;
+                let buf = &request.opaque_data[opaque_off..(opaque_off + packed_size)];
+                opaque_off += packed_size;
                 let Some(blk_meta) = self.known_impulses.get(&def.type_name_hash) else
                 {
                     // this may be due to a block being inaccessible during runtime but accessible during build
@@ -100,8 +100,9 @@ impl AssetLifecycler for CircuitLifecycler
             }).collect::<Result<_, Box<dyn Error>>>()?,
             latches: file.latches.iter().map(|def|
             {
-                let buf = &mut decode_buf[0..def.packed_size as usize];
-                opaque.read_exact(buf)?;
+                let packed_size = def.packed_size as usize;
+                let buf = &request.opaque_data[opaque_off..(opaque_off + packed_size)];
+                opaque_off += packed_size;
                 let Some(blk_meta) = self.known_latches.get(&def.type_name_hash) else
                 {
                     // this may be due to a block being inaccessible during runtime but accessible during build

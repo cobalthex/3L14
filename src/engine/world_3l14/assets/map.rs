@@ -52,7 +52,10 @@ pub struct StaticsFile
     pub lights: Box<[StaticPlacement<Light>]>,
 }
 
-pub struct MapLifecycler;
+#[derive(Default)]
+pub struct MapLifecycler
+{
+}
 impl AssetLifecycler for MapLifecycler
 {
     type Asset = Map;

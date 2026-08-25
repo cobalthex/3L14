@@ -62,8 +62,6 @@ impl AssetLifecycler for MaterialLifecycler
            request.load_dependency(*t)
         }).collect();
         
-        debug_assert_eq!(request.opaque_data.len(), size_of::<MaterialDef>());
-        
         let props = self.renderer.device().create_buffer_init(&BufferInitDescriptor
         {
             label: debug_label!(&format!("{:#?}", request.asset_key)),

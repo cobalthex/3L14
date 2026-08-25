@@ -158,7 +158,7 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
                 Ok(hydrated) => retyped.inner().store_debug_data(Some(hydrated)),
                 Err(err) =>
                 {
-                    log::debug!("Failed to parse debug data for {:?}: {}", retyped.key(), err);
+                    log::debug!("Failed to parse debug data for {:#?}: {}", retyped.key(), err);
                 }
             }
         }
