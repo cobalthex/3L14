@@ -129,7 +129,7 @@ pub fn asset_attrib(attrib_input: TokenStream, input: TokenStream) -> TokenStrea
         {
             type StructuredData = #structured_type;
             type DebugData = #debug_type;
-            fn asset_type() -> ::asset_3l14::AssetTypeId { ::asset_3l14::AssetTypeId::#struct_name }
+            const ASSET_TYPE: ::asset_3l14::AssetTypeId = ::asset_3l14::AssetTypeId::#struct_name;
             fn all_dependencies_loaded(&self) -> bool
             {
                 #handle_refs

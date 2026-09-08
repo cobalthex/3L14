@@ -8,7 +8,7 @@ use hassle_rs::{Dxc, DxcCompiler, DxcIncludeHandler, DxcLibrary, DxcValidator, D
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use graphics_3l14::material_classes::MaterialClass;
-use graphics_3l14::vertex_layouts::VertexCaps;
+use graphics_3l14::vertex_formats::VertexFormat;
 use nab_3l14::utils::enumflags2_seq;
 use crate::core::{AssetBuilder, BuildOutputs, SourceInput, VersionBuilder};
 
@@ -67,8 +67,7 @@ pub enum ShaderStageConfig
 {
     Vertex
     {
-        #[serde(with = "enumflags2_seq")]
-        layout: BitFlags<VertexCaps>,
+        format: VertexFormat,
     },
     Pixel
     {
@@ -93,7 +92,7 @@ impl Default for ShaderBuildConfig
         {
             compile_flags: BitFlags::empty(),
             pass: EngineRenderPass::Opaque,
-            stage: ShaderStageConfig::Vertex { layout: BitFlags::empty() },
+            stage: ShaderStageConfig::Vertex { format: VertexFormat::Static },
         }
     }
 }
@@ -198,7 +197,7 @@ impl ShaderBuilder
         // TODO: currently broken
         // let blob_encoding = self.dxc_library.create_blob_with_encoding(&spirv)
         //     .map_err(|e| sc_err(file_path.clone(), compilation.stage, e))?;
-        // 
+        //
         // let module = match self.dxc_validator.validate(blob_encoding.into())
         // {
         //     Ok(blob) => Ok(blob.to_vec()), // todo: This could be no-copy
@@ -243,7 +242,7 @@ impl AssetBuilder for ShaderBuilder
         // todo: correctly stage
         let hash = match config.stage
         {
-            ShaderStageConfig::Vertex { layout } => shader_key::vertex(layout, config.pass),
+            ShaderStageConfig::Vertex { format } => shader_key::vertex(format, config.pass),
             ShaderStageConfig::Pixel { class } => shader_key::pixel(class, config.pass),
         };
 

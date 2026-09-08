@@ -32,10 +32,10 @@ impl Assets
     fn create_or_update_handle<A: Asset>(&self, asset_key: AssetKey) -> (bool /* pre-existing */, Ash<A>)
     {
         // debug assert?
-        assert_eq!(A::asset_type(), asset_key.asset_type()); // todo: return an error handle
-        match self.registered_asset_types.get(&A::asset_type())
+        assert_eq!(A::ASSET_TYPE, asset_key.asset_type()); // todo: return an error handle
+        match self.registered_asset_types.get(&A::ASSET_TYPE)
         {
-            None => panic!("Asset type {:?} does not have a registered lifecycler", A::asset_type()),
+            None => panic!("Asset type {:?} does not have a registered lifecycler", A::ASSET_TYPE),
             Some(rat) => assert_eq!(rat.type_id, TypeId::of::<A>()),
         }
 
@@ -170,6 +170,7 @@ impl Assets
         Ok(buf)
     }
 
+    #[must_use]
     fn asset_worker_fn(this: Arc<Self>, request_recv: Receiver<AssetLifecycleRequest>) -> impl FnOnce()
     {
         move ||
@@ -219,7 +220,19 @@ impl Assets
                             {
                                 let header = untyped_handle.header();
                                 let lifecycler = &this.lifecyclers.get(&header.key.asset_type())
-                                    .expect("Unsupported asset type!").lifecycler; // this should fail in load()
+                                    .expect("Unsupported asset type!"); // this should fail in load()
+
+                                // if stubbed, don't bother trying to actually load the file
+                                if lifecycler.is_stub
+                                {
+                                    lifecycler.lifecycler.load_untyped(
+                                        &this,
+                                        untyped_handle,
+                                        &[],
+                                        #[cfg(feature = "asset_debug_data")] None
+                                    );
+                                    continue;
+                                }
 
                                 #[cfg(feature = "asset_debug_data")]
                                 let debug_asset_data: Option<_> =
@@ -236,7 +249,7 @@ impl Assets
                                 log::trace!("Loading {:#?} from {asset_file_path:?}", header.key);
                                 match Self::read_asset_from_file(&asset_file_path)
                                 {
-                                    Ok(read) => lifecycler.load_untyped(
+                                    Ok(read) => lifecycler.lifecycler.load_untyped(
                                         &this,
                                         untyped_handle,
                                         read.as_ref(),
@@ -247,7 +260,7 @@ impl Assets
                                         log::error!("Failed to read {:#?} data from {:?}: {err}",
                                             header.key,
                                             asset_file_path);
-                                        lifecycler.error_untyped(untyped_handle, AssetLoadError::Fetch);
+                                        lifecycler.lifecycler.error_untyped(untyped_handle, AssetLoadError::Fetch);
                                     }
                                 };
                             },
@@ -493,7 +506,7 @@ impl Assets
     #[inline] #[must_use]
     fn get_lifecycler_for_type<A: Asset>(&self) -> Option<&RegisteredAssetLifecycler>
     {
-        self.lifecyclers.get(&A::asset_type())
+        self.lifecyclers.get(&A::ASSET_TYPE)
     }
 
     #[inline] #[must_use]
@@ -501,7 +514,7 @@ impl Assets
     // NOTE: This will verify that the type IDs match in debug, but otherwise makes no guarantees about correct types
     pub fn get_lifecycler<L: AssetLifecycler + 'static>(&self) -> Option<&L>
     {
-        self.lifecyclers.get(&L::Asset::asset_type()).map(|l|
+        self.lifecyclers.get(&L::Asset::ASSET_TYPE).map(|l|
         unsafe {
             #[cfg(debug_assertions)]
             assert_eq!(TypeId::of::<L>(), l.type_id); // debug_assert won't work here
@@ -637,7 +650,7 @@ mod tests
     {
         type StructuredData = usize;
         type DebugData = ();
-        fn asset_type() -> AssetTypeId { AssetTypeId::Test2 }
+        const ASSET_TYPE: AssetTypeId = AssetTypeId::Test2;
     }
 
     #[derive(Debug)]
@@ -658,7 +671,7 @@ mod tests
     {
         type StructuredData = u32;
         type DebugData = ();
-        fn asset_type() -> AssetTypeId { AssetTypeId::Test1 }
+        const ASSET_TYPE: AssetTypeId = AssetTypeId::Test1;
     }
 
     struct Passthru<A: Asset>

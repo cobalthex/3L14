@@ -5,4 +5,4 @@ version_hash = "p5kMKPDmCl8"
 compile_flags = []
 pass = "Opaque"
 [build_config.stage.Vertex]
-layout = ["Static", "Skinned"]
+format = "Skinned"

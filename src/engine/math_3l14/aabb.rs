@@ -18,7 +18,7 @@ impl AABB
     #[inline] #[must_use] pub const fn empty() -> Self { Self { min: Vec3::ZERO, max: Vec3::ZERO } }
 
     #[inline] #[must_use] pub fn size(self) -> Vec3 { self.max - self.min }
-    #[inline] #[must_use] pub fn half(self) -> Vec3 { (self.max - self.min) / 2.0 }
+    #[inline] #[must_use] pub fn half_size(self) -> Vec3 { (self.max - self.min) / 2.0 }
     #[inline] #[must_use]
     pub fn volume(self) -> f32
     {

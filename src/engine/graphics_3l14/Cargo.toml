@@ -19,6 +19,7 @@ containers_3l14.workspace = true
 debug_3l14.workspace = true
 input_3l14.workspace = true # TODO: remove this dependency, needed by renderer::frame()
 proc_macros_3l14.workspace = true
+world_3l14.workspace = true
 
 arc-swap.workspace = true
 arrayvec.workspace = true

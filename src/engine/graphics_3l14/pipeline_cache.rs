@@ -14,7 +14,7 @@ use enumflags2::BitFlags;
 use wgpu::{AddressMode, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferSize, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FilterMode, FragmentState, FrontFace, MipmapFilterMode, MultisampleState, PipelineCompilationOptions, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexState};
 use asset_3l14::{Ash, AssetKey, AssetTypeId, Assets, AssetSnapshot, AssetView};
 use crate::material_classes::MaterialClass;
-use crate::vertex_layouts::{VertexCaps, VertexLayoutBuilder};
+use crate::vertex_formats::VertexFormat;
 
 #[derive(Debug, Clone, Copy, Hash)]
 pub enum DebugMode // debug only?
@@ -31,7 +31,7 @@ enum MaybePipeline
     Pending
     { // box?
         vertex_shader: Ash<Shader>,
-        vertex_layout: BitFlags<VertexCaps>,
+        vertex_format: VertexFormat,
         material: Option<(MaterialClass, Ash<Shader>)>,
     },
     Created(RenderPipeline),
@@ -156,7 +156,7 @@ impl PipelineCache
             MaybePipeline::Pending
             {
                 vertex_shader,
-                vertex_layout,
+                vertex_format,
                 material,
             } =>
             {
@@ -170,7 +170,7 @@ impl PipelineCache
                     else { None }
                 });
                 let debug_mode = DebugMode::None; // TODO
-                let pipeline = self.create_pipeline(*vertex_layout, vsh, mtl, debug_mode);
+                let pipeline = self.create_pipeline(*vertex_format, vsh, mtl, debug_mode);
                 render_pass.set_pipeline(&pipeline);
                 *maybe_pipeline.value_mut() = MaybePipeline::Created(pipeline);
             }
@@ -186,7 +186,7 @@ impl PipelineCache
     pub fn get_or_create(
         &self,
         pass: EngineRenderPass,
-        vertex_layout: BitFlags<VertexCaps>,
+        vertex_format: VertexFormat,
         material_class: Option<MaterialClass>,
         debug_mode: DebugMode) -> PipelineKey
     {
@@ -196,7 +196,7 @@ impl PipelineCache
             // TODO: bitmath instead of hashing
             let mut hasher = MetroHash64::default();
             pass.hash(&mut hasher);
-            vertex_layout.hash(&mut hasher);
+            vertex_format.hash(&mut hasher);
             material_class.hash(&mut hasher);
             debug_mode.hash(&mut hasher);
 
@@ -205,7 +205,7 @@ impl PipelineCache
 
         if let None = self.pipelines.get_mut(&pipeline_key)
         {
-            let vsh = shader_key::vertex(vertex_layout, pass);
+            let vsh = shader_key::vertex(vertex_format, pass);
             let material = material_class.map(|mc|
             {
                 let key = shader_key::pixel(mc, pass);
@@ -214,7 +214,7 @@ impl PipelineCache
 
             let new_pipe = MaybePipeline::Pending
             {
-                vertex_layout,
+                vertex_format,
                 vertex_shader: self.assets.load(AssetKey::synthetic(AssetTypeId::Shader, vsh)),
                 material,
             };
@@ -227,7 +227,7 @@ impl PipelineCache
     #[must_use]
     fn create_pipeline(
         &self,
-        vertex_layout: BitFlags<VertexCaps>,
+        vertex_format: VertexFormat,
         vertex_shader: AssetView<Shader>,
         material: Option<(MaterialClass, AssetView<Shader>)>,
         debug_mode: DebugMode) -> RenderPipeline
@@ -251,7 +251,7 @@ impl PipelineCache
         }
 
         #[cfg(feature = "debug_gpu_labels")]
-        let layout_name = format!("({vertex_layout})+{:?} pipeline", material.as_ref().map(|m| m.0));
+        let layout_name = format!("{vertex_format:?}+{:?} pipeline", material.as_ref().map(|m| m.0));
 
         // if there end up being a lot of pipelines created, it may be worth saving
         let pipeline_layout = self.renderer.device().create_pipeline_layout(&PipelineLayoutDescriptor
@@ -265,8 +265,6 @@ impl PipelineCache
         // todo: if these update, this will invalidate the pipeline
         let renderer_surface_format = self.renderer.surface_format();
         let renderer_msaa_count = self.renderer.msaa_max_sample_count();
-
-        let vbuffers = VertexLayoutBuilder::from(vertex_layout);
 
         // todo: only generate if mtl exists
         let fragment_targets = [Some(ColorTargetState
@@ -292,7 +290,7 @@ impl PipelineCache
                 module: &vertex_shader.module,
                 entry_point: Some(ShaderStage::Vertex.entry_point()),
                 compilation_options: PipelineCompilationOptions::default(),
-                buffers: &[Some(vbuffers.as_vertex_buffer_layout())],
+                buffers: &[Some(vertex_format.into())],
             },
             primitive: PrimitiveState
             {

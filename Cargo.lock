@@ -1594,6 +1594,7 @@ dependencies = [
  "serde",
  "triomphe",
  "wgpu",
+ "world_3l14",
 ]
 
 [[package]]
@@ -3029,6 +3030,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "scratch_3l14"
+version = "0.0.0"
+dependencies = [
+ "asset_3l14",
+ "build_3l14",
+ "clap",
+ "nab_3l14",
+]
+
+[[package]]
 name = "sdl2"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4380,7 +4391,6 @@ dependencies = [
  "debug_3l14",
  "egui 0.36.0",
  "glam",
- "graphics_3l14",
  "math_3l14",
  "nab_3l14",
  "proc_macros_3l14",

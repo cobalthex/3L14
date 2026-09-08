@@ -4,21 +4,14 @@ use proc_macros_3l14::{asset, LayoutHash};
 use std::error::Error;
 use glam::{Quat, Vec3};
 use containers_3l14::AabbTree;
-use graphics_3l14::assets::Model;
-use crate::Light;
+use crate::light::Light;
 
-#[asset(structured_type=MapFile)]
+#[asset]
+#[derive(LayoutHash, Encode, Decode)]
 pub struct Map
 {
-    pub statics: Statics,
-}
-
-#[derive(LayoutHash, Encode, Decode)]
-pub struct MapFile
-{
-    // FUTURE: Split into map chunks (possibly spatially or by activation)
     pub model_palette: Box<[AssetKey]>, // move to statics?
-    pub statics: StaticsFile,
+    pub statics: Statics,
 }
 
 #[repr(u8)]
@@ -37,15 +30,8 @@ pub struct StaticPlacement<T>
     pub scale: Vec3,
 }
 
-pub struct Statics
-{
-    pub hierarchy: AabbTree,
-    pub geo: Box<[StaticPlacement<Ash<Model>>]>,
-    pub lights: Box<[StaticPlacement<Light>]>,
-}
-
 #[derive(Encode, Decode)]
-pub struct StaticsFile
+pub struct Statics
 {
     pub hierarchy: AabbTree,
     pub geo: Box<[StaticPlacement<u32>]>,
@@ -62,28 +48,10 @@ impl AssetLifecycler for MapLifecycler
 
     fn load(&self, request: AssetLoadRequest<Self::Asset>) -> Result<Self::Asset, Box<dyn Error>>
     {
-        let geo = request.structured_data.statics.geo.iter()
-            .map(|placement|
-            {
-                let dep = request.load_dependency(request.structured_data.model_palette[placement.object as usize]);
-                StaticPlacement
-                {
-                    object: dep,
-                    position: placement.position,
-                    orientation: placement.orientation,
-                    scale: placement.scale,
-                }
-            })
-            .collect();
-        let statics = request.structured_data.statics;
         let map = Map
         {
-            statics: Statics
-            {
-                hierarchy: statics.hierarchy,
-                geo,
-                lights: statics.lights,
-            },
+            model_palette: request.structured_data.model_palette,
+            statics: request.structured_data.statics,
         };
         Ok(map)
     }

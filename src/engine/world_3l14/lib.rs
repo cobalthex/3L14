@@ -1,4 +1,2 @@
-mod light;
-pub use light::*;
-
 pub mod assets;
+pub mod light;

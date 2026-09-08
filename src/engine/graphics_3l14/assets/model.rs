@@ -29,7 +29,7 @@ impl Asset for Model
 {
     type StructuredData = ModelFile;
     type DebugData = ();
-    fn asset_type() -> AssetTypeId { AssetTypeId::Model }
+    const ASSET_TYPE: AssetTypeId = AssetTypeId::Model;
     fn all_dependencies_loaded(&self) -> bool
     {
         self.geometry.is_loaded_recursive() &&

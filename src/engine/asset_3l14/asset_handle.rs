@@ -185,7 +185,7 @@ impl<A: Asset> AshInner<A>
     #[inline]
     pub fn store_data(&self, new_data: Option<AssetData<A>>)
     {
-        debug_assert_eq!(A::asset_type(), self.header.key.asset_type());
+        debug_assert_eq!(A::ASSET_TYPE, self.header.key.asset_type());
         // (debug) store a TypeId to verify templates match?
 
         #[cfg(feature = "debug_asset_lifetimes")]
@@ -245,7 +245,7 @@ impl ErasedAsh
     pub unsafe fn dealloc<A: Asset>(self)
     {
         debug_assert!(!self.0.is_null());
-        debug_assert_eq!(A::asset_type(), unsafe { &*(self.0 as *const AshInner<A>) }.header.key.asset_type());
+        debug_assert_eq!(A::ASSET_TYPE, unsafe { &*(self.0 as *const AshInner<A>) }.header.key.asset_type());
 
         unsafe { &*(self.0 as *const AshInner<A>) }.store_data(None); // clears the stored payload
 
@@ -318,7 +318,7 @@ impl<A: Asset> Ash<A>
     #[inline]
     fn debug_assert_type(&self)
     {
-        debug_assert_eq!(A::asset_type(), self.key().asset_type());
+        debug_assert_eq!(A::ASSET_TYPE, self.key().asset_type());
     }
 
     // creation managed by <Assets>
@@ -471,7 +471,7 @@ impl<A: Asset> Debug for Ash<A>
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
         f.write_fmt(
-            format_args!("{{ {:#?} {}, {} refs }}",
+            format_args!("{{ {:#?} {}, {} B, {} refs }}",
             self.key(),
             match self.data()
             {
@@ -479,6 +479,7 @@ impl<A: Asset> Debug for Ash<A>
                 AssetSnapshot::Unavailable(_) => "unavailable",
                 AssetSnapshot::Available(_) => "available"
             },
+            size_of::<A>(),
             self.ref_count(),
         ))
     }

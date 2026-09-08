@@ -12,7 +12,6 @@ use wgpu::{ShaderModuleDescriptor, ShaderModuleDescriptorPassthrough};
 use asset_3l14::{AssetKeySynthHash, AssetLifecycler, AssetLoadRequest};
 use debug_3l14::debug_gui::DebugGui;
 use crate::material_classes::MaterialClass;
-use crate::vertex_layouts::VertexCaps;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode, FancyEnum)]
@@ -52,14 +51,15 @@ pub enum EngineRenderPass // todo: better name to not clash with wgpu::RenderPas
 
 pub mod shader_key
 {
+    use crate::vertex_formats::VertexFormat;
     use super::*;
 
     #[inline] #[must_use]
-    pub fn vertex(layout: BitFlags<VertexCaps>, pass: EngineRenderPass) -> AssetKeySynthHash
+    pub fn vertex(format: VertexFormat, pass: EngineRenderPass) -> AssetKeySynthHash
     {
         let mut val = 0b0001u32 << 28;
         val |= (pass as u32) << 20;
-        val |= (layout.bits() as u32) << 12;
+        val |= (format as u32) << 12;
         AssetKeySynthHash(val as u64)
     }
 
@@ -76,15 +76,12 @@ pub mod shader_source
 {
     use super::*;
     use std::io::Write;
+    use crate::vertex_formats::VertexFormat;
 
     #[must_use]
-    pub fn vertex(output: &mut impl Write, layout: BitFlags<VertexCaps>, _pass: EngineRenderPass)
+    pub fn vertex(output: &mut impl Write, format: VertexFormat, _pass: EngineRenderPass)
     {
-        for cap in layout
-        {
-            let _ = write!(output, "{cap:?}");
-        }
-        let _ = write!(output, ".{}.hlsl", ShaderStage::Vertex.prefix());
+        let _ = write!(output, "{:?}.{}.hlsl", format, ShaderStage::Vertex.prefix());
     }
 
     #[must_use]

@@ -3,10 +3,21 @@ use glam::{Mat4, Vec3};
 use crate::{Facing, GetFacing, Intersection, Intersects, IsOnOrInside, Plane, Sphere};
 use nab_3l14::utils::ShortTypeName;
 
+#[repr(u8)]
+pub enum FrustumSide // CuboidSide ?
+{
+    Left = 0,
+    Right = 1,
+    Top = 2,
+    Bottom = 3,
+    Near = 4,
+    Far = 5,
+}
+
 #[derive(Clone, PartialEq)]
 pub struct Frustum
 {
-    pub planes: [Plane; 6], // ordered left, right, top, bottom, near, far
+    pub planes: [Plane; 6], // ordered according to FrustumSide
 }
 impl Frustum
 {
@@ -33,12 +44,14 @@ impl Frustum
         Self { planes }
     }
 
-    #[inline] #[must_use] pub fn left(&self) -> Plane { self.planes[0] }
-    #[inline] #[must_use] pub fn right(&self) -> Plane { self.planes[1] }
-    #[inline] #[must_use] pub fn top(&self) -> Plane { self.planes[2] }
-    #[inline] #[must_use] pub fn bottom(&self) -> Plane { self.planes[3] }
-    #[inline] #[must_use] pub fn near(&self) -> Plane { self.planes[4] }
-    #[inline] #[must_use] pub fn far(&self) -> Plane { self.planes[5] }
+    #[inline] #[must_use] pub fn get_side(&self) -> Plane { self.planes[FrustumSide::Near as usize] }
+
+    #[inline] #[must_use] pub fn left(&self) -> Plane { self.planes[FrustumSide::Left as u8] }
+    #[inline] #[must_use] pub fn right(&self) -> Plane { self.planes[FrustumSide::Right as u8] }
+    #[inline] #[must_use] pub fn top(&self) -> Plane { self.planes[FrustumSide::Top as u8] }
+    #[inline] #[must_use] pub fn bottom(&self) -> Plane { self.planes[FrustumSide::Bottom as u8] }
+    #[inline] #[must_use] pub fn near(&self) -> Plane { self.planes[FrustumSide::Near as u8] }
+    #[inline] #[must_use] pub fn far(&self) -> Plane { self.planes[FrustumSide::Far as u8] }
 
     #[must_use]
     pub fn get_corners(projected_mtx: &Mat4) -> [Vec3; 8]

@@ -9,7 +9,7 @@ use proc_macros_3l14::asset;
 use triomphe::Arc;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{Buffer, BufferUsages};
-use crate::vertex_layouts::VertexCaps;
+use crate::vertex_formats::VertexFormat;
 
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Encode, Decode)]
@@ -36,7 +36,7 @@ impl From<IndexFormat> for wgpu::IndexFormat
 pub struct GeometryFile
 {
     // TODO: convert all boxes to offsets in the src payload?
-    pub vertex_layout: <VertexCaps as RawBitFlags>::Numeric, // must store as underlying type due to limitation of bitcode
+    pub vertex_format: VertexFormat,
     pub index_format: IndexFormat,
     pub vertices_buf_size: u32,
     pub indices_buf_size: u32,
@@ -55,7 +55,7 @@ pub struct GeometryMesh
 #[asset(structured_type=GeometryFile)]
 pub struct Geometry
 {
-    pub vertex_layout: BitFlags<VertexCaps>,
+    pub vertex_format: VertexFormat,
     pub index_format: wgpu::IndexFormat,
     // all meshes in this model are slices of this buffer
     pub vertices: Buffer,
@@ -89,7 +89,7 @@ impl AssetLifecycler for GeometryLifecycler
         // todo: should these read from opaque_data?
         let vertices = self.renderer.device().create_buffer_init(&BufferInitDescriptor
         {
-            label: debug_label!(format!("{:#?} ({}) vertices", asset_key, structured_data.vertex_layout).as_str()),
+            label: debug_label!(format!("{:#?} {:?} vertices", asset_key, structured_data.vertex_format).as_str()),
             contents: vertices,
             usage: BufferUsages::VERTEX,
         });
@@ -102,7 +102,7 @@ impl AssetLifecycler for GeometryLifecycler
 
         Ok(Geometry
         {
-            vertex_layout: unsafe { BitFlags::from_bits_unchecked(structured_data.vertex_layout) },
+            vertex_format: structured_data.vertex_format,
             index_format: match structured_data.index_format
             {
                 IndexFormat::U16 => wgpu::IndexFormat::Uint16,

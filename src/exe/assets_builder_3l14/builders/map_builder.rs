@@ -9,7 +9,7 @@ use containers_3l14::AabbTree;
 use graphics_3l14::assets::Model;
 use nab_3l14::utils::osstr::OsStrUtils;
 use source_defs_3l14::{MapDef, MapLayer};
-use world_3l14::assets::map::{Map, MapFile, StaticPlacement, StaticsFile};
+use world_3l14::assets::map::{Map, StaticPlacement, Statics};
 use crate::core::{AssetBuilder, BuildError, BuildOutputs, SourceInput, VersionBuilder};
 
 #[derive(Default, Serialize, Deserialize)]
@@ -56,7 +56,7 @@ impl AssetBuilder for MapBuilder
 
     fn format_version(&self, vb: &mut VersionBuilder)
     {
-        vb.push_prehashed(MapFile::TYPE_LAYOUT_HASH);
+        vb.push_prehashed(Map::TYPE_LAYOUT_HASH);
     }
 
     fn build_assets(&self, _config: Self::BuildConfig, input: &mut SourceInput, outputs: &mut BuildOutputs) -> Result<(), Box<dyn Error>>
@@ -150,10 +150,10 @@ impl AssetBuilder for MapBuilder
             }
         }
 
-        map.write_structured(&MapFile
+        map.write_structured(&Map
             {
                 model_palette: model_palette.drain().map(|(asset_key, _)| asset_key).collect(),
-                statics: StaticsFile
+                statics: Statics
                 {
                     hierarchy: statics_aabb,
                     geo: statics_geo.into_boxed_slice(),

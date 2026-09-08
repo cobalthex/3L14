@@ -1,0 +1,21 @@
+[package]
+name = "scratch_3l14"
+description = "3L14 playground"
+workspace = "../../.."
+edition.workspace = true
+build = "build.rs"
+
+[features]
+
+[[bin]]
+name = "scratch"
+path = "main.rs"
+
+[dependencies]
+nab_3l14.workspace = true
+asset_3l14.workspace = true
+
+clap.workspace = true
+
+[build-dependencies]
+build_3l14.workspace = true

@@ -25,6 +25,7 @@ use sdl2::messagebox::MessageBoxFlag;
 use std::ops::Deref;
 use std::time::Duration;
 use wgpu::CommandEncoderDescriptor;
+use graphics_3l14::map_render::MapRenderer;
 use latch_3l14::{Circuit, CircuitLifecycler, Runtime};
 use world_3l14::assets::map::{Map, MapLifecycler};
 
@@ -147,7 +148,8 @@ fn main() -> ExitReason
         let test_base_anim = assets.load::<SkeletalAnimation>(base_anim_key);
         let test_overlay_anim = assets.load::<SkeletalAnimation>(overlay_anim_key);
 
-        let _map = assets.load::<Map>(map_key);
+        let test_map = assets.load::<Map>(map_key);
+        let mut render_map = None;
 
         let mut camera = Camera::default();
         camera.update_projection(CameraProjection::Perspective
@@ -176,11 +178,19 @@ fn main() -> ExitReason
 
         let mut test_f32 = 0.0;
 
+        println!("!!! {test_map:?}");
+
         let mut app_frame_number = RenderFrameNumber(0);
         let mut fps_sparkline = Sparkline::<100>::new(); // todo: use
         'main_loop: loop
         {
             let mut completion = CompletionState::InProgress;
+
+            if render_map.is_none() &&
+                let AssetSnapshot::Available(map) = test_map.data()
+            {
+                render_map = Some(MapRenderer::new(&assets, map));
+            }
 
             puffin::GlobalProfiler::lock().new_frame();
 
@@ -355,24 +365,13 @@ fn main() -> ExitReason
 
                         let view = &mut views[app_frame_number.0 as usize % views.len()];
                         view.begin(frame_time.total_runtime, &camera, clip_camera.as_ref().unwrap_or(&camera), DebugMode::None);
-                        //
-                        // debug_draw.draw_solid_cube(Mat4::IDENTITY, colors::RED);
-                        // debug_draw.draw_wire_cube(Mat4::IDENTITY, colors::YELLOW);
-                        //
-                        // debug_draw.draw_solid_cone(Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0)), colors::GOOD_PURPLE);
-                        // debug_draw.draw_wire_cone(Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0)), colors::MAGENTA);
-                        //
-                        // debug_draw.draw_solid_sphere(Mat4::from_translation(Vec3::new(-3.0, 0.0, 0.0)), colors::LIME);
-                        // debug_draw.draw_wire_sphere(Mat4::from_translation(Vec3::new(-3.0, 0.0, 0.0)), colors::GREEN);
 
                         let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(25.0, 0.0, 0.0));
-                        // view.draw_model_static(model.clone(), obj_world);
-                        debug_draw.draw_wire_cube(obj_world, colors::WHITE);
 
-                        obj_world = Mat4::from_rotation_translation(obj_rot.inverse(), Vec3::new(-5.0, 0.0, -2.0));
-                        // view.draw_model_static(model.clone(), obj_world);
-                        debug_draw.draw_wire_cube(obj_world, colors::WHITE);
-                        obj_world *= Mat4::from_scale(Vec3::splat(0.1));
+                        if let Some(render_map) = &render_map
+                        {
+                            render_map.render(view);
+                        }
 
                         if let AssetSnapshot::Available(model) = test_model.data()
                         {
@@ -380,6 +379,18 @@ fn main() -> ExitReason
 
                             let sp_txfm = obj_world * Mat4::from_scale(Vec3::splat(model.bounds_sphere.radius()));
                             debug_draw.draw_wire_sphere(sp_txfm, colors::TOMATO);
+
+                            if let AssetSnapshot::Available(geo) = model.geometry.data()
+                            {
+                                // for mesh in geo.meshes.iter()
+                                // {
+                                //     let aabb_txfm = obj_world * Mat4::from_scale_rotation_translation(
+                                //         mesh.bounds_aabb.half_size(),
+                                //         Quat::IDENTITY,
+                                //         mesh.bounds_aabb.centroid());
+                                //     debug_draw.draw_wire_cube(aabb_txfm, colors::TOMATO);
+                                // }
+                            }
 
                             if let Some(skel_handle) = &model.skeleton
                             {

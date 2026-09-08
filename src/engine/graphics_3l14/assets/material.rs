@@ -32,7 +32,7 @@ impl Asset for Material
 {
     type StructuredData = MaterialFile;
     type DebugData = ();
-    fn asset_type() -> AssetTypeId { AssetTypeId::Material }
+    const ASSET_TYPE: AssetTypeId = AssetTypeId::Material;
     fn all_dependencies_loaded(&self) -> bool
     {
         self.textures.iter().all(|t| t.is_loaded_recursive())

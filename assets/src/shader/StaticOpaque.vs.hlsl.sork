@@ -2,7 +2,7 @@ source_id = "0b6d6fbf0"
 version_hash = "p5kMKPDmCl8"
 
 [build_config]
-compile_flags = ["Debug"]
+compile_flags = []
 pass = "Opaque"
 [build_config.stage.Vertex]
-layout = ["Static"]
+format = "Static"

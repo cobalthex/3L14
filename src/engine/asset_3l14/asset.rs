@@ -24,7 +24,7 @@ pub trait Asset: Send + Sync + 'static
     // Debug data is stored in a separate file and only available with the `asset_debug_data` feature.
     type DebugData: Encode + DecodeOwned;
 
-    fn asset_type() -> AssetTypeId;
+    const ASSET_TYPE: AssetTypeId;
 
     // Have all dependencies of this asset been loaded? (always true if no dependencies)
     fn all_dependencies_loaded(&self) -> bool { true }
@@ -45,3 +45,17 @@ impl<'i, A: Asset, I: Iterator<Item=Ash<A>>> HasAssetDependencies for &'i mut I
     }
 }
 // TODO: unify dependency_loaded function names
+
+// An asset with no actual data, used for certain apps that don't want to load real data (e.g. servers do not care about graphics assets)
+// Handled specially by add_stub_lifecycler()
+pub trait StubAsset: Sync + Send + 'static
+{
+    const ASSET_TYPE: AssetTypeId;
+    #[must_use] fn new() -> Self;
+}
+impl<SA: StubAsset> Asset for SA
+{
+    type StructuredData = ();
+    type DebugData = ();
+    const ASSET_TYPE: AssetTypeId = SA::ASSET_TYPE;
+}

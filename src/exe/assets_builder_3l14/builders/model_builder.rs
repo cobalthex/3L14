@@ -7,7 +7,7 @@ use gltf::animation::util::ReadOutputs;
 use gltf::image::Format;
 use gltf::mesh::util::ReadIndices;
 use graphics_3l14::assets::{AnimFrameNumber, BoneId, Geometry, GeometryFile, GeometryMesh, IndexFormat, Material, MaterialFile, Model, ModelFile, SkeletalAnimation, Skeleton, SkeletonDebugData, Texture, TextureFile, TextureFilePixelFormat};
-use graphics_3l14::vertex_layouts::{SkinnedVertex, StaticVertex, VertexCaps, VertexLayoutBuilder};
+use graphics_3l14::vertex_formats::{SkinnedVertex, StaticVertex, VertexFormat};
 use math_3l14::{DualQuat, Ratio, Sphere, AABB};
 use metrohash::MetroHash64;
 use nab_3l14::utils::alloc_slice::alloc_slice_default;
@@ -132,22 +132,14 @@ impl ModelBuilder
 
         // TODO: split up this file
 
-        let mut vertex_layout = BitFlags::from_flag(VertexCaps::Static);
+        let mut vertex_format = VertexFormat::Static;
         let maybe_skel_info = if let Some(skin) = &in_skin
         {
-            vertex_layout |= VertexCaps::Skinned;
+            vertex_format = VertexFormat::Skinned;
             let skel = skeletons.iter().find(|s| s.gltf_index == skin.index())
                 .expect("Node has a skin not in the document skins list??");
             Some(skel)
         } else { None };
-
-        // acts as versioning for the vertex formats
-        let _vertex_layout_hash =
-        {
-            let mut hasher = MetroHash64::new();
-            VertexLayoutBuilder::from(vertex_layout).hash(&mut hasher);
-            hasher.finish()
-        };
 
         // TODO: rethink vertex parsing
 
@@ -181,30 +173,39 @@ impl ModelBuilder
             {
                 mesh_points.push(pos.into());
 
-                // todo: verify matching attrib counts?
-                let static_vertex = StaticVertex
-                {
-                    position: pos,
-                    normal: normals.as_mut().and_then(|r| r.next()).unwrap_or([0.0, 0.0, 1.0]),
-                    tex_coord: tex_coords.as_mut().and_then(|r| r.next()).unwrap_or([0.0, 0.0]),
-                    //color: colors.as_mut().and_then(|mut r| r.next()).unwrap_or([u8::MAX, u8::MAX, u8::MAX, u8::MAX]),
-                };
-                vertex_data.write_all(unsafe { val_as_u8_slice(&static_vertex) })?;
-                mesh_vertex_count += 1;
-
                 // todo: cleanup
-                if let Some(_skel_info) = &maybe_skel_info
+                match vertex_format
                 {
-                    // let iremap = |ind: [u16;4]| ind.map(|i| skel_info.remapped_bone_indices[i as usize]);
+                    VertexFormat::Static =>
+                    {
+                        // todo: verify matching attrib counts?
+                        let static_vertex = StaticVertex
+                        {
+                            position: pos,
+                            normal: normals.as_mut().and_then(|r| r.next()).unwrap_or([0.0, 0.0, 1.0]),
+                            tex_coord: tex_coords.as_mut().and_then(|r| r.next()).unwrap_or([0.0, 0.0]),
+                            //color: colors.as_mut().and_then(|mut r| r.next()).unwrap_or([u8::MAX, u8::MAX, u8::MAX, u8::MAX]),
+                        };
+                        vertex_data.write_all(unsafe { val_as_u8_slice(&static_vertex) })?;
+                    }
+                    VertexFormat::Skinned =>
+                    {
+                        // let iremap = |ind: [u16;4]| ind.map(|i| skel_info.remapped_bone_indices[i as usize]);
+                        let skinned_vertex = SkinnedVertex
+                        {
+                            position: pos,
+                            normal: normals.as_mut().and_then(|r| r.next()).unwrap_or([0.0, 0.0, 1.0]),
+                            tex_coord: tex_coords.as_mut().and_then(|r| r.next()).unwrap_or([0.0, 0.0]),
+
+                            indices: maybe_joints.as_mut().and_then(|j| j.next()/*.map(iremap)*/).unwrap_or([0, 0, 0, 0]),
+                            weights: maybe_weights.as_mut().and_then(|w| w.next()).unwrap_or([0.0, 0.0, 0.0, 0.0]),
+                        };
+                        vertex_data.write_all(unsafe { val_as_u8_slice(&skinned_vertex) })?;
+                    }
 
                     // todo: verify matching attrib counts?
-                    let skinned_vertex = SkinnedVertex
-                    {
-                        indices: maybe_joints.as_mut().and_then(|j| j.next()/*.map(iremap)*/).unwrap_or([0, 0, 0, 0]),
-                        weights: maybe_weights.as_mut().and_then(|w| w.next()).unwrap_or([0.0, 0.0, 0.0, 0.0]),
-                    };
-                    vertex_data.write_all(unsafe { val_as_u8_slice(&skinned_vertex) })?;
                 }
+                mesh_vertex_count += 1;
             }
 
             // TODO: create indices if missing (?)
@@ -358,7 +359,7 @@ impl ModelBuilder
         let geometry = outputs.add_output::<Geometry>()?
             .write_structured(&GeometryFile
             {
-                vertex_layout: vertex_layout.bits(),
+                vertex_format,
                 index_format: IndexFormat::U16,
                 vertices_buf_size: vertex_data.len() as u32,
                 indices_buf_size: index_data.len() as u32,

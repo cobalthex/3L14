@@ -351,7 +351,7 @@ impl<'f> View<'f>
             // TODO: this key needs to be generated based on pass, as shadows don't need mtls/debug mode
             let shadow_pipeline = self.pipeline_cache.get_or_create(
                 EngineRenderPass::ShadowMap,
-                geo.vertex_layout,
+                geo.vertex_format,
                 None,
                 self.debug_mode,
             );
@@ -370,7 +370,7 @@ impl<'f> View<'f>
 
             let opaque_pipeline = self.pipeline_cache.get_or_create(
                 EngineRenderPass::Opaque,
-                geo.vertex_layout,
+                geo.vertex_format,
                 Some(mtl.class),
                 self.debug_mode);
 

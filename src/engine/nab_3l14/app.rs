@@ -190,9 +190,11 @@ impl<TCliArgs: CliArgs> Drop for AppRun<TCliArgs>
 {
     fn drop(&mut self)
     {
-        log::info!(target: "app",
-            "Exiting {} (PID {}) at {} with reason {:?}",
+        let app_crate = crate_name::<TCliArgs>();
+        log::info!(target: app_crate,
+            "=== Exited {} v{} (PID {}) at {} with reason {:?} ===",
             self.app_name,
+            self.version_str,
             self.pid,
             chrono::Local::now(),
             self.get_exit_reason());

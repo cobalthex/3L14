@@ -2,6 +2,8 @@ use super::*;
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::error::Error;
+use std::marker::PhantomData;
+use std::mem;
 use debug_3l14::debug_gui::DebugGui;
 use nab_3l14::utils::{varint, ShortTypeName};
 
@@ -182,11 +184,34 @@ impl<A: Asset, L: AssetLifecycler<Asset=A>> UntypedAssetLifecycler for L
     }
 }
 
+struct StubLifecycler<SA: StubAsset>(PhantomData<SA>);
+impl<SA: StubAsset> UntypedAssetLifecycler for StubLifecycler<SA>
+{
+    fn load_untyped(
+        &self,
+        _assets: &Assets,
+        untyped_handle: ErasedAsh,
+        _input: &[u8],
+        #[cfg(feature = "asset_debug_data")] _maybe_debug_input: Option<&[u8]>)
+    {
+        let retyped = unsafe { Ash::<SA>::attach_from(untyped_handle) };
+
+        #[cfg(feature = "asset_debug_data")]
+        retyped.inner().store_debug_data(None);
+
+        let asset = AssetData::Available(SA::new());
+        retyped.store_data(Some(asset));
+    }
+    fn error_untyped(&self, _untyped_handle: ErasedAsh, _error: AssetLoadError) { }
+    fn display_name(&self) -> &str { Self::short_type_name() }
+}
+
 pub(super) struct RegisteredAssetLifecycler
 {
     pub lifecycler: Box<dyn UntypedAssetLifecycler>,
     #[cfg(debug_assertions)]
     pub type_id: TypeId,
+    pub is_stub: bool,
     pub debug_gui_fn: Option<usize>,
 }
 
@@ -199,6 +224,7 @@ pub(super) struct RegisteredAssetType
     pub dealloc_fn: fn(ErasedAsh),
 }
 
+#[must_use]
 #[derive(Default)]
 pub struct AssetLifecyclers
 {
@@ -211,14 +237,15 @@ impl AssetLifecyclers
     pub fn add_lifecycler<A: Asset, L: AssetLifecycler<Asset=A> + UntypedAssetLifecycler + 'static>(mut self, lifecycler: L) -> Self
     {
         // warn/fail on duplicates?
-        self.lifecyclers.insert(A::asset_type(), RegisteredAssetLifecycler
+        self.lifecyclers.insert(A::ASSET_TYPE, RegisteredAssetLifecycler
         {
             lifecycler: Box::new(lifecycler),
             #[cfg(debug_assertions)]
             type_id: TypeId::of::<L>(),
+            is_stub: false,
             debug_gui_fn: None,
         });
-        self.registered_asset_types.insert(A::asset_type(), RegisteredAssetType
+        self.registered_asset_types.insert(A::ASSET_TYPE, RegisteredAssetType
         {
             type_id: TypeId::of::<A>(),
             #[cfg(debug_assertions)]
@@ -239,19 +266,45 @@ impl AssetLifecyclers
         }
 
         // warn/fail on duplicates?
-        self.lifecyclers.insert(A::asset_type(), RegisteredAssetLifecycler
+        self.lifecyclers.insert(A::ASSET_TYPE, RegisteredAssetLifecycler
         {
             lifecycler: Box::new(lifecycler),
             #[cfg(debug_assertions)]
             type_id: TypeId::of::<L>(),
+            is_stub: false,
             debug_gui_fn: Some(debug_gui_fn::<L> as *const () as usize),
         });
-        self.registered_asset_types.insert(A::asset_type(), RegisteredAssetType
+        self.registered_asset_types.insert(A::ASSET_TYPE, RegisteredAssetType
         {
             type_id: TypeId::of::<A>(),
             #[cfg(debug_assertions)]
             type_name: A::short_type_name(),
             dealloc_fn: |h| unsafe { h.dealloc::<A>() },
+        });
+        self
+    }
+
+    // Create a lifecycler for loading assets with no data.
+    // This can be used to create and load stub assets (e.g. a Texture asset that has no data)
+    pub fn add_stub_lifecycler<SA: StubAsset>(mut self) -> Self
+    {
+        // TODO: add flag that asset storage can use to not do any real work?
+
+        // warn/fail on duplicates?
+        self.lifecyclers.insert(SA::ASSET_TYPE, RegisteredAssetLifecycler
+        {
+            lifecycler: Box::new(StubLifecycler::<SA>( PhantomData)),
+            #[cfg(debug_assertions)]
+            type_id: TypeId::of::<StubLifecycler<SA>>(),
+            is_stub: true,
+            debug_gui_fn: None,
+        });
+        self.registered_asset_types.insert(SA::ASSET_TYPE, RegisteredAssetType
+        {
+            type_id: TypeId::of::<SA>(),
+            #[cfg(debug_assertions)]
+            type_name: SA::short_type_name(),
+            dealloc_fn: |h| unsafe { h.dealloc::<SA>() },
         });
         self
     }
