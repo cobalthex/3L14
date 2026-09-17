@@ -1,7 +1,8 @@
 use bitcode::{Decode, Encode};
-use math_3l14::AABB;
+use math_3l14::{Frustum, AABB};
 use nab_3l14::debug_panic;
 use std::fmt::{Debug, Formatter};
+use std::iter::Flatten;
 use smallvec::{smallvec, SmallVec};
 use crate::NodeIndex;
 
@@ -502,17 +503,6 @@ impl AabbTree
         }
     }
 
-    #[must_use]
-    pub fn iter_overlapping(&self, aabb: AABB) -> AabbTreeIterOverlapping<'_>
-    {
-        AabbTreeIterOverlapping
-        {
-            tree: &self,
-            aabb,
-            stack: if self.root_index.is_some() { smallvec![self.root_index.0] } else { SmallVec::new() },
-        }
-    }
-
     // Re-order the tree for more efficient traversal
     pub fn repack(&mut self)
     {
@@ -646,6 +636,36 @@ pub enum ValidationError
     BoundsDontUnionChildren { bounds: AABB, children_bounds: AABB },
 }
 
+trait IterOverlapping<R>
+{
+    // Iterative over items overlapping the test region, returning an item
+    fn iter_overlapping(&self, region: R) -> impl Iterator<Item=(AABB, u32)>;
+}
+impl IterOverlapping<AABB> for AabbTree
+{
+    fn iter_overlapping(&self, region: AABB) -> impl Iterator<Item=(AABB, u32)>
+    {
+        AabbTreeIterOverlappingAabb
+        {
+            tree: self,
+            aabb: region,
+            stack: if self.root_index.is_some() { smallvec![self.root_index.0] } else { SmallVec::new() },
+        }
+    }
+}
+impl IterOverlapping<Frustum> for AabbTree
+{
+    fn iter_overlapping(&self, region: Frustum) -> impl Iterator<Item=(AABB, u32)>
+    {
+        AabbTreeIterOverlappingFrustum
+        {
+            tree: self,
+            frustum: region,
+            stack: if self.root_index.is_some() { smallvec![(self.root_index.0, 0b00111111)] } else { SmallVec::new() },
+        }.flatten()
+    }
+}
+
 impl Debug for AabbTree
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
@@ -689,13 +709,13 @@ impl Debug for AabbTree
     }
 }
 
-pub struct AabbTreeIterOverlapping<'t>
+pub struct AabbTreeIterOverlappingAabb<'t>
 {
     tree: &'t AabbTree,
     aabb: AABB,
     stack: SmallVec<[u32; 16]>, // TODO: determine a good size based on usage?
 }
-impl<'t> Iterator for AabbTreeIterOverlapping<'t>
+impl<'t> Iterator for AabbTreeIterOverlappingAabb<'t>
 {
     type Item = (AABB, u32);
     fn next(&mut self) -> Option<Self::Item>
@@ -723,10 +743,73 @@ impl<'t> Iterator for AabbTreeIterOverlapping<'t>
     }
 }
 
+struct AabbTreeIterLeaves<'t>
+{
+    tree: &'t AabbTree,
+    stack: SmallVec<[u32; 16]>,
+}
+impl<'t> Iterator for AabbTreeIterLeaves<'t>
+{
+    type Item = (AABB, u32);
+    fn next(&mut self) -> Option<Self::Item>
+    {
+        while let Some(leaf_index) = self.stack.pop()
+        {
+            let node = self.tree.node(leaf_index);
+            if node.is_leaf()
+            {
+                return Some((node.bounds, node.right_or_userdata));
+            }
+            else
+            {
+                self.stack.push(node.right_or_userdata);
+                self.stack.push(node.left_or_nextfree);
+            }
+        }
+
+        None
+    }
+}
+
+struct AabbTreeIterOverlappingFrustum<'t>
+{
+    tree: &'t AabbTree,
+    frustum: Frustum,
+    stack: SmallVec<[(u32, u8); 16]>, // TODO: determine a good size based on usage?
+}
+impl<'t> Iterator for AabbTreeIterOverlappingFrustum<'t>
+{
+    type Item = AabbTreeIterLeaves<'t>;
+    fn next(&mut self) -> Option<Self::Item>
+    {
+        while let Some((top_index, top_mask)) = self.stack.pop()
+        {
+            let node = self.tree.node(top_index);
+            let Some(new_mask) = self.frustum.test_masked(node.bounds, top_mask) else { continue; };
+
+            if new_mask == 0 ||
+                node.is_leaf()
+            {
+                return Some(AabbTreeIterLeaves
+                {
+                    tree: self.tree,
+                    stack: smallvec![top_index],
+                });
+            }
+
+            self.stack.push((node.right_or_userdata, new_mask));
+            self.stack.push((node.left_or_nextfree, new_mask));
+        }
+
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
-    use super::*;
+    use std::assert_matches;
+use super::*;
     use glam::Vec3;
 
     #[test]
@@ -948,4 +1031,67 @@ mod tests
         // todo: test all invalid states
     }
 
+    #[test]
+    pub fn iter_leaves()
+    {
+        let mut tree = AabbTree::new();
+
+        let a = AABB::new(Vec3::splat(1.0), Vec3::splat(2.0));
+        tree.insert(a, 0);
+
+        let b = AABB::new(Vec3::splat(10.0), Vec3::splat(15.0));
+        tree.insert(b, 1);
+
+        let c = AABB::new(Vec3::splat(12.0), Vec3::splat(13.0));
+        tree.insert(c, 2);
+
+        let d = AABB::new(Vec3::splat(3.0), Vec3::splat(4.0));
+        tree.insert(d, 3);
+
+        let e = AABB::new(Vec3::splat(3.5), Vec3::splat(3.8));
+        tree.insert(e, 4);
+
+        let iter = AabbTreeIterLeaves
+        {
+             tree: &tree,
+             stack: smallvec![tree.root_index.0],
+        };
+        assert_matches!(
+            iter.collect::<Box<_>>().as_ref(),
+            &[
+                (a, 0),
+                (d, 3),
+                (e, 4),
+                (b, 1),
+                (c, 2),
+            ]);
+    }
+
+    #[test]
+    pub fn iter_overlapping()
+    {
+        let mut tree = AabbTree::new();
+
+        let a = AABB::new(Vec3::new(1.0, 1.0, 0.0), Vec3::new(2.0, 2.0, 1.0));
+        tree.insert(a, 0);
+
+        let b = AABB::new(Vec3::new(1.0, -1.0, 0.0), Vec3::new(2.0, -2.0, 1.0));
+        tree.insert(b, 1);
+
+        let c = AABB::new(Vec3::new(-1.0, 1.0, 0.0), Vec3::new(-2.0, 2.0, 1.0));
+        tree.insert(c, 2);
+
+        let d = AABB::new(Vec3::new(-1.0, -1.0, 0.0), Vec3::new(-2.0, -2.0, 1.0));
+        tree.insert(d, 3);
+
+        println!("{:?}", tree);
+
+        let iter = tree.iter_overlapping(AABB::new(Vec3::new(-1.0, 0.0, 0.0), Vec3::new(2.0, 2.0, 1.0)));
+        assert_matches!(
+            iter.collect::<Box<_>>().as_ref(),
+            &[
+                (a, 0),
+                (c, 2),
+            ]);
+    }
 }

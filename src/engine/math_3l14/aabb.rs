@@ -1,6 +1,6 @@
 use bitcode::{Decode, Encode};
-use glam::Vec3;
-use crate::{Intersection, Intersects, Sphere};
+use glam::{Vec3, Vec3A};
+use crate::{Facing, Frustum, GetFacing, Intersection, Intersects, Plane, Sphere};
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Encode, Decode)]
 pub struct AABB
@@ -82,6 +82,21 @@ impl AABB
         self.min.cmple(rhs.max).all() &&
         self.max.cmpge(rhs.min).all()
     }
+
+    /// Classification of a box against a single plane using the p-vertex trick.
+    /// Returns signed distance of the near-face-to-plane extents:
+    ///   > 0: fully inside (positive half-space)
+    ///   < 0: fully outside
+    ///     =: overlap otherwise (straddling)
+    /// and radius, the projected half-extent onto the plane normal
+    #[inline] #[must_use]
+    pub fn test_plane(&self, plane: &Plane) -> (f32, f32)
+    {
+        // todo: get_facing() instead ?
+        let signed_dist = plane.signed_distance_to(Vec3A::from(self.centroid()));
+        let radius = Vec3A::from(self.half_size()).dot(plane.normal().abs());
+        (signed_dist, radius)
+    }
 }
 impl Intersects<AABB> for AABB
 {
@@ -97,6 +112,26 @@ impl Intersects<Sphere> for AABB
         //let min_t = f32::INFINITY;
         //let max_t = f32::NEG_INFINITY;
         todo!()
+    }
+}
+impl GetFacing<Plane> for AABB
+{
+    // TODO: test
+    fn get_facing(&self, other: Plane) -> Facing
+    {
+        let (dist, radius) = self.test_plane( &other);
+        if dist + radius < 0.0
+        {
+            Facing::Behind
+        }
+        else if dist - radius >= 0.0
+        {
+            Facing::InFront
+        }
+        else
+        {
+            Facing::On
+        }
     }
 }
 // TODO: raycast

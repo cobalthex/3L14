@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Formatter};
 use glam::{Mat4, Vec3};
-use crate::{Facing, GetFacing, Intersection, Intersects, IsOnOrInside, Plane, Sphere};
+use crate::{Facing, GetFacing, Intersection, Intersects, IsOnOrInside, Plane, Sphere, AABB};
 use nab_3l14::utils::ShortTypeName;
 
 #[repr(u8)]
@@ -46,12 +46,12 @@ impl Frustum
 
     #[inline] #[must_use] pub fn get_side(&self) -> Plane { self.planes[FrustumSide::Near as usize] }
 
-    #[inline] #[must_use] pub fn left(&self) -> Plane { self.planes[FrustumSide::Left as u8] }
-    #[inline] #[must_use] pub fn right(&self) -> Plane { self.planes[FrustumSide::Right as u8] }
-    #[inline] #[must_use] pub fn top(&self) -> Plane { self.planes[FrustumSide::Top as u8] }
-    #[inline] #[must_use] pub fn bottom(&self) -> Plane { self.planes[FrustumSide::Bottom as u8] }
-    #[inline] #[must_use] pub fn near(&self) -> Plane { self.planes[FrustumSide::Near as u8] }
-    #[inline] #[must_use] pub fn far(&self) -> Plane { self.planes[FrustumSide::Far as u8] }
+    #[inline] #[must_use] pub fn left(&self) -> Plane { self.planes[FrustumSide::Left as usize] }
+    #[inline] #[must_use] pub fn right(&self) -> Plane { self.planes[FrustumSide::Right as usize] }
+    #[inline] #[must_use] pub fn top(&self) -> Plane { self.planes[FrustumSide::Top as usize] }
+    #[inline] #[must_use] pub fn bottom(&self) -> Plane { self.planes[FrustumSide::Bottom as usize] }
+    #[inline] #[must_use] pub fn near(&self) -> Plane { self.planes[FrustumSide::Near as usize] }
+    #[inline] #[must_use] pub fn far(&self) -> Plane { self.planes[FrustumSide::Far as usize] }
 
     #[must_use]
     pub fn get_corners(projected_mtx: &Mat4) -> [Vec3; 8]
@@ -68,6 +68,36 @@ impl Frustum
             mtx.transform_vector3(Vec3::new(-1.0,  1.0,  1.0)), // far top left
             mtx.transform_vector3(Vec3::new( 1.0,  1.0,  1.0)), // far top right
         ]
+    }
+
+    // Test an AABB against all individual planes of this frustum
+    // Returns a mask of each plane and how it intersects with the frustum, 0 being inside, 1 being overlapping
+    // Returns none if fully outside any of the planes
+    // For hierarchical testing, only bits set to 1 need to be futher tested
+    #[inline] #[must_use]
+    pub fn test_masked(&self, aabb: AABB, mut mask: u8) -> Option<u8>
+    {
+        for (i, plane) in self.planes.iter().enumerate()
+        {
+            let testbit = 1 << i;
+            if mask & testbit == 0
+            {
+                continue; // already inside
+            }
+
+            let (signed_dist, radius) = aabb.test_plane(plane);
+            if signed_dist + radius < 0.0
+            {
+                // could probably just return all bits set (top 2 aren't used by mask)
+                return None; // outside; cull the subtree
+            }
+            if signed_dist - radius >= 0.0
+            {
+                mask &= !testbit; // fully inside, no need to retest
+            }
+            // else: plane is straddling an edge
+        }
+        Some(mask)
     }
 }
 impl Debug for Frustum
@@ -126,7 +156,7 @@ impl IsOnOrInside<Sphere> for Frustum
 #[cfg(test)]
 mod tests
 {
-    use glam::Vec3;
+    use glam::{Vec3, Vec3A};
     use crate::Angle;
     use super::*;
 
@@ -145,12 +175,12 @@ mod tests
 
         // TODO: these values are wrong
         let expected_planes = [
-            Plane::new(Vec3::new(recip_sqrt2, 0.0, recip_sqrt2), 0.0),
-            Plane::new(Vec3::new(-recip_sqrt2, 0.0, recip_sqrt2), 0.0),
-            Plane::new(Vec3::new(0.0, -recip_sqrt2, recip_sqrt2), 0.0),
-            Plane::new(Vec3::new(0.0, recip_sqrt2, recip_sqrt2), 0.0),
-            Plane::new(Vec3::new(0.0, 0.0, 1.0), 1.0),
-            Plane::new(Vec3::new(0.0, 0.0, -1.0), -10.0), // TODO: This seems wrong
+            Plane::new(Vec3A::new(recip_sqrt2, 0.0, recip_sqrt2), 0.0),
+            Plane::new(Vec3A::new(-recip_sqrt2, 0.0, recip_sqrt2), 0.0),
+            Plane::new(Vec3A::new(0.0, -recip_sqrt2, recip_sqrt2), 0.0),
+            Plane::new(Vec3A::new(0.0, recip_sqrt2, recip_sqrt2), 0.0),
+            Plane::new(Vec3A::new(0.0, 0.0, 1.0), 1.0),
+            Plane::new(Vec3A::new(0.0, 0.0, -1.0), -10.0), // TODO: This seems wrong
     ];
 
         for (i, plane) in frustum.planes.iter().enumerate() {
