@@ -580,7 +580,7 @@ impl<'output, A: Asset> PrimaryOutput<'output, A>
 
     pub fn add_and_read_dependency<D: Asset>(&mut self, dependency: AssetKey) -> Result<D::StructuredData, BuildError>
     {
-        assert_eq!(dependency.asset_type(), D::asset_type());
+        assert_eq!(dependency.asset_type(), D::ASSET_TYPE);
 
         let builder = self.0.outputs.assets_builder;
         let asset_meta = match builder.query_asset(dependency)
@@ -753,12 +753,12 @@ impl<'build> BuildOutputs<'build>
         let derived_id: AssetKeyDerivedId =
         {
             let entry = self.derived_ids
-                .entry(A::asset_type())
+                .entry(A::ASSET_TYPE)
                 .or_insert(AssetKeyDerivedId::default());
             entry.next().ok_or(BuildError::TooManyDerivedIDs)?
         };
 
-        let asset_key = AssetKey::unique(A::asset_type(), derived_id, self.source_id);
+        let asset_key = AssetKey::unique(A::ASSET_TYPE, derived_id, self.source_id);
         self.add_asset(asset_key, BuildRule::ForceBuildAll)
     }
 
@@ -767,7 +767,7 @@ impl<'build> BuildOutputs<'build>
     pub fn add_synthetic<A: Asset>(&mut self, asset_hash: AssetKeySynthHash)
                                    -> Result<PrimaryOutput<'_, A>, BuildError>
     {
-        let asset_key = AssetKey::synthetic(A::asset_type(), asset_hash);
+        let asset_key = AssetKey::synthetic(A::ASSET_TYPE, asset_hash);
         self.add_asset(asset_key, self.build_rule)
     }
 

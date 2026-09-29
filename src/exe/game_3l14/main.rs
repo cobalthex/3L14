@@ -25,7 +25,7 @@ use sdl2::messagebox::MessageBoxFlag;
 use std::ops::Deref;
 use std::time::Duration;
 use wgpu::CommandEncoderDescriptor;
-use graphics_3l14::map_render::MapRenderer;
+use graphics_3l14::map_render::MapRender;
 use latch_3l14::{Circuit, CircuitLifecycler, Runtime};
 use world_3l14::assets::map::{Map, MapLifecycler};
 
@@ -189,7 +189,7 @@ fn main() -> ExitReason
             if render_map.is_none() &&
                 let AssetSnapshot::Available(map) = test_map.data()
             {
-                render_map = Some(MapRenderer::new(&assets, map));
+                render_map = Some(MapRender::new(&assets, map));
             }
 
             puffin::GlobalProfiler::lock().new_frame();
@@ -350,7 +350,7 @@ fn main() -> ExitReason
                     for plane in Frustum::from_matrix(&cam.matrix()).planes
                     {
                         debug_draw.draw_polyline(&plane.into_quad(4.0, 4.0), true, Rgba::from_hsla(30.0, 0.7, light, 1.0));
-                        debug_draw.draw_arrow(plane.origin(), plane.origin() + plane.normal() * 2.0, Vec3::Y, colors::MAGENTA);
+                        debug_draw.draw_arrow(plane.origin().into(), (plane.origin() + plane.normal() * 2.0).into(), Vec3::Y, colors::MAGENTA);
                         light += 1.0 / 6.0;
                     }
                 }
@@ -366,12 +366,9 @@ fn main() -> ExitReason
                         let view = &mut views[app_frame_number.0 as usize % views.len()];
                         view.begin(frame_time.total_runtime, &camera, clip_camera.as_ref().unwrap_or(&camera), DebugMode::None);
 
-                        let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(25.0, 0.0, 0.0));
+                        render_map.as_ref().map(|rm| view.draw_map(rm));
 
-                        if let Some(render_map) = &render_map
-                        {
-                            render_map.render(view);
-                        }
+                        let mut obj_world = Mat4::from_rotation_translation(obj_rot, Vec3::new(25.0, 0.0, 0.0));
 
                         if let AssetSnapshot::Available(model) = test_model.data()
                         {
@@ -392,75 +389,75 @@ fn main() -> ExitReason
                                 // }
                             }
 
-                            if let Some(skel_handle) = &model.skeleton
-                            {
-                                puffin::profile_scope!("animation");
-
-                                let skel = skel_handle.data().unwrap();
-
-                                let mut poser = SkeletonPoser::new(&skel);
-
-                                let time = frame_time.total_runtime.as_nanos() as u64;
-                                // time = Ratio::new(3, 10).scale(time);
-                                if let AssetSnapshot::Available(anim) = test_base_anim.data()
-                                {
-                                    poser.blend(&anim, PoseBlendMode::Replace, TickCount(time), true);
-                                }
-                                if let AssetSnapshot::Available(anim) = test_overlay_anim.data()
-                                {
-                                    egui::Window::new("anim")
-                                        .show(renderer.debug_gui(), |ui|
-                                            {
-                                                egui::Slider::new(&mut test_f32, 0.0..=1.0)
-                                                    .ui(ui);
-                                            });
-                                    poser.blend(&anim, PoseBlendMode::Additive(test_f32), TickCount(time), true);
-                                }
-
-                                let posed_skel = poser.build_poses();
-
-                                if let Some(lifecycler) = assets.get_lifecycler::<SkeletonLifecycler>()
-                                {
-                                    if lifecycler.display_bones()
-                                    {
-                                        let maybe_names = skel_handle.debug_data();
-
-                                        for i in 0..posed_skel.len()
-                                        {
-                                            let parent = skel.parent_indices[i];
-                                            if parent >= 0
-                                            {
-                                                debug_draw.draw_polyline(&[
-                                                    obj_world.transform_point3(posed_skel[i].translation()),
-                                                    obj_world.transform_point3(posed_skel[parent as usize].translation()),
-                                                ], false, colors::TOMATO);
-                                            }
-                                            debug_draw.draw_cross3(obj_world * Mat4::from(posed_skel[i]), colors::CHARTREUSE);
-                                            // TODO: SkeletonLifecycler.display_bone_names()
-                                            // TODO
-                                            match &maybe_names
-                                            {
-                                                None =>
-                                                {
-                                                    debug_draw.draw_text(&format!("{i}:{:?}", skel.bone_ids[i]), obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
-                                                }
-                                                Some(names) =>
-                                                {
-                                                    debug_draw.draw_text(&names.bone_names[i], obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                let posed = poser.finalize();
-                                 //view.draw_model_static(model, obj_world);
-                                view.draw_model_skinned(model, obj_world, &posed);
-                            }
-                            else
-                            {
-                                view.draw_model_static(model, obj_world);
-                            }
+                            // if let Some(skel_handle) = &model.skeleton
+                            // {
+                            //     puffin::profile_scope!("animation");
+                            //
+                            //     let skel = skel_handle.data().unwrap();
+                            //
+                            //     let mut poser = SkeletonPoser::new(&skel);
+                            //
+                            //     let time = frame_time.total_runtime.as_nanos() as u64;
+                            //     // time = Ratio::new(3, 10).scale(time);
+                            //     if let AssetSnapshot::Available(anim) = test_base_anim.data()
+                            //     {
+                            //         poser.blend(&anim, PoseBlendMode::Replace, TickCount(time), true);
+                            //     }
+                            //     if let AssetSnapshot::Available(anim) = test_overlay_anim.data()
+                            //     {
+                            //         egui::Window::new("anim")
+                            //             .show(renderer.debug_gui(), |ui|
+                            //                 {
+                            //                     egui::Slider::new(&mut test_f32, 0.0..=1.0)
+                            //                         .ui(ui);
+                            //                 });
+                            //         poser.blend(&anim, PoseBlendMode::Additive(test_f32), TickCount(time), true);
+                            //     }
+                            //
+                            //     let posed_skel = poser.build_poses();
+                            //
+                            //     if let Some(lifecycler) = assets.get_lifecycler::<SkeletonLifecycler>()
+                            //     {
+                            //         if lifecycler.display_bones()
+                            //         {
+                            //             let maybe_names = skel_handle.debug_data();
+                            //
+                            //             for i in 0..posed_skel.len()
+                            //             {
+                            //                 let parent = skel.parent_indices[i];
+                            //                 if parent >= 0
+                            //                 {
+                            //                     debug_draw.draw_polyline(&[
+                            //                         obj_world.transform_point3(posed_skel[i].translation()),
+                            //                         obj_world.transform_point3(posed_skel[parent as usize].translation()),
+                            //                     ], false, colors::TOMATO);
+                            //                 }
+                            //                 debug_draw.draw_cross3(obj_world * Mat4::from(posed_skel[i]), colors::CHARTREUSE);
+                            //                 // TODO: SkeletonLifecycler.display_bone_names()
+                            //                 // TODO
+                            //                 match &maybe_names
+                            //                 {
+                            //                     None =>
+                            //                     {
+                            //                         debug_draw.draw_text(&format!("{i}:{:?}", skel.bone_ids[i]), obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
+                            //                     }
+                            //                     Some(names) =>
+                            //                     {
+                            //                         debug_draw.draw_text(&names.bone_names[i], obj_world.transform_point3(posed_skel[i].translation()), colors::WHITE);
+                            //                     }
+                            //                 }
+                            //             }
+                            //         }
+                            //     }
+                            //
+                            //     let posed = poser.finalize();
+                            //      //view.draw_model_static(model, obj_world);
+                            //     view.draw_model_skinned(model, obj_world, &posed);
+                            // }
+                            // else
+                            // {
+                            //     view.draw_model_static(model, obj_world);
+                            // }
                         }
 
                         view.submit(&mut scene_pass);

@@ -1,5 +1,6 @@
 use syn::Attribute;
 
+#[allow(unused)]
 pub fn has_derive(which_derive: &str, attrs: &Vec<Attribute>) -> bool
 {
     attrs.iter().any(|a|

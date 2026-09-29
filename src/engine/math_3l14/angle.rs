@@ -4,6 +4,11 @@ use std::ops::{Neg, Rem};
 use bitcode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
+#[inline] #[must_use]
+pub fn degrees(degrees: f32) -> Angle { Angle::from_degrees(degrees) }
+#[inline] #[must_use]
+pub fn radians(radians: f32) -> Angle { Angle::from_radians(radians) }
+
 // Angle, stored as radians internally
 #[derive(Default, Copy, Clone, PartialEq, PartialOrd, Encode, Decode, Serialize, Deserialize)]
 pub struct Angle(f32);

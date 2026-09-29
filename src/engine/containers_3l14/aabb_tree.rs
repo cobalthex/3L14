@@ -2,7 +2,6 @@ use bitcode::{Decode, Encode};
 use math_3l14::{Frustum, AABB};
 use nab_3l14::debug_panic;
 use std::fmt::{Debug, Formatter};
-use std::iter::Flatten;
 use smallvec::{smallvec, SmallVec};
 use crate::NodeIndex;
 
@@ -386,6 +385,7 @@ impl AabbTree
 
         // AABB parameter is the new bounds of the subtree after the rotation.
         #[derive(Copy, Clone)]
+        #[allow(non_camel_case_types)]
         enum Rotation
         {
             None,
@@ -636,7 +636,7 @@ pub enum ValidationError
     BoundsDontUnionChildren { bounds: AABB, children_bounds: AABB },
 }
 
-trait IterOverlapping<R>
+pub trait IterOverlapping<R>
 {
     // Iterative over items overlapping the test region, returning an item
     fn iter_overlapping(&self, region: R) -> impl Iterator<Item=(AABB, u32)>;
@@ -727,6 +727,8 @@ impl<'t> Iterator for AabbTreeIterOverlappingAabb<'t>
             {
                 continue;
             }
+
+            // TODO: if total containment, sub-iter to IterLeaves
 
             if node.is_leaf()
             {
@@ -1068,30 +1070,90 @@ use super::*;
     }
 
     #[test]
-    pub fn iter_overlapping()
+    pub fn iter_overlapping_aabb()
     {
         let mut tree = AabbTree::new();
 
-        let a = AABB::new(Vec3::new(1.0, 1.0, 0.0), Vec3::new(2.0, 2.0, 1.0));
+        let a = AABB::from_points(Vec3::new(1.0, 1.0, 0.0), Vec3::new(2.0, 2.0, 1.0));
         tree.insert(a, 0);
 
-        let b = AABB::new(Vec3::new(1.0, -1.0, 0.0), Vec3::new(2.0, -2.0, 1.0));
+        let b = AABB::from_points(Vec3::new(1.0, -1.0, 0.0), Vec3::new(2.0, -2.0, 1.0));
         tree.insert(b, 1);
 
-        let c = AABB::new(Vec3::new(-1.0, 1.0, 0.0), Vec3::new(-2.0, 2.0, 1.0));
+        let c = AABB::from_points(Vec3::new(-1.0, 1.0, 0.0), Vec3::new(-2.0, 2.0, 1.0));
         tree.insert(c, 2);
 
-        let d = AABB::new(Vec3::new(-1.0, -1.0, 0.0), Vec3::new(-2.0, -2.0, 1.0));
+        let d = AABB::from_points(Vec3::new(-1.0, -1.0, 0.0), Vec3::new(-2.0, -2.0, 1.0));
         tree.insert(d, 3);
 
-        println!("{:?}", tree);
+        let iter = tree.iter_overlapping(AABB::from_points(Vec3::new(-4.0, 0.0, 0.0), Vec3::new(-3.0, 1.0, 1.0)));
+        assert_matches!(
+            iter.collect::<Box<_>>().as_ref(),
+            &[
+            ]);
 
-        let iter = tree.iter_overlapping(AABB::new(Vec3::new(-1.0, 0.0, 0.0), Vec3::new(2.0, 2.0, 1.0)));
+        let iter = tree.iter_overlapping(AABB::from_points(Vec3::new(-2.0, 0.0, 0.0), Vec3::new(2.0, 2.0, 1.0)));
         assert_matches!(
             iter.collect::<Box<_>>().as_ref(),
             &[
                 (a, 0),
                 (c, 2),
+            ]);
+
+        let iter = tree.iter_overlapping(AABB::from_points(Vec3::new(-2.0, 0.0, 0.0), Vec3::new(-3.0, -3.0, 1.0)));
+        assert_matches!(
+            iter.collect::<Box<_>>().as_ref(),
+            &[
+                (d, 3)
+            ]);
+
+        let iter = tree.iter_overlapping(AABB::from_points(Vec3::new(-1.0, 0.0, 0.0), Vec3::new(2.0, 2.0, 1.0)));
+        assert_matches!(
+            iter.collect::<Box<_>>().as_ref(),
+            &[
+                (a, 0),
+                (c, 2),
+            ]);
+
+        let iter = tree.iter_overlapping(AABB::from_points(Vec3::new(-2.0, -2.0, 0.0), Vec3::new(2.0, 2.0, 1.0)));
+        assert_matches!(
+            iter.collect::<Box<_>>().as_ref(),
+            &[
+                (a, 0),
+                (b, 1),
+                (c, 2),
+                (d, 3),
+            ]);
+    }
+
+    #[test]
+    pub fn iter_overlapping_frustum()
+    {
+        let mut tree = AabbTree::new();
+
+        let a = AABB::from_points(Vec3::new(1.0, 1.0, 0.0), Vec3::new(2.0, 2.0, 1.0));
+        tree.insert(a, 0);
+
+        let b = AABB::from_points(Vec3::new(1.0, -1.0, 0.0), Vec3::new(2.0, -2.0, 1.0));
+        tree.insert(b, 1);
+
+        let c = AABB::from_points(Vec3::new(-1.0, 1.0, 0.0), Vec3::new(-2.0, 2.0, 1.0));
+        tree.insert(c, 2);
+
+        let d = AABB::from_points(Vec3::new(-1.0, -1.0, 0.0), Vec3::new(-2.0, -2.0, 1.0));
+        tree.insert(d, 3);
+
+        let view = glam::camera::lh::view::look_to_mat4(Vec3::new(0., 0., -0.1), Vec3::Z, Vec3::Y);
+        let proj = glam::camera::lh::proj::directx::orthographic(0.0, 2.0, -2.0, 2.0, 0.1, 10.0);
+
+        let view_proj = view * proj;
+
+        let iter = tree.iter_overlapping(Frustum::from_matrix(&(proj * view)));
+        assert_matches!(
+            iter.collect::<Box<_>>().as_ref(),
+            &[
+                (a, 0),
+                (b, 1),
             ]);
     }
 }

@@ -28,11 +28,11 @@ impl CameraProjection
         {
             CameraProjection::Perspective { fov, aspect_ratio } =>
             {
-                Mat4::perspective_lh(fov.to_radians(), *aspect_ratio, near_clip, far_clip)
+                glam::camera::lh::proj::directx::perspective(fov.to_radians(), *aspect_ratio, near_clip, far_clip)
             },
             CameraProjection::Orthographic { left, top, right, bottom } =>
             {
-                Mat4::orthographic_lh(*left, *right, *bottom, *top, near_clip, far_clip)
+                glam::camera::lh::proj::directx::orthographic(*left, *right, *bottom, *top, near_clip, far_clip)
             },
         }
     }

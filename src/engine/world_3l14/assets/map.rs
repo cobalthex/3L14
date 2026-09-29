@@ -25,6 +25,7 @@ pub enum StaticClassification
 pub struct StaticPlacement<T>
 {
     pub object: T,
+    // compress?
     pub position: Vec3,
     pub orientation: Quat,
     pub scale: Vec3,

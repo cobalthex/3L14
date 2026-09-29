@@ -4,6 +4,7 @@ use crate::{Facing, GetFacing, Intersection, Intersects, IsOnOrInside, Plane, Sp
 use nab_3l14::utils::ShortTypeName;
 
 #[repr(u8)]
+#[derive(Debug)]
 pub enum FrustumSide // CuboidSide ?
 {
     Left = 0,
@@ -32,14 +33,14 @@ impl Frustum
         let rows = col_major_mtx.transpose(); // glam stores in column-major
         let planes =
         [
-            // not sure why all of these need to be mirrored...
-            Plane::from(rows.w_axis + rows.x_axis).negated_distance().normalized(), // left
-            Plane::from(rows.w_axis - rows.x_axis).negated_distance().normalized(), // right
-            Plane::from(rows.w_axis - rows.y_axis).negated_distance().normalized(), // top
-            Plane::from(rows.w_axis + rows.y_axis).negated_distance().normalized(), // bottom
+            // these assume left-handed convention
+            Plane::from(rows.w_axis - rows.x_axis).normalized(), // left
+            Plane::from(rows.w_axis + rows.x_axis).normalized(), // right
+            Plane::from(rows.w_axis - rows.y_axis).normalized(), // top
+            Plane::from(rows.w_axis + rows.y_axis).normalized(), // bottom
 
-            Plane::from(rows.z_axis).negated_distance().normalized(), // near
-            Plane::from(rows.w_axis - rows.z_axis).negated_distance().normalized(), // far
+            Plane::from(rows.z_axis).flipped().normalized(), // near
+            Plane::from(rows.w_axis - rows.z_axis).flipped().normalized(), // far
         ];
         Self { planes }
     }
@@ -77,6 +78,7 @@ impl Frustum
     #[inline] #[must_use]
     pub fn test_masked(&self, aabb: AABB, mut mask: u8) -> Option<u8>
     {
+        // TODO: can test multiple planes at once w/ simd
         for (i, plane) in self.planes.iter().enumerate()
         {
             let testbit = 1 << i;
@@ -85,7 +87,7 @@ impl Frustum
                 continue; // already inside
             }
 
-            let (signed_dist, radius) = aabb.test_plane(plane);
+            let (signed_dist, radius) = aabb.test_plane(*plane);
             if signed_dist + radius < 0.0
             {
                 // could probably just return all bits set (top 2 aren't used by mask)
@@ -175,19 +177,20 @@ mod tests
 
         // TODO: these values are wrong
         let expected_planes = [
-            Plane::new(Vec3A::new(recip_sqrt2, 0.0, recip_sqrt2), 0.0),
             Plane::new(Vec3A::new(-recip_sqrt2, 0.0, recip_sqrt2), 0.0),
+            Plane::new(Vec3A::new(recip_sqrt2, 0.0, recip_sqrt2), 0.0),
             Plane::new(Vec3A::new(0.0, -recip_sqrt2, recip_sqrt2), 0.0),
             Plane::new(Vec3A::new(0.0, recip_sqrt2, recip_sqrt2), 0.0),
-            Plane::new(Vec3A::new(0.0, 0.0, 1.0), 1.0),
-            Plane::new(Vec3A::new(0.0, 0.0, -1.0), -10.0), // TODO: This seems wrong
+            Plane::new(Vec3A::new(0.0, 0.0, -1.0), -1.0),
+            Plane::new(Vec3A::new(0.0, 0.0, 1.0), 10.0), // TODO: This seems wrong
     ];
 
         for (i, plane) in frustum.planes.iter().enumerate() {
             let expected = &expected_planes[i];
             assert!(
                 plane.normal().abs_diff_eq(expected.normal(), 1e-5),
-                "Plane {} normal() mismatch: got {:?}, expected {:?}",
+                "{:?} ({}) plane normal() mismatch: got {:?}, expected {:?}",
+                unsafe { std::mem::transmute::<_, FrustumSide>(i as u8) },
                 i,
                 plane.normal(),
                 expected.normal()

@@ -138,7 +138,6 @@ impl AssetBuilder for MapBuilder
             for model in layer.models.iter()
             {
                 let (palette_index, aabb) = insert_model(model.object)?;
-                let geo_index = statics_geo.len() as u32;
                 statics_geo.push(StaticPlacement
                  {
                      object: palette_index,
@@ -146,7 +145,7 @@ impl AssetBuilder for MapBuilder
                      orientation: model.orientation.into(),
                      scale: model.scale,
                  });
-                statics_aabb.insert(aabb, geo_index);
+                statics_aabb.insert(aabb, palette_index);
             }
         }
 

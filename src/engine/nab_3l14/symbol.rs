@@ -1,3 +1,5 @@
+pub type SymbolRepr = u32;
+
 // Symbols are unique values that act as sentinels in code or data
 pub trait Symbol
 {
@@ -6,9 +8,8 @@ pub trait Symbol
     const TYPE_NAME_HASH: u32;
 
     #[must_use]
-    fn from_raw(raw: SYMBOLS_REPR) -> Self;
+    fn from_raw(raw: SymbolRepr) -> Self;
 }
-pub type SYMBOLS_REPR = u32;
 
 macro_rules! define_symbol {
 
@@ -25,13 +26,13 @@ macro_rules! define_symbol {
         }
         impl Symbol for $name
         {
-            type Repr = SYMBOLS_REPR;
+            type Repr = SymbolRepr;
             const TYPE_NAME: &'static str = stringify!($name);
             const TYPE_NAME_HASH: u32 = proc_macros_3l14::ident_hash32!($name);
             // Construct this symbol from a raw u32 value. This should only be used by deserialization code
 
             #[inline]
-            fn from_raw(raw: SYMBOLS_REPR) -> Self { Self(unsafe { core::num::NonZero::new_unchecked(raw) }) }
+            fn from_raw(raw: SymbolRepr) -> Self { Self(unsafe { core::num::NonZero::new_unchecked(raw) }) }
         }
     }
 }

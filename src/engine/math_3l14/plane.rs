@@ -30,6 +30,13 @@ impl Plane
         let dist = -norm.dot(a);
         Self(norm.extend(dist))
     }
+    
+    #[must_use]
+    pub fn from_point_normal(point:  Vec3A, normal: Vec3A) -> Self
+    {
+        let dist = -normal.dot(point);
+        Self(normal.extend(dist))
+    }
 
     #[inline] #[must_use]
     pub fn normal(self) -> Vec3A { self.0.xyz().into() }
@@ -39,7 +46,7 @@ impl Plane
 
     // The signed distance to a point, positive is above the plane
     #[inline] #[must_use]
-    pub fn signed_distance_to(self, point: Vec3A) -> f32 { self.normal().dot(point) + self.0.w }
+    pub fn signed_distance_to(self, point: Vec3A) -> f32 { self.normal().dot(point) + self.distance() }
 
     #[inline] #[must_use]
     pub fn origin(self) -> Vec3A { self.normal() * self.0.w }
@@ -148,7 +155,7 @@ impl GetFacing<Vec3> for Plane
 {
     fn get_facing(&self, other: Vec3) -> Facing
     {
-        let d = self.normal().dot(other.into()) - self.distance();
+        let d = self.normal().dot(other.into()) + self.distance();
         if d > 0.0 { Facing::InFront }
         else if d == 0.0 { Facing::On }
         else { Facing::Behind }
@@ -158,7 +165,7 @@ impl GetFacing<Vec3A> for Plane
 {
     fn get_facing(&self, other: Vec3A) -> Facing
     {
-        let d = self.normal().dot(other) - self.distance();
+        let d = self.normal().dot(other) + self.distance();
         if d > 0.0 { Facing::InFront }
         else if d == 0.0 { Facing::On }
         else { Facing::Behind }
@@ -168,7 +175,7 @@ impl GetFacing<Sphere> for Plane
 {
     fn get_facing(&self, other: Sphere) -> Facing
     {
-        let d = self.normal().dot(other.center().into()) - self.distance();
+        let d = self.normal().dot(other.center().into()) + self.distance();
         if d >= other.radius() { Facing::InFront }
         else if d >= -other.radius() { Facing::On }
         else { Facing::Behind }

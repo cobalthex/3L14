@@ -3,7 +3,7 @@ use glam::Vec3;
 use nab_3l14::Ident;
 use serde::{Serialize, Deserialize};
 use math_3l14::YawPitchRoll;
-use world_3l14::Light;
+use world_3l14::light::Light;
 
 pub const fn default_scale() -> Vec3 { Vec3::ONE }
 

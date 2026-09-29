@@ -16,6 +16,8 @@ struct Buckets<T>
     buckets: Vec<Box<[MaybeUninit<T>; REUSE_POOL_BUCKET_ENTRY_COUNT as usize]>>,
 }
 
+static REUSE_POOL_UID_COUNTER: AtomicU32 = AtomicU32::new(1);
+
 pub struct ReusePool<T>
 {
     free: SegQueue<PoolEntryIndex>, // ArrayQueue w/ max 2 or 3 buckets of free space? overflow buckets get deleted?
@@ -26,7 +28,7 @@ impl<T> Default for ReusePool<T>
 {
     fn default() -> Self
     {
-        let uid = Self::UID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let uid = REUSE_POOL_UID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         debug_assert!(uid != 0, "ObjectPool UID counter overflowed");
 
         Self
@@ -43,7 +45,6 @@ impl<T> Default for ReusePool<T>
 }
 impl<T> ReusePool<T>
 {
-    const UID_COUNTER: AtomicU32 = AtomicU32::new(1);
 
     #[inline] #[must_use]
     pub fn free_count(&self) -> usize { self.free.len() }

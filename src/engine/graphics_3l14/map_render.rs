@@ -3,14 +3,12 @@ use world_3l14::assets::map::Map;
 use crate::assets::Model;
 use crate::view::View;
 
-pub struct MapRenderer
+pub struct MapRender
 {
-    map_handle: AssetView<Map>,
-
-    model_palette: Vec<Ash<Model>>,
-
+    pub map_handle: AssetView<Map>,
+    pub model_palette: Vec<Ash<Model>>,
 }
-impl MapRenderer
+impl MapRender
 {
     #[must_use]
     pub fn new(
@@ -26,10 +24,5 @@ impl MapRenderer
             map_handle: map,
             model_palette,
         }
-    }
-
-    pub fn render(&self, view: &mut View)
-    {
-
     }
 }

@@ -1,6 +1,6 @@
 use bitcode::{Decode, Encode};
 use glam::{Vec3, Vec3A};
-use crate::{Facing, Frustum, GetFacing, Intersection, Intersects, Plane, Sphere};
+use crate::{Facing, GetFacing, Intersection, Intersects, Plane, Sphere};
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Encode, Decode)]
 pub struct AABB
@@ -14,8 +14,26 @@ impl AABB
     pub const MIN_MAX: Self = Self { min: Vec3::MIN, max: Vec3::MAX }; // for 'universe' queries
     pub const MAX_MIN: Self = Self { min: Vec3::MAX, max: Vec3::MIN }; // for finding min volume
 
-    #[inline] #[must_use] pub const fn new(min: Vec3, max: Vec3) -> Self { Self { min, max } }
     #[inline] #[must_use] pub const fn empty() -> Self { Self { min: Vec3::ZERO, max: Vec3::ZERO } }
+    #[inline] #[must_use] pub const fn new(min: Vec3, max: Vec3) -> Self { Self { min, max } }
+    #[inline] #[must_use] pub const fn around_point(centroid: Vec3, half_size: Vec3) -> Self
+    {
+        Self
+        {
+            min: Vec3::new(centroid.x - half_size.x,centroid.y - half_size.y, centroid.z - half_size.z),
+            max: Vec3::new(centroid.x + half_size.x,centroid.y + half_size.y, centroid.z + half_size.z),
+        }
+    }
+    // Create an AABB around two unordered corners
+    #[inline] #[must_use]
+    pub fn from_points(a: Vec3, b: Vec3) -> Self
+    {
+        Self
+        {
+            min: Vec3::min(a, b),
+            max: Vec3::max(a, b)
+        }
+    }
 
     #[inline] #[must_use] pub fn size(self) -> Vec3 { self.max - self.min }
     #[inline] #[must_use] pub fn half_size(self) -> Vec3 { (self.max - self.min) / 2.0 }
@@ -90,7 +108,7 @@ impl AABB
     ///     =: overlap otherwise (straddling)
     /// and radius, the projected half-extent onto the plane normal
     #[inline] #[must_use]
-    pub fn test_plane(&self, plane: &Plane) -> (f32, f32)
+    pub fn test_plane(&self, plane: Plane) -> (f32, f32)
     {
         // todo: get_facing() instead ?
         let signed_dist = plane.signed_distance_to(Vec3A::from(self.centroid()));
@@ -119,7 +137,7 @@ impl GetFacing<Plane> for AABB
     // TODO: test
     fn get_facing(&self, other: Plane) -> Facing
     {
-        let (dist, radius) = self.test_plane( &other);
+        let (dist, radius) = self.test_plane(other);
         if dist + radius < 0.0
         {
             Facing::Behind
@@ -141,7 +159,8 @@ impl GetFacing<Plane> for AABB
 #[cfg(test)]
 mod tests
 {
-    use super::*;
+    use std::assert_matches;
+use super::*;
 
     #[test]
     fn empty()
@@ -157,6 +176,12 @@ mod tests
     fn sizes()
     {
         let aabb = AABB::new(Vec3::splat(-2.0), Vec3::splat(2.0));
+        assert_eq!(aabb.size(), Vec3::splat(4.0));
+        assert_eq!(aabb.centroid(), Vec3::ZERO);
+        assert_eq!(aabb.volume(), 4.0f32.powi(3));
+        assert_eq!(aabb.surface_area(), 4.0 * 4.0 * 6.0);
+
+        let aabb = AABB::around_point(Vec3::splat(0.0), Vec3::splat(2.0));
         assert_eq!(aabb.size(), Vec3::splat(4.0));
         assert_eq!(aabb.centroid(), Vec3::ZERO);
         assert_eq!(aabb.volume(), 4.0f32.powi(3));
@@ -229,6 +254,36 @@ mod tests
         let b = AABB::new(Vec3::splat(10.0), Vec3::splat(15.0));
         assert!(!a.overlaps(b));
         assert!(!b.overlaps(a));
+    }
+
+    #[test]
+    fn get_facing()
+    {
+        let p = Plane::from_point_normal(Vec3A::ZERO, Vec3A::new(0.0, 1.0, 0.0));
+
+        let a = AABB::around_point(Vec3::new(0.0, 4.0, 0.0), Vec3::splat(3.0));
+        assert_matches!(a.get_facing(p), Facing::InFront);
+
+        let a = AABB::around_point(Vec3::new(0.0, 0.0, 0.0), Vec3::splat(3.0));
+        assert_matches!(a.get_facing(p), Facing::On);
+
+        let a = AABB::around_point(Vec3::new(0.0, -4.0, 0.0), Vec3::splat(3.0));
+        assert_matches!(a.get_facing(p), Facing::Behind);
+    }
+
+    #[test]
+    fn test_plane()
+    {
+        let p = Plane::from_point_normal(Vec3A::ZERO, Vec3A::new(0.0, 1.0, 0.0));
+
+        let a = AABB::around_point(Vec3::new(0.0, 4.0, 0.0), Vec3::splat(3.0));
+        assert_matches!(a.test_plane(p), (4.0, 3.0));
+
+        let a = AABB::around_point(Vec3::new(0.0, 0.0, 0.0), Vec3::splat(3.0));
+        assert_matches!(a.test_plane(p), (0.0, 3.0));
+
+        let a = AABB::around_point(Vec3::new(0.0, -4.0, 0.0), Vec3::splat(3.0));
+        assert_matches!(a.test_plane(p), (-4.0, 3.0));
     }
 
     #[test]

@@ -6,11 +6,13 @@ use triomphe::Arc;
 use std::time::Duration;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, Extent3d, QueueWriteBufferView, RenderPass, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView};
 use wgpu::util::{DeviceExt, TextureDataOrder};
-use asset_3l14::{Asset, AssetView};
-use math_3l14::{CanSee, DualQuat, Sphere, StaticGeoUniform};
+use asset_3l14::{Asset, AssetSnapshot, AssetView};
+use containers_3l14::IterOverlapping;
+use math_3l14::{CanSee, DualQuat, Frustum, Sphere, StaticGeoUniform};
 use nab_3l14::utils::array::init_array;
 use crate::assets::{Model, EngineRenderPass};
 use crate::camera::{Camera, CameraProjection, CameraUniform};
+use crate::map_render::MapRender;
 use crate::pipeline_cache::{DebugMode, PipelineCache};
 use crate::uniforms_pool::{UniformsPoolEntryGuard, WgpuBufferWriter, BufferWrite};
 
@@ -114,6 +116,12 @@ impl CanSee<Sphere> for CameraClip
 
         true
     }
+}
+
+struct DebugStats
+{
+    total_static_geo: u32,
+    rendered_static_geo: u32,
 }
 
 // TODO: This needs to exist until the frame has been submitted fully
@@ -303,6 +311,24 @@ impl<'f> View<'f>
         self.camera_clip.can_see(transformed)
     }
 
+    pub fn draw_map(&mut self, map: &MapRender)
+    {
+        let frustum = Frustum::from_matrix(unsafe { &self.camera_mtx });
+
+        let mut drawn = 0;
+        for (_aabb, placement_index) in map.map_handle.statics.hierarchy.iter_overlapping(frustum)
+        {
+            let AssetSnapshot::Available(model) = map.model_palette[placement_index as usize].data()
+                else { continue; };
+            let placement = &map.map_handle.statics.geo[placement_index as usize];
+            let transform = Mat4::from_scale_rotation_translation(placement.scale, placement.orientation, placement. position);
+            self.draw_model_common(model, transform, None);
+            drawn += 1;
+        }
+
+
+    }
+
     fn draw_model_common(&mut self, model: AssetView<Model>, world_transform: Mat4, poses_uniforms: Option<u32>) -> bool
     {
         // this may be heavy-handed
@@ -312,7 +338,6 @@ impl<'f> View<'f>
         }
 
         let geo = model.geometry.data().unwrap();
-        if !self.can_see(model.bounds_sphere, world_transform) { return false; }
 
         // TODO: these should be per-mesh
         let rad = world_transform.x_axis.x.max(world_transform.y_axis.y.max(world_transform.z_axis.z));
@@ -394,12 +419,13 @@ impl<'f> View<'f>
 
     pub fn draw_model_static(&mut self, model: AssetView<Model>, world_transform: Mat4) -> bool
     {
+        if !self.can_see(model.bounds_sphere, world_transform) { return false; }
         self.draw_model_common(model, world_transform, None)
     }
 
     pub fn draw_model_skinned(&mut self, model: AssetView<Model>, world_transform: Mat4, poses: &[DualQuat]) -> bool
     {
-        // TODO: this needs to pass vis-checks first
+        if !self.can_see(model.bounds_sphere, world_transform) { return false; }
 
         // todo: cleanup/standardize this logic
         let poses_uniforms = self.pipeline_cache.uniforms.take_poses();

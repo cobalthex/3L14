@@ -28,8 +28,6 @@ macro_rules! iif_debug {
         }
     };
 }
-#[cfg(debug_assertions)]
-const TEST_VAL: u32 = iif_debug!(10, 0);
 
 #[macro_export]
 macro_rules! const_assert
