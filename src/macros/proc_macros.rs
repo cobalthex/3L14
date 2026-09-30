@@ -1,5 +1,5 @@
 use proc_macro::TokenStream;
-use derives::{fancy_enum, type_layout_hash};
+use derives::{fancy_enum, type_layout_hash, debug_gui};
 use attribs::asset;
 use crate::derives::{circuit_block, enum_from_str};
 
@@ -26,6 +26,9 @@ pub fn derive_type_layout_hash(input: TokenStream) -> TokenStream { type_layout_
 
 #[proc_macro_derive(CircuitBlock)]
 pub fn derive_circuit_block(input: TokenStream) -> TokenStream { circuit_block::circuit_block(input) }
+
+#[proc_macro_derive(DebugGui, attributes(skip_gui))]
+pub fn derive_debug_gui(input: TokenStream) -> TokenStream { debug_gui::debug_gui(input) }
 
 #[proc_macro_attribute] // todo: better name?
 pub fn asset(attrib_input: TokenStream, input: TokenStream) -> TokenStream { asset::asset_attrib(attrib_input, input) }

@@ -4,11 +4,13 @@ use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
 use std::io::Read;
+use glam::{Mat4, Quat};
 use serde::{Deserialize, Serialize};
+use asset_3l14::AssetKey;
 use containers_3l14::AabbTree;
 use graphics_3l14::assets::Model;
 use nab_3l14::utils::osstr::OsStrUtils;
-use source_defs_3l14::{MapDef, MapLayer};
+use source_defs_3l14::map_def::{MapDef, MapLayer};
 use world_3l14::assets::map::{Map, StaticPlacement, Statics};
 use crate::core::{AssetBuilder, BuildError, BuildOutputs, SourceInput, VersionBuilder};
 
@@ -108,7 +110,7 @@ impl AssetBuilder for MapBuilder
         };
 
         let mut model_palette = HashMap::new();
-        let mut insert_model = |model_key: asset_3l14::AssetKey|
+        let mut insert_model = |model_key: AssetKey|
         {
             let new_index = model_palette.len();
             if new_index > u32::MAX as usize
@@ -135,17 +137,23 @@ impl AssetBuilder for MapBuilder
 
         for (_layer_name, layer) in &layers
         {
-            for model in layer.models.iter()
+            for placement in layer.models.iter()
             {
-                let (palette_index, aabb) = insert_model(model.object)?;
+                let (palette_index, mut aabb) = insert_model(placement.object)?;
+
+                let orient_quat = Quat::from(placement.orientation);
+                aabb.affine_transform(Mat4::from_scale_rotation_translation(
+                    placement.scale, orient_quat, placement.position));
+
+                let next = statics_geo.len() as u32;
                 statics_geo.push(StaticPlacement
                  {
                      object: palette_index,
-                     position: model.position,
-                     orientation: model.orientation.into(),
-                     scale: model.scale,
+                     position: placement.position,
+                     orientation: orient_quat,
+                     scale: placement.scale,
                  });
-                statics_aabb.insert(aabb, palette_index);
+                statics_aabb.insert(aabb, next);
             }
         }
 

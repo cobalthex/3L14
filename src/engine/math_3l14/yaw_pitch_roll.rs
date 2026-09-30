@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use glam::{EulerRot, Quat, Vec3};
 use serde::{Deserialize, Serialize};
 use crate::Angle;
@@ -45,5 +45,16 @@ impl Debug for YawPitchRoll
             .field("pitch", &self.pitch())
             .field("roll", &self.roll())
             .finish()
+    }
+}
+impl Display for YawPitchRoll
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    {
+        f.write_fmt(
+            format_args!("{:?}°,{:?}°,{:?}°",
+            self.yaw().to_degrees(),
+            self.pitch().to_degrees(),
+            self.roll().to_degrees()))
     }
 }

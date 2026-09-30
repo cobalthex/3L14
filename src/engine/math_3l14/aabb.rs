@@ -1,5 +1,5 @@
 use bitcode::{Decode, Encode};
-use glam::{Vec3, Vec3A};
+use glam::{Mat4, Vec3, Vec3A};
 use crate::{Facing, GetFacing, Intersection, Intersects, Plane, Sphere};
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Encode, Decode)]
@@ -36,7 +36,7 @@ impl AABB
     }
 
     #[inline] #[must_use] pub fn size(self) -> Vec3 { self.max - self.min }
-    #[inline] #[must_use] pub fn half_size(self) -> Vec3 { (self.max - self.min) / 2.0 }
+    #[inline] #[must_use] pub fn half_size(self) -> Vec3 { (self.max - self.min) * 0.5 }
     #[inline] #[must_use]
     pub fn volume(self) -> f32
     {
@@ -51,7 +51,7 @@ impl AABB
         return 2.0 * (size.x * size.y + size.y * size.z + size.z * size.x);
     }
 
-    #[inline] #[must_use] pub fn centroid(self) -> Vec3 { (self.min + self.max) / 2.0 }
+    #[inline] #[must_use] pub fn centroid(self) -> Vec3 { (self.min + self.max) * 0.5 }
 
     #[inline] #[must_use]
     pub fn max_axis(self) -> f32
@@ -76,15 +76,69 @@ impl AABB
             max: self.max.max(rhs.max),
         }
     }
-    
-    pub fn scale(self, amount_frac: f32) -> Self
+
+    pub fn scale(&mut self, amount_frac: f32)
     {
-        let scaled = (self.size() * amount_frac) / 2.0;
+        let centroid = self.centroid();
+        let half = self.half_size() * amount_frac;
+        self.min = centroid - half;
+        self.max = centroid + half;
+    }
+    #[must_use]
+    pub fn scaled(self, amount_frac: f32) -> Self
+    {
+        let centroid = self.centroid();
+        let half = self.half_size() * amount_frac;
         Self
         {
-            min: self.min - scaled,
-            max: self.max + scaled,
+            min: centroid - half,
+            max: centroid + half,
         }
+    }
+
+    // Transform this AABB by a transform matrix. Do not use this with perspective transforms
+    pub fn affine_transform(&mut self, transform: Mat4)
+    {
+        let centroid = self.centroid();
+        let half = self.half_size();
+        let new_center = transform.transform_point3(centroid);
+        let new_half
+            = transform.x_axis.abs() * half.y
+            + transform.y_axis.abs() * half.y
+            + transform.z_axis.abs() * half.z;
+        self.min = new_center - new_half.truncate();
+        self.max = new_center + new_half.truncate();
+    }
+
+    // Transform this AABB by a transform matrix, allowing for perspective transforms
+    fn transform_slow(&mut self, transform: Mat4)
+    {
+        let mut new_min = Vec3A::splat(f32::INFINITY);
+        let mut new_max = Vec3A::splat(f32::NEG_INFINITY);
+
+        for &x in &[self.min.x, self.max.x]
+        {
+            for &y in &[self.min.y, self.max.y]
+            {
+                for &z in &[self.min.z, self.max.z]
+                {
+                    let corner = Vec3A::new(x, y, z);
+                    let transformed = transform * corner.extend(1.0);
+
+                    let point = Vec3A::new(
+                        transformed.x,
+                        transformed.y,
+                        transformed.z,
+                    );
+
+                    new_min = new_min.min(point);
+                    new_max = new_max.max(point);
+                }
+            }
+        }
+
+        self.min = new_min.into();
+        self.max = new_max.into();
     }
 
     #[must_use]
@@ -160,7 +214,8 @@ impl GetFacing<Plane> for AABB
 mod tests
 {
     use std::assert_matches;
-use super::*;
+    use glam::Quat;
+    use super::*;
 
     #[test]
     fn empty()
@@ -306,5 +361,41 @@ use super::*;
         println!("{b:?} - {} {} {}", db, sb, db / sb);
         println!("{c:?} - {} {} {}", dc, sc, dc / sc);
         println!("{d:?} - {} {} {}", dd, sd, dd / sd);
+    }
+
+    #[test]
+    fn affine_transform()
+    {
+        let aabb = AABB::new(
+            Vec3::new(-1.0, -2.0, -0.5),
+            Vec3::new(2.0, 1.0, 3.0)
+        );
+
+        let transform = Mat4::from_scale_rotation_translation(
+            Vec3::new(2.0, 0.5, 1.5),
+            Quat::from_rotation_z(0.7),
+            Vec3::new(10.0, -4.0, 3.0),
+        );
+
+        let mut optimized = aabb.clone();
+        optimized.affine_transform(transform);
+        let mut reference = aabb.clone();
+        reference.transform_slow(transform);
+
+        let epsilon = 1e-5;
+
+        assert!(
+            (optimized.min - reference.min).abs().max_element() < epsilon,
+            "minimum mismatch: optimized={:?}, reference={:?}",
+            optimized.min,
+            reference.min
+        );
+
+        assert!(
+            (optimized.max - reference.max).abs().max_element() < epsilon,
+            "maximum mismatch: optimized={:?}, reference={:?}",
+            optimized.max,
+            reference.max
+        );
     }
 }

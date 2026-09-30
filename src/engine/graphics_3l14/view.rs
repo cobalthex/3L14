@@ -10,6 +10,7 @@ use asset_3l14::{Asset, AssetSnapshot, AssetView};
 use containers_3l14::IterOverlapping;
 use math_3l14::{CanSee, DualQuat, Frustum, Sphere, StaticGeoUniform};
 use nab_3l14::utils::array::init_array;
+use proc_macros_3l14::DebugGui;
 use crate::assets::{Model, EngineRenderPass};
 use crate::camera::{Camera, CameraProjection, CameraUniform};
 use crate::map_render::MapRender;
@@ -118,10 +119,11 @@ impl CanSee<Sphere> for CameraClip
     }
 }
 
-struct DebugStats
+#[derive(Default, DebugGui)]
+pub struct DebugStats
 {
-    total_static_geo: u32,
-    rendered_static_geo: u32,
+    pub total_static_geo: u32,
+    pub rendered_static_geo: u32,
 }
 
 // TODO: This needs to exist until the frame has been submitted fully
@@ -144,6 +146,8 @@ pub struct View<'f>
 
     placeholder_texture: Texture,
     placeholder_texture_view: TextureView,
+
+    pub debug_stats: DebugStats
 }
 impl<'f> View<'f>
 {
@@ -197,6 +201,7 @@ impl<'f> View<'f>
             renderer,
             placeholder_texture,
             placeholder_texture_view,
+            debug_stats: DebugStats::default(),
         }
     }
 
@@ -210,6 +215,7 @@ impl<'f> View<'f>
         self.shadow_pass.clear();
         self.opaque_pass.clear();
         self.used_uniforms_pools.clear();
+        self.debug_stats = DebugStats::default();
     }
 
     // TODO: compute lights influence
@@ -315,18 +321,16 @@ impl<'f> View<'f>
     {
         let frustum = Frustum::from_matrix(unsafe { &self.camera_mtx });
 
-        let mut drawn = 0;
+        self. debug_stats.total_static_geo = map.map_handle.statics.hierarchy.leaf_count();
         for (_aabb, placement_index) in map.map_handle.statics.hierarchy.iter_overlapping(frustum)
         {
-            let AssetSnapshot::Available(model) = map.model_palette[placement_index as usize].data()
-                else { continue; };
             let placement = &map.map_handle.statics.geo[placement_index as usize];
-            let transform = Mat4::from_scale_rotation_translation(placement.scale, placement.orientation, placement. position);
+            let AssetSnapshot::Available(model) = map.model_palette[placement.object as usize].data()
+                else { continue; };
+            let transform = Mat4::from_scale_rotation_translation(placement.scale, placement.orientation, placement.position);
             self.draw_model_common(model, transform, None);
-            drawn += 1;
+            self.debug_stats. rendered_static_geo += 1;
         }
-
-
     }
 
     fn draw_model_common(&mut self, model: AssetView<Model>, world_transform: Mat4, poses_uniforms: Option<u32>) -> bool

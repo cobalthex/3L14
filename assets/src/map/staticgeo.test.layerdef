@@ -4,12 +4,13 @@ position = [0, 0, 0]
 
 [[models]]
 object = '00a0000055a81277'
-position = [2, 0, 0]
+position = [11, 0, 0]
 
 [[models]]
 object = '00a0000055a81277'
-position = [0, 0, 2]
+position = [0, 0, 11]
 
 [[models]]
 object = '00a0000055a81277'
-position = [15, 0, 2]
+position = [25, 0, 5]
+orientation = [0.7853982, 0, 0]

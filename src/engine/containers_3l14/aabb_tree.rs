@@ -27,7 +27,8 @@ pub struct AabbTree
 {
     nodes: Vec<Node>, // todo: this should just be an array manually managed
     nodes_free_head: NodeIndex,
-    len: u32, // how many active nodes there are
+    node_count: u32, // how many total nodes there are
+    leaf_count: u32,
     root_index: NodeIndex,
 }
 // based on box2D/daabbc3d
@@ -40,20 +41,27 @@ impl AabbTree
         {
             nodes: Vec::with_capacity(16),
             nodes_free_head: NodeIndex::none(),
-            len: 0,
+            node_count: 0,
+            leaf_count: 0,
             root_index: NodeIndex::none(),
         }
     }
 
-    // Get the number of nodes in the tree
+    // Get the total number of nodes in the tree
     #[inline] #[must_use]
-    pub fn len(&self) -> u32 { self.len }
+    pub fn node_count(&self) -> u32 { self.node_count }
+
+    // Get the number of leaves (inputted AABBs) in the tree
+    #[inline] #[must_use]
+    pub fn leaf_count(&self) -> u32 { self.leaf_count }
 
     #[inline(always)] #[must_use] fn node(&self, index: u32) -> &Node { &self.nodes[index as usize] }
     #[inline(always)] #[must_use] fn node_mut(&mut self, index: u32) -> &mut Node { &mut self.nodes[index as usize] }
 
     pub fn insert(&mut self, bounds: AABB, value: u32)
     {
+        self.leaf_count += 1;
+
         let leaf_node_index = self.alloc_node(Node
         {
             bounds,
@@ -144,6 +152,9 @@ impl AabbTree
             return false;
         }
 
+        debug_assert!(self.leaf_count > 0);
+        self.leaf_count -= 1;
+
         if leaf_index == self.root_index
         {
             self.free_node(self.root_index.0);
@@ -231,7 +242,7 @@ impl AabbTree
     #[inline] #[must_use]
     fn alloc_node(&mut self, node: Node) -> u32
     {
-        self.len += 1;
+        self.node_count += 1;
         if self.nodes_free_head.is_some()
         {
             let index = self.nodes_free_head;
@@ -250,8 +261,8 @@ impl AabbTree
     #[inline]
     fn free_node(&mut self, node_index: u32)
     {
-        debug_assert!(self.len > 0);
-        self.len -= 1;
+        debug_assert!(self.node_count > 0);
+        self.node_count -= 1;
         let old_head = self.nodes_free_head;
         let node = &mut self.nodes[node_index as usize];
         node.height = 0;
@@ -510,11 +521,11 @@ impl AabbTree
 
         if self.root_index.is_none()
         {
-            debug_assert!(self.len() == 0);
+            debug_assert!(self.node_count() == 0);
             return;
         }
 
-        let mut nodes = Vec::with_capacity(self.len() as usize);
+        let mut nodes = Vec::with_capacity(self.node_count() as usize);
 
         // TODO: sort values
 
@@ -564,6 +575,8 @@ impl AabbTree
     {
         if start.is_none() { return Ok(()); }
 
+        let mut leaf_count = 0;
+
         let mut stack: SmallVec<[_; 64]> = smallvec![start.0];
         while let Some(top_index) = stack.pop()
         {
@@ -577,7 +590,8 @@ impl AabbTree
 
             if top.is_leaf()
             {
-                return Ok(())
+                leaf_count += 1;
+                continue;
             }
 
             if top.left_or_nextfree >= self.nodes.len() as u32
@@ -619,6 +633,14 @@ impl AabbTree
         // todo: validate free list
         // todo: validate len + free list count == vector length
 
+        if leaf_count != self.leaf_count
+        {
+            return Err((ValidationError::LeafCountMismatch
+            {
+                stored_count: self.leaf_count,
+                calculated_count: leaf_count,
+            }, 0));
+        }
 
         Ok(())
     }
@@ -634,6 +656,7 @@ pub enum ValidationError
     LeftChildMisparented { left_parent_index: NodeIndex },
     RightChildMisparented { right_parent_index: NodeIndex },
     BoundsDontUnionChildren { bounds: AABB, children_bounds: AABB },
+    LeafCountMismatch { stored_count: u32, calculated_count: u32 },
 }
 
 pub trait IterOverlapping<R>
@@ -670,7 +693,7 @@ impl Debug for AabbTree
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
-        f.write_fmt(format_args!("AabbTree ({} nodes)", self.len()))?;
+        f.write_fmt(format_args!("AabbTree ({} nodes)", self.node_count()))?;
         if self.root_index.is_none()
         {
             return Ok(());
@@ -962,7 +985,8 @@ use super::*;
                 .. Node::default()
             },
         ]);
-        tree.len = 5;
+        tree.node_count = 5;
+        tree.leaf_count = 3;
         tree.root_index = NodeIndex::some(0);
 
         tree.validate(tree.root_index).unwrap();
@@ -1019,7 +1043,8 @@ use super::*;
                     height: 0, // leaf
                 }
             ]);
-            tree.len = 3;
+            tree.node_count = 3;
+            tree.leaf_count = 2;
 
             tree.root_index = NodeIndex::some(0);
             tree

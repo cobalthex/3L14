@@ -25,6 +25,7 @@ use sdl2::messagebox::MessageBoxFlag;
 use std::ops::Deref;
 use std::time::Duration;
 use wgpu::CommandEncoderDescriptor;
+use debug_3l14::debug_gui::DebugGui;
 use graphics_3l14::map_render::MapRender;
 use latch_3l14::{Circuit, CircuitLifecycler, Runtime};
 use world_3l14::assets::map::{Map, MapLifecycler};
@@ -496,6 +497,7 @@ fn main() -> ExitReason
                 debug_menu.add(renderer.deref());
                 debug_menu.add(&debug_draw);
                 debug_menu.add(&pipeline_cache);
+                debug_menu.add(&views[app_frame_number.0 as usize % views.len()].debug_stats);
                 debug_menu.present();
 
                 debug_menu_memory.save_if_dirty(&debug_gui_savestate_path);
