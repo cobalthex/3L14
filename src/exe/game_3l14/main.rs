@@ -171,15 +171,13 @@ fn main() -> ExitReason
 
         let obj_rot = Quat::IDENTITY;
 
-        let mut views: [_; renderer::MAX_CONSECUTIVE_FRAMES] = init_array(|_| View::new(renderer.clone(), &pipeline_cache));
+        let debug_draw = DebugDraw::new(&renderer);
 
-        let mut debug_draw = DebugDraw::new(&renderer);
+        let mut views: [_; renderer::MAX_CONSECUTIVE_FRAMES] = init_array(|_| View::new(renderer.clone(), &pipeline_cache, &debug_draw));
 
         let mut clip_camera = None;
 
         let mut test_f32 = 0.0;
-
-        println!("!!! {test_map:?}");
 
         let mut app_frame_number = RenderFrameNumber(0);
         let mut fps_sparkline = Sparkline::<100>::new(); // todo: use

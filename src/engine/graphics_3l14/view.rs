@@ -1,5 +1,5 @@
 use crate::pipeline_sorter::PipelineSorter;
-use crate::{debug_label, pipeline_sorter, Renderer};
+use crate::{debug_label, pipeline_sorter, Renderer, colors};
 use arrayvec::ArrayVec;
 use glam::{Mat4, Vec2, Vec3, Vec4Swizzles};
 use triomphe::Arc;
@@ -13,6 +13,7 @@ use nab_3l14::utils::array::init_array;
 use proc_macros_3l14::DebugGui;
 use crate::assets::{Model, EngineRenderPass};
 use crate::camera::{Camera, CameraProjection, CameraUniform};
+use crate::debug_draw::DebugDraw;
 use crate::map_render::MapRender;
 use crate::pipeline_cache::{DebugMode, PipelineCache};
 use crate::uniforms_pool::{UniformsPoolEntryGuard, WgpuBufferWriter, BufferWrite};
@@ -147,12 +148,13 @@ pub struct View<'f>
     placeholder_texture: Texture,
     placeholder_texture_view: TextureView,
 
+    pub debug_draw: &'f DebugDraw,
     pub debug_stats: DebugStats
 }
 impl<'f> View<'f>
 {
     #[must_use]
-    pub fn new(renderer: Arc<Renderer>, pipeline_cache: &'f PipelineCache) -> Self
+    pub fn new(renderer: Arc<Renderer>, pipeline_cache: &'f PipelineCache, debug_draw: &'f DebugDraw) -> Self
     {
         let used_uniforms = vec![
             // pipeline_cache.uniforms.take_transforms(),
@@ -202,6 +204,7 @@ impl<'f> View<'f>
             placeholder_texture,
             placeholder_texture_view,
             debug_stats: DebugStats::default(),
+            debug_draw,
         }
     }
 
@@ -330,6 +333,7 @@ impl<'f> View<'f>
             let transform = Mat4::from_scale_rotation_translation(placement.scale, placement.orientation, placement.position);
             self.draw_model_common(model, transform, None);
             self.debug_stats. rendered_static_geo += 1;
+            self.debug_draw.draw_wire_cube(transform, colors::CORNFLOWER_BLUE);
         }
     }
 
