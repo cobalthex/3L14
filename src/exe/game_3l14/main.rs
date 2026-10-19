@@ -171,9 +171,7 @@ fn main() -> ExitReason
 
         let obj_rot = Quat::IDENTITY;
 
-        let debug_draw = DebugDraw::new(&renderer);
-
-        let mut views: [_; renderer::MAX_CONSECUTIVE_FRAMES] = init_array(|_| View::new(renderer.clone(), &pipeline_cache, &debug_draw));
+        let mut views: [_; renderer::MAX_CONSECUTIVE_FRAMES] = init_array(|_| View::new(renderer.clone(), &pipeline_cache));
 
         let mut clip_camera = None;
 
@@ -334,8 +332,6 @@ fn main() -> ExitReason
             let render_frame = renderer.frame(app_frame_number, &input);
             {
                 puffin::profile_scope!("Render frame");
-
-                debug_draw.begin(&camera, renderer.debug_gui());
 
                 if let Some(cam) = &clip_camera
                 {

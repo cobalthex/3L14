@@ -1,7 +1,6 @@
 use asset_3l14::{Ash, AssetView, Assets};
 use world_3l14::assets::map::Map;
 use crate::assets::Model;
-use crate::view::View;
 
 pub struct MapRender
 {

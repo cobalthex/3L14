@@ -6,6 +6,7 @@ edition.workspace = true
 
 [features]
 debug_gpu_labels = []
+debug_draw = []
 load_shaders_directly = [] # requires API support too
 
 [lib]

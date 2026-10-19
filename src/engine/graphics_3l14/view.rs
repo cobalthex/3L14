@@ -1,5 +1,5 @@
 use crate::pipeline_sorter::PipelineSorter;
-use crate::{debug_label, pipeline_sorter, Renderer, colors};
+use crate::{debug_label, pipeline_sorter, Renderer, colors, render_passes};
 use arrayvec::ArrayVec;
 use glam::{Mat4, Vec2, Vec3, Vec4Swizzles};
 use triomphe::Arc;
@@ -148,13 +148,15 @@ pub struct View<'f>
     placeholder_texture: Texture,
     placeholder_texture_view: TextureView,
 
-    pub debug_draw: &'f DebugDraw,
+    #[cfg(debug_draw)]
+    pub debug_draw: DebugDraw,
+    #[cfg(debug_draw)]
     pub debug_stats: DebugStats
 }
 impl<'f> View<'f>
 {
     #[must_use]
-    pub fn new(renderer: Arc<Renderer>, pipeline_cache: &'f PipelineCache, debug_draw: &'f DebugDraw) -> Self
+    pub fn new(renderer: Arc<Renderer>, pipeline_cache: &'f PipelineCache) -> Self
     {
         let used_uniforms = vec![
             // pipeline_cache.uniforms.take_transforms(),
@@ -188,6 +190,9 @@ impl<'f> View<'f>
         }, TextureDataOrder::LayerMajor, &xor);
         let placeholder_texture_view = placeholder_texture.create_view(&Default::default());
 
+        #[cfg(debug_draw)]
+        let debug_draw = DebugDraw::new(&renderer);
+
         Self
         {
             pipeline_cache,
@@ -203,12 +208,20 @@ impl<'f> View<'f>
             renderer,
             placeholder_texture,
             placeholder_texture_view,
-            debug_stats: DebugStats::default(),
+            #[cfg(debug_draw)]
             debug_draw,
+            #[cfg(debug_draw)]
+            debug_stats: DebugStats::default(),
         }
     }
 
-    pub fn begin(&mut self, runtime: Duration, camera: &Camera, clip_camera: &Camera, debug_mode: DebugMode)
+    pub fn begin(&mut self,
+                 runtime: Duration,
+                 camera: &Camera,
+                 clip_camera: &Camera,
+                 debug_mode: DebugMode,
+                 #[cfg(debug_draw)]
+                 gui_ctx: &egui::Context)
     {
         self.runtime = runtime;
         self.debug_mode = debug_mode;
@@ -218,6 +231,9 @@ impl<'f> View<'f>
         self.shadow_pass.clear();
         self.opaque_pass.clear();
         self.used_uniforms_pools.clear();
+        #[cfg(debug_draw)]
+        self.debug_draw.begin(camera, egui_ctx);
+        #[cfg(debug_draw)]
         self.debug_stats = DebugStats::default();
     }
 
@@ -312,6 +328,11 @@ impl<'f> View<'f>
         }
 
         self.used_uniforms_pools.push(camera);
+
+        {
+            let mut debug_pass = render_passes::debug(&render_frame, &mut encoder);
+            debug_draw.submit(renderer.queue(), &mut debug_pass);
+        }
     }
 
     fn can_see(&self, sphere: Sphere, object_transform: Mat4) -> bool

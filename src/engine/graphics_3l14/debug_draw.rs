@@ -5,7 +5,8 @@ use debug_3l14::debug_gui::DebugGui;
 use egui::{Align2, Color32, FontId, Painter, Pos2, Ui};
 use glam::{FloatExt, Mat4, Quat, Vec2, Vec3, Vec4};
 use math_3l14::Angle;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use parking_lot::Mutex;
 use wgpu::{include_spirv, BlendState, ColorTargetState, ColorWrites, FragmentState, FrontFace, MultisampleState, PolygonMode, PrimitiveState, PrimitiveTopology, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor, VertexState};
 use crate::dynamic_geo::DynamicGeo;
 
@@ -37,15 +38,15 @@ pub struct DebugDraw
     pub is_enabled: AtomicBool,
 
     gui_painter: Option<Painter>,
-    num_strings: u32,
+    num_strings: AtomicU32,
 
     camera_forward: Vec3,
     camera_clip_mtx: Mat4,
     camera_aspect_ratio: f32,
     lines_pipeline: RenderPipeline,
-    lines: DynamicGeo<DebugLineVertex>,
+    lines: Mutex<DynamicGeo<DebugLineVertex>>,
     solids_pipeline: RenderPipeline,
-    solids: DynamicGeo<DebugLineVertex>,
+    solids: Mutex<DynamicGeo<DebugLineVertex>>,
 }
 impl DebugDraw
 {
@@ -154,33 +155,33 @@ impl DebugDraw
         {
             is_enabled: AtomicBool::new(true),
             gui_painter: None,
-            num_strings: 0,
+            num_strings: AtomicU32::new(0),
             camera_clip_mtx: Mat4::IDENTITY,
             camera_forward: Vec3::Z,
             camera_aspect_ratio: 1.0,
             lines_pipeline,
-            lines: lines_geo,
+            lines: Mutex::new(lines_geo),
             solids_pipeline,
-            solids: solids_geo,
+            solids: Mutex::new(solids_geo),
         }
     }
 
     pub fn begin(&mut self, camera: &Camera, egui_ctx: &egui::Context)
     {
         self.gui_painter = Some(egui_ctx.layer_painter(egui::LayerId::background()));
-        self.num_strings = 0;
+        self.num_strings.store(0, Ordering::Relaxed);
         self.camera_clip_mtx = camera.matrix();
         self.camera_forward = camera.transform().forward();
         self.camera_aspect_ratio = camera.projection().aspect_ratio();
-        self.lines.begin();
-        self.solids.begin();
+        self.lines.lock().begin();
+        self.solids.lock().begin();
     }
 
-    pub fn draw_text(&mut self, text: &str, center: Vec3, color: Rgba)
+    pub fn draw_text(&self, text: &str, center: Vec3, color: Rgba)
     {
         // TODO: option to keep text on screen?
 
-        let Some(painter) = self.gui_painter.as_mut() else { return };
+        let Some(painter) = self.gui_painter else { return };
 
         let mut position = self.camera_clip_mtx.mul_vec4(center.extend(1.0));
         if position.w < 0.0 { return } // < near clip?
@@ -195,19 +196,20 @@ impl DebugDraw
             FontId::proportional(20.0), // todo
             Color32::from_rgba_unmultiplied(color.red, color.green, color.blue, color.alpha));
 
-        self.num_strings += 1;
+        self.num_strings.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn draw_frustum(&mut self, camera: &Camera, color: Rgba)
+    pub fn draw_frustum(&self, camera: &Camera, color: Rgba)
     {
         // let clip_mtx = camera.clip_mtx().inverse();
         let clip_mtx = camera.matrix().inverse();
         self.draw_wire_cube(clip_mtx, color);
     }
 
-    pub fn draw_wire_cube(&mut self, mut transform: Mat4, color: Rgba)
+    pub fn draw_wire_cube(&self, mut transform: Mat4, color: Rgba)
     {
-        let start = self.lines.vertices.len() as u32;
+        let mut lines = self.lines.lock();
+        let start = lines.vertices.len() as u32;
 
         transform = self.camera_clip_mtx * transform;
 
@@ -228,12 +230,12 @@ impl DebugDraw
             1, 5,
         ];
 
-        self.lines.vertices.reserve(CUBOID_VERTICES.len());
-        self.lines.indices.reserve(CUBOID_INDICES.len());
+        lines.vertices.reserve(CUBOID_VERTICES.len());
+        lines.indices.reserve(CUBOID_INDICES.len());
 
         for corner in CUBOID_VERTICES
         {
-            self.lines.vertices.push(DebugLineVertex
+            lines.vertices.push(DebugLineVertex
             {
                 position: transform.mul_vec4(corner).into(),
                 color: color.into(),
@@ -241,12 +243,12 @@ impl DebugDraw
         }
         for i in CUBOID_INDICES
         {
-            self.lines.indices.push(start + i);
+            lines.indices.push(start + i);
         }
     }
 
     // draw a 3D cross (-x -> x),(-y -> y),(-z -> z)
-    pub fn draw_cross3(&mut self, mut transform: Mat4, color: Rgba)
+    pub fn draw_cross3(&self, mut transform: Mat4, color: Rgba)
     {
         transform = self.camera_clip_mtx * transform;
 
@@ -261,37 +263,39 @@ impl DebugDraw
              transform.mul_vec4(Vec4::new( 0.0,  0.0,  SCALE, 1.0)),
         ];
 
-        let start = self.lines.vertices.len() as u32;
-        self.lines.vertices.extend(points.map(|p| DebugLineVertex
+        let mut lines = self.lines.lock();
+        let start = lines.vertices.len() as u32;
+        lines.vertices.extend(points.map(|p| DebugLineVertex
         {
             position: p.into(),
             color: color.into(),
         }));
-        self.lines.indices.reserve(2 * points.len());
+        lines.indices.reserve(2 * points.len());
         for i in 0..points.len() as u32
         {
-            self.lines.indices.push(start + i * 2);
-            self.lines.indices.push(start + i * 2 + 1);
+            lines.indices.push(start + i * 2);
+            lines.indices.push(start + i * 2 + 1);
         }
     }
 
     // TODO: capsulify?
     // draw a wireframe 'UV' (quad faced) sphere
-    pub fn draw_wire_sphere(&mut self, mut transform: Mat4, color: Rgba)
+    pub fn draw_wire_sphere(&self, mut transform: Mat4, color: Rgba)
     {
-        let start = self.lines.vertices.len() as u32;
+        let mut lines = self.lines.lock();
+        let start = lines.vertices.len() as u32;
 
         // calc based on size?
         let num_lats = 6;
         let num_longs = 12;
 
         let num_verts = (num_longs * (num_lats - 2) + 2) as usize;
-        self.lines.vertices.reserve(num_verts);
-        self.lines.indices.reserve(num_verts * 4 + num_longs as usize);
+        lines.vertices.reserve(num_verts);
+        lines.indices.reserve(num_verts * 4 + num_longs as usize);
 
         transform = self.camera_clip_mtx * transform;
 
-        self.lines.vertices.push(DebugLineVertex
+        lines.vertices.push(DebugLineVertex
         {
             position: transform.mul_vec4(Vec4::new(0.0, -1.0, 0.0, 1.0)).into(),
             color: color.into(),
@@ -309,7 +313,7 @@ impl DebugDraw
                 let phi = long as f32 * long_step;
 
                 let pos = Vec4::new(f32::cos(phi) * width, y, f32::sin(phi) * width, 1.0);
-                self.lines.vertices.push(DebugLineVertex
+                lines.vertices.push(DebugLineVertex
                 {
                     position: transform.mul_vec4(pos).into(),
                     color: color.into(),
@@ -319,15 +323,15 @@ impl DebugDraw
                 let z = start + (b + long).saturating_sub(num_longs);
                 b += start;
 
-                self.lines.indices.push(b + long);
-                self.lines.indices.push(b + (long + 1) % num_longs);
+                lines.indices.push(b + long);
+                lines.indices.push(b + (long + 1) % num_longs);
 
-                self.lines.indices.push(b + long);
-                self.lines.indices.push(z);
+                lines.indices.push(b + long);
+                lines.indices.push(z);
             }
         }
 
-        self.lines.vertices.push(DebugLineVertex
+        lines.vertices.push(DebugLineVertex
         {
             position: transform.mul_vec4(Vec4::new(0.0, 1.0, 0.0, 1.0)).into(),
             color: color.into(),
@@ -336,25 +340,26 @@ impl DebugDraw
         let end = start + (num_verts as u32 - 1);
         for i in 0..num_longs
         {
-            self.lines.indices.push(end - i - 1);
-            self.lines.indices.push(end);
+            lines.indices.push(end - i - 1);
+            lines.indices.push(end);
         }
     }
 
     // draw a wire cone. untransformed, tip points to +Z, base to -Z
-    pub fn draw_wire_cone(&mut self, mut transform: Mat4, color: Rgba)
+    pub fn draw_wire_cone(&self, mut transform: Mat4, color: Rgba)
     {
-        let start = self.lines.vertices.len() as u32;
+        let mut lines = self.lines.lock();
+        let start = lines.vertices.len() as u32;
 
         // calc based on size
         let num_points = 8;
 
         transform = self.camera_clip_mtx * transform;
 
-        self.lines.vertices.reserve(num_points as usize + 1);
-        self.lines.indices.reserve(num_points as usize * 2);
+        lines.vertices.reserve(num_points as usize + 1);
+        lines.indices.reserve(num_points as usize * 2);
 
-        self.lines.vertices.push(DebugLineVertex
+        lines.vertices.push(DebugLineVertex
         {
             position: transform.mul_vec4(Vec4::new(0.0, 0.0, 1.0, 1.0)).into(),
             color: color.into(),
@@ -364,18 +369,18 @@ impl DebugDraw
         for i in 0..num_points
         {
             let theta = step * i as f32;
-            self.lines.vertices.push(DebugLineVertex
+            lines.vertices.push(DebugLineVertex
             {
                 position: transform.mul_vec4(Vec4::new(f32::cos(theta), f32::sin(theta), -1.0, 1.0)).into(),
                 color: color.into(),
             });
 
             let z = i + 1;
-            self.lines.indices.push(start);
-            self.lines.indices.push(start + z);
+            lines.indices.push(start);
+            lines.indices.push(start + z);
 
-            self.lines.indices.push(start + z);
-            self.lines.indices.push(start + z % num_points + 1);
+            lines.indices.push(start + z);
+            lines.indices.push(start + z % num_points + 1);
         }
 
         // fill in the base?
@@ -383,18 +388,19 @@ impl DebugDraw
 
     // TODO: draw wire/solid cylinder (combine w/ cone?)
 
-    pub fn draw_solid_cube(&mut self, mut transform: Mat4, color: Rgba)
+    pub fn draw_solid_cube(&self, mut transform: Mat4, color: Rgba)
     {
-        let start = self.solids.vertices.len() as u32;
+        let mut solids = self.solids.lock();
+        let start = solids.vertices.len() as u32;
 
         transform = self.camera_clip_mtx * transform;
 
-        self.solids.vertices.reserve(CUBOID_VERTICES.len());
-        self.solids.indices.reserve(36);
+        solids.vertices.reserve(CUBOID_VERTICES.len());
+        solids.indices.reserve(36);
 
         for corner in CUBOID_VERTICES
         {
-            self.solids.vertices.push(DebugLineVertex
+            solids.vertices.push(DebugLineVertex
             {
                 position: transform.mul_vec4(corner).into(),
                 color: color.into(),
@@ -413,26 +419,27 @@ impl DebugDraw
 
         for i in INDICES
         {
-            self.solids.indices.push(i + start);
+            solids.indices.push(i + start);
         }
     }
 
     // draw a solid 'UV' (quad faced) sphere
-    pub fn draw_solid_sphere(&mut self, mut transform: Mat4, color: Rgba)
+    pub fn draw_solid_sphere(&self, mut transform: Mat4, color: Rgba)
     {
-        let start = self.solids.vertices.len() as u32;
+        let mut solids = self.solids.lock();
+        let start = solids.vertices.len() as u32;
 
         // calc based on size?
         let num_lats = 6; // rows
         let num_longs = 12; // columns
 
         let num_verts = (num_longs * (num_lats - 2) + 2) as usize;
-        self.solids.vertices.reserve(num_verts);
-        self.solids.indices.reserve(num_verts * 6); // todo: probably wrong
+        solids.vertices.reserve(num_verts);
+        solids.indices.reserve(num_verts * 6); // todo: probably wrong
 
         transform = self.camera_clip_mtx * transform;
 
-        self.solids.vertices.push(DebugLineVertex
+        solids.vertices.push(DebugLineVertex
         {
             position: transform.mul_vec4(Vec4::new(0.0, -1.0, 0.0, 1.0)).into(),
             color: color.into(),
@@ -441,9 +448,9 @@ impl DebugDraw
         // bottom cap
         for i in 0..num_longs
         {
-            self.solids.indices.push(start);
-            self.solids.indices.push(start + 1 + i);
-            self.solids.indices.push(start + 1 + (i + 1) % num_longs);
+            solids.indices.push(start);
+            solids.indices.push(start + 1 + i);
+            solids.indices.push(start + 1 + (i + 1) % num_longs);
         }
 
         let lat_step = 2.0 / (num_lats - 1) as f32;
@@ -458,7 +465,7 @@ impl DebugDraw
                 let phi = long as f32 * long_step;
 
                 let pos = Vec4::new(f32::cos(phi) * width, y, f32::sin(phi) * width, 1.0);
-                self.solids.vertices.push(DebugLineVertex
+                solids.vertices.push(DebugLineVertex
                 {
                     position: transform.mul_vec4(pos).into(),
                     color: color.into(),
@@ -469,17 +476,17 @@ impl DebugDraw
                 let tl = bl + num_longs;
                 let tr = br + num_longs;
 
-                self.solids.indices.push(bl);
-                self.solids.indices.push(tl);
-                self.solids.indices.push(tr);
+                solids.indices.push(bl);
+                solids.indices.push(tl);
+                solids.indices.push(tr);
 
-                self.solids.indices.push(bl);
-                self.solids.indices.push(tr);
-                self.solids.indices.push(br);
+                solids.indices.push(bl);
+                solids.indices.push(tr);
+                solids.indices.push(br);
             }
         }
 
-        self.solids.vertices.push(DebugLineVertex
+        solids.vertices.push(DebugLineVertex
         {
             position: transform.mul_vec4(Vec4::new(0.0, 1.0, 0.0, 1.0)).into(),
             color: color.into(),
@@ -489,26 +496,27 @@ impl DebugDraw
         let end = start + (num_verts as u32 - 1);
         for i in 0..num_longs
         {
-            self.solids.indices.push(end);
-            self.solids.indices.push(end - 1 - i);
-            self.solids.indices.push(end - 1 - (i + 1) % num_longs);
+            solids.indices.push(end);
+            solids.indices.push(end - 1 - i);
+            solids.indices.push(end - 1 - (i + 1) % num_longs);
         }
     }
 
     // draw a solid cone. untransformed, tip points to +Z, base to -Z
-    pub fn draw_solid_cone(&mut self, mut transform: Mat4, color: Rgba)
+    pub fn draw_solid_cone(&self, mut transform: Mat4, color: Rgba)
     {
-        let start = self.solids.vertices.len() as u32;
+        let mut solids = self.solids.lock();
+        let start = solids.vertices.len() as u32;
 
         // calc based on size
         let num_points = 8;
 
         transform = self.camera_clip_mtx * transform;
 
-        self.solids.vertices.reserve(num_points as usize + 1);
-        self.solids.indices.reserve(num_points as usize * 3);
+        solids.vertices.reserve(num_points as usize + 1);
+        solids.indices.reserve(num_points as usize * 3);
 
-        self.solids.vertices.push(DebugLineVertex
+        solids.vertices.push(DebugLineVertex
         {
             position: transform.mul_vec4(Vec4::new(0.0, 0.0, 1.0, 1.0)).into(),
             color: color.into(),
@@ -518,20 +526,20 @@ impl DebugDraw
         for i in 0..num_points
         {
             let theta = step * i as f32;
-            self.solids.vertices.push(DebugLineVertex
+            solids.vertices.push(DebugLineVertex
             {
                 position: transform.mul_vec4(Vec4::new(f32::cos(theta), f32::sin(theta), -1.0, 1.0)).into(),
                 color: color.into(),
             });
 
             let z = i + 1;
-            self.solids.indices.push(start);
-            self.solids.indices.push(start + z);
-            self.solids.indices.push(start + z % num_points + 1);
+            solids.indices.push(start);
+            solids.indices.push(start + z);
+            solids.indices.push(start + z % num_points + 1);
         }
     }
 
-    pub fn draw_arrow(&mut self, tail: Vec3, nose: Vec3, wing_normal: Vec3, color: Rgba)
+    pub fn draw_arrow(&self, tail: Vec3, nose: Vec3, wing_normal: Vec3, color: Rgba)
     {
         const WING_ANGLE: Angle = Angle::from_degrees(30.0);
 
@@ -544,17 +552,19 @@ impl DebugDraw
     }
 
     // take points by value w/ template size?
-    pub fn draw_polyline(&mut self, points: &[Vec3], connect_ends: bool, color: Rgba)
+    pub fn draw_polyline(&self, points: &[Vec3], connect_ends: bool, color: Rgba)
     {
         if points.len() < 2 { return; } // not bother?
 
-        self.lines.vertices.reserve(points.len());
-        self.lines.indices.reserve(2 * points.len());
+        let mut lines = self.lines.lock();
 
-        let start = self.lines.vertices.len() as u32;
+        lines.vertices.reserve(points.len());
+        lines.indices.reserve(2 * points.len());
+
+        let start = lines.vertices.len() as u32;
         for point in points
         {
-            self.lines.vertices.push(DebugLineVertex
+            lines.vertices.push(DebugLineVertex
             {
                 position: self.camera_clip_mtx.mul_vec4(point.extend(1.0)).into(),
                 color: color.into(),
@@ -562,50 +572,52 @@ impl DebugDraw
         }
         for i in 1..points.len() as u32
         {
-            self.lines.indices.push(start + i - 1);
-            self.lines.indices.push(start + i);
+            lines.indices.push(start + i - 1);
+            lines.indices.push(start + i);
         }
         if connect_ends
         {
-            self.lines.indices.push(start + points.len() as u32 - 1);
-            self.lines.indices.push(start);
+            lines.indices.push(start + points.len() as u32 - 1);
+            lines.indices.push(start);
         }
     }
 
-    pub fn draw_clipspace_line(&mut self, a: Vec2, b: Vec2, color: Rgba)
+    pub fn draw_clipspace_line(&self, a: Vec2, b: Vec2, color: Rgba)
     {
-        let start = self.lines.vertices.len() as u32;
-        self.lines.vertices.reserve(2);
-        self.lines.indices.reserve(2);
+        let mut lines = self.lines.lock();
+        let start = lines.vertices.len() as u32;
+        lines.vertices.reserve(2);
+        lines.indices.reserve(2);
 
-        self.lines.vertices.push(DebugLineVertex
+        lines.vertices.push(DebugLineVertex
         {
             position: [a.x, a.y, 0.0, 1.0],
             color: color.into(),
         });
-        self.lines.vertices.push(DebugLineVertex
+        lines.vertices.push(DebugLineVertex
         {
             position: [b.x, b.y, 0.0, 1.0],
             color: color.into(),
         });
 
-        self.lines.indices.push(start);
-        self.lines.indices.push(start + 1);
+        lines.indices.push(start);
+        lines.indices.push(start + 1);
     }
 
-    pub fn draw_clipspace_circle(&mut self, center: Vec2, radius: f32, color: Rgba)
+    pub fn draw_clipspace_circle(&self, center: Vec2, radius: f32, color: Rgba)
     {
-        let start = self.lines.vertices.len() as u32;
+        let mut lines = self.lines.lock();
+        let start = lines.vertices.len() as u32;
 
         let points = f32::lerp(8.0, 32.0, radius) as u32;
 
-        self.lines.vertices.reserve(points as usize);
-        self.lines.indices.reserve(points as usize * 2);
+        lines.vertices.reserve(points as usize);
+        lines.indices.reserve(points as usize * 2);
 
         let inc = (2.0 * std::f32::consts::PI) / points as f32;
         for i in 0..points
         {
-            self.lines.vertices.push(DebugLineVertex
+            lines.vertices.push(DebugLineVertex
             {
                 position:
                 [
@@ -616,21 +628,21 @@ impl DebugDraw
                 ],
                 color: color.into(),
             });
-            self.lines.indices.push(start + i);
-            self.lines.indices.push(start + (i + 1) % points);
+            lines.indices.push(start + i);
+            lines.indices.push(start + (i + 1) % points);
         }
     }
 
-    pub fn submit(&mut self, queue: &Queue, render_pass: &mut RenderPass)
+    pub fn submit(&self, queue: &Queue, render_pass: &mut RenderPass)
     {
         if !self.is_enabled.load(Ordering::Relaxed) { return; }
 
         puffin::profile_scope!("DebugDraw submission");
 
         render_pass.set_pipeline(&self.solids_pipeline);
-        self.solids.submit(queue, render_pass);
+        self.solids.lock().submit(queue, render_pass);
         render_pass.set_pipeline(&self.lines_pipeline);
-        self.lines.submit(queue, render_pass);
+        self.lines.lock().submit(queue, render_pass);
     }
 }
 impl DebugGui for DebugDraw
@@ -645,8 +657,8 @@ impl DebugGui for DebugDraw
             self.is_enabled.store(is_enabled, Ordering::Relaxed);
         }
 
-        ui.label(format!("Line vertex count: {}", self.lines.vertices.len()));
-        ui.label(format!("Solids vertex count: {}", self.solids.vertices.len()));
-        ui.label(format!("Strings count: {}", self.num_strings));
+        ui.label(format!("Line vertex count: {}", self.lines.lock().vertices.len()));
+        ui.label(format!("Solids vertex count: {}", self.solids.lock().vertices.len()));
+        ui.label(format!("Strings count: {}", self.num_strings.load(Ordering::Relaxed)));
     }
 }
